@@ -1,0 +1,10 @@
+%.o: ../src/%.cpp
+	@echo 'Building file: $<'
+	@echo 'Invoking: GCC C++ Compiler'
+	g++ -I"../include" $(CFLAGS) -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -o "$@" "$<"
+	@echo 'Finished building: $<'
+	@echo ' '
+
+OBJS += ./dqr.o ./main.o 
+
+LIBS := -lbfd -lopcodes -lintl -liberty -lz
