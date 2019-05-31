@@ -17,7 +17,7 @@ release all: dqr.exe
 dqr.exe: $(OBJS) 
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	g++ -L"../lib" -static -o "dqr.exe" $(OBJS) $(USER_OBJS) $(LIBS)
+	g++ -L$(LIBPATH) -static -o "dqr.exe" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 
