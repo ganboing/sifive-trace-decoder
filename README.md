@@ -12,17 +12,34 @@ Source file display is not yet working, but at least I have figured out how to g
 That is what I am currently working on. As soon as that works, I am going to tackle the to do list at the top of main.cpp.
 
 ### Building:
+The trace-decoder
+ can be built on the command line or within Eclipse.
 
-This project can be built on the command line or within Eclipse.
+#### Using Eclipse
 
-You can import this repository/project directly into Eclipse using `File -> Import -> Git -> Projects from Git`
+My preffered workflow for getting the project into Eclipse:
+
+ 1. Clone the repo to your normal git repository (typically <home>/git) using whatever method you like
+ 2. Within Eclipse, import this repository/project directly into Eclipse using `File -> Import -> Git -> Projects from Git`
+ 3. Select "Existing local repository"
+ 4. Add the repository if not already added (you will need to do this only once)
+ 5. Search the repository for Eclipse projects (there should only be one in the result list)
+ 6. Check the 'trace-decoder' project (if not already checked)
+ 7. Finish the wizard to create the new project in your worksapce.
+ 
+When you do it this way you will be working on the files directly in the local git repository.  These files do not actually live in your workspace.  You can still easily interact with your repo from a git CLI.
+  
 The Eclipse project include "build targets" to make for easy building in Eclipse.
+
+#### Using the CLI
 
 The makefile includes two configurations:  `Debug` and `Release` (they are capitalized).
 
 The default configuration is `Debug`, so if you `make clean` or `make all` or `make clean all` you will act on the `Debug` configuration and all build artifacts will be in the `Debug` folder.
 
 To build the `Release` configuration, use `make CONFIG=Release all` (This is what Jenkins will use to build a release)
+
+#### Notes
 
 There is a `makefile.init` at the top level that contains the settings that apply to all configurations, including a list of OBJ files that needs to be updated when new source files are added. Each config sub-folder has a makefile that contains settings for the specific configuration (like optimization flags that generally differentiate a Release build from a Debug build).
 
