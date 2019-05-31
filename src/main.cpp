@@ -2314,8 +2314,6 @@ DQErr SliceFileParser::nextTraceMsg(NexusMessage &nm)	// generator to return tra
 		status = DQERR_ERR;
 	}
 
-	printf("have: %d, ts: %d\n",nm.haveTimestamp, nm.timestamp);
-
 	return status;
 }
 
