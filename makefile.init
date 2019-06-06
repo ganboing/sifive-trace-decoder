@@ -5,7 +5,7 @@
 	@echo 'Finished building: $<'
 	@echo ' '
 
-OBJS += ./dqr.o ./main.o 
+OBJS += ./dqr.o ./main.o ./trace.o
 
 LIBS := -lbfd -lopcodes -lintl -liberty -lz
 
