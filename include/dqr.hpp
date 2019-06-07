@@ -310,8 +310,6 @@ private:
   uint64_t	currentAddress;
   uint64_t  currentTime;
 
-  NexusMessage *chachedMsgs = NULL;
-
   dqr::DQErr readBinaryMsg();
   dqr::DQErr readNextByte(uint8_t *byte);
   dqr::DQErr readAscMsg();

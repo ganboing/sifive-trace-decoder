@@ -6,24 +6,22 @@
 
 RM := rm -rf
 
-#OBJS += ./dqr.o ./main.o 
-
-CFLAGS := -O3 -Wall -Wformat=0
+CFLAGS += -O3 -Wall -Wformat=0
 
 # All Target
-release all: dqr.exe
+Release release all: $(EXECUTABLE)
 
 # Tool invocations
-dqr.exe: $(OBJS) 
+$(EXECUTABLE): $(OBJS) 
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	g++ -L$(LIBPATH) -static -o "dqr.exe" $(OBJS) $(USER_OBJS) $(LIBS)
+	g++ -L$(LIBPATH) $(LNFLAGS) -o $(EXECUTABLE) $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) *.d $(OBJS) dqr.exe
+	-$(RM) *.d $(OBJS) $(EXECUTABLE)
 	-@echo ' '
 
 .PHONY: all clean dependents

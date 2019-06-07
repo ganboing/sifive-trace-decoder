@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Sifive, Inc. All rights reserved.
+ * Copyright 2019 Sifive, Inc.
  *
  * main.cpp
  *
@@ -22,6 +22,8 @@
  * consistnat error code useage, and more types of error codes
  *
  */
+
+#include "config.h"
 
 #include <iostream>
 #include <iomanip>
@@ -2956,7 +2958,7 @@ int Disassembler::getSrcLines(dqr::ADDRESS addr, const char **filename, const ch
 		return 0;
 	}
 
-	class fileReader::fileList *fl;
+	struct fileReader::fileList *fl;
 
 	*filename = file;
 	*functionname = function;

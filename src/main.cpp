@@ -1,11 +1,13 @@
 /*
- * Copyright 2019 Sifive, Inc. All rights reserved.
+ * Copyright 2019 Sifive, Inc.
  *
  * main.cpp
  *
  *  Created on: Feb 11, 2019
  *      Author: Brad Seevers
  */
+
+#include "config.h"
 
 #include <iostream>
 #include <iomanip>
@@ -237,7 +239,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (version_flag) {
-		printf("%s: version %s\n",argv[0],"0.1");
+		printf("%s: version %s\n",argv[0],"0.2");
 		return 0;
 	}
 
