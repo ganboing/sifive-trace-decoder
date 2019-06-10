@@ -26,8 +26,7 @@ static void useage(char *name)
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd)\n");
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extention (such as .elf)\n");
 	printf("-n basename:  Specify the base name of hte Nexus trace message file and the executable elf file. No extension\n");
-	printf("              should be given.\n");
-	printf("              The extensions .rdt and .elf will be added to basename.\n");
+	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
 	printf("-start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is\n");
 	printf("              not specified, continues to last trace message.\n");
 	printf("-stop nm:     Select the last Nexus trace message number to end DQing at. If -start is not specified, starts\n");
