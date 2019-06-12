@@ -1,27 +1,25 @@
 /*
  * Copyright 2019 Sifive, Inc.
  *
- * main.cpp
- *
- *  Created on: Feb 11, 2019
- *      Author: Brad Seevers
+ * dqr.cpp
  */
 
 /*
- * to do:
- *
- * create .h files for classes
- * creates separate source files for classes
- * eliminate redundancy in dissassembler and other classes (get instruction, symtab, text block)
- * re-factor nextinstruction to reduce size and maybe redundant code for states
- * maybe add method to check for presence of next instruction
- * use bfd_sprintf functions
- * consistent ADDR useage
- * consistent naming style
- * correct destructors for everything
- * consistnat error code useage, and more types of error codes
- *
- */
+   This file is part of dqr, the SiFive Inc. Risc-V Nexus 2001 trace decoder.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, see <https://www.gnu.org/licenses/>.
+*/
 
 #include "config.h"
 

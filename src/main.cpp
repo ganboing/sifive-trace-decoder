@@ -2,10 +2,24 @@
  * Copyright 2019 Sifive, Inc.
  *
  * main.cpp
- *
- *  Created on: Feb 11, 2019
- *      Author: Brad Seevers
  */
+
+/*
+   This file is part of dqr, the SiFive Inc. Risc-V Nexus 2001 trace decoder.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, see <https://www.gnu.org/licenses/>.
+*/
 
 #include "config.h"
 
@@ -20,11 +34,13 @@
 
 using namespace std;
 
-static void useage(char *name)
+static void usage(char *name)
 {
-	printf("Useage: dqr (-t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-v] [-h]\n");
-	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd)\n");
-	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extention (such as .elf)\n");
+	printf("Usage: dqr (-t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src] [-nosrc]\n");
+	printf("            [-file] [-nofile] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path] [-v] [-h]\n");
+	printf("\n");
+	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
+	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extention (such as .elf).\n");
 	printf("-n basename:  Specify the base name of hte Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
 	printf("-start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is\n");
@@ -34,15 +50,15 @@ static void useage(char *name)
 	printf("-src:         Enable display of source lines in output if available (on by default).\n");
 	printf("-nosrc:       Disable display of source lines in output.\n");
 	printf("-file:        Display source file information in output (on by default).\n");
-	printf("-nofile:      Do not dipslay source file information.\n");
+	printf("-nofile:      Do not display source file information.\n");
 	printf("-dasm:        Display disassembled code in output (on by default).\n");
 	printf("-nodasm:      Do not display disassembled code in output.\n");
 	printf("-trace:       Display trace information in output (off by default).\n");
 	printf("-notrace:     Do not display trace information in output.\n");
 	printf("--strip=path: Strip of the specified path when displaying source file name/path. Strips off all that matches.\n");
 	printf("              Path may be enclosed in quotes if it contains spaces.\n");
-	printf("-v:           Display the version number of the DQer and exit\n");
-	printf("-h:           Display this useage information.\n");
+	printf("-v:           Display the version number of the DQer and exit.\n");
+	printf("-h:           Display this usage information.\n");
 }
 
 static const char *stripPath(const char *prefix,const char *srcpath)
@@ -96,7 +112,7 @@ int main(int argc, char *argv[])
 	char *ef_name = nullptr;
 	char buff[128];
 	int buff_index = 0;
-	bool useage_flag = false;
+	bool usage_flag = false;
 	bool version_flag = false;
 	int start_msg_num = 0;
 	int stop_msg_num = 0;
@@ -112,7 +128,7 @@ int main(int argc, char *argv[])
 			i += 1;
 			if (i >= argc) {
 				printf("Error: option -t requires a file name\n");
-				useage(argv[0]);
+				usage(argv[0]);
 				return 1;
 			}
 
@@ -124,7 +140,7 @@ int main(int argc, char *argv[])
 			i += 1;
 			if (i >= argc) {
 				printf("Error: option -n requires a file name\n");
-				useage(argv[0]);
+				usage(argv[0]);
 				return 1;
 			}
 
@@ -137,7 +153,7 @@ int main(int argc, char *argv[])
 			i += 1;
 			if (i >= argc) {
 				printf("Error: option -e requires a file name\n");
-				useage(argv[0]);
+				usage(argv[0]);
 				return 1;
 			}
 
@@ -155,7 +171,7 @@ int main(int argc, char *argv[])
 			i += 1;
 			if (i >= argc) {
 				printf("Error: option -start requires a trace message number\n");
-				useage(argv[0]);
+				usage(argv[0]);
 				return 1;
 			}
 
@@ -169,7 +185,7 @@ int main(int argc, char *argv[])
 			i += 1;
 			if (i >= argc) {
 				printf("Error: option -stop requires a trace message number\n");
-				useage(argv[0]);
+				usage(argv[0]);
 				return 1;
 			}
 
@@ -224,16 +240,16 @@ int main(int argc, char *argv[])
 			version_flag = true;
 		}
 		else if (strcmp("-h",argv[i]) == 0) {
-			useage_flag = true;
+			usage_flag = true;
 		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
-			useage_flag = true;
+			usage_flag = true;
 		}
 	}
 
-	if (useage_flag) {
-		useage(argv[0]);
+	if (usage_flag) {
+		usage(argv[0]);
 		return 0;
 	}
 
@@ -245,7 +261,7 @@ int main(int argc, char *argv[])
 	if (tf_name == nullptr) {
 		if (base_name == nullptr) {
 			printf("Error: must specify either a base name or a trace file name\n");
-			useage(argv[0]);
+			usage(argv[0]);
 			return 1;
 		}
 
