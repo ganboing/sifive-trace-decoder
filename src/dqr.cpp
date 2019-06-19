@@ -2899,7 +2899,7 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,inst
 		t |= MOVE_BIT(instruction,31,12);
 
 		if (t & (1<<12)) { // sign extend offset
-			t |= 0xfffffe00;
+			t |= 0xffffe000;
 		}
 
 		immeadiate = t;
