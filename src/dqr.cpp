@@ -999,7 +999,7 @@ void NexusMessage::messageToText(char *dst,int level)
 		n += sprintf(dst+n,"AUX ACCESS WRITE (%d)",tcode);
 
 		if (level >= 2) {
-			sprintf(dst+n," Addr: 0x%08x Data: %0x08x",auxAccessWrite.addr,auxAccessWrite.data);
+			sprintf(dst+n," Addr: 0x%08x Data: %08x",auxAccessWrite.addr,auxAccessWrite.data);
 		}
 		break;
 	case dqr::TCODE_AUXACCESS_READNEXT:
