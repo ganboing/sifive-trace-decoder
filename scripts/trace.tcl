@@ -1,8 +1,10 @@
 #
 # Scripts for trace using OpenOCD
 #
+
 # riscv set_prefer_sba on
 
+set baseaddress 0x20007000
 set te_control $baseaddress
 set te_impl [expr $baseaddress + 0x04]
 set te_sinkbase [expr $baseaddress + 0x10]
@@ -139,6 +141,244 @@ proc wt {{file "trace.txt"}} {
   close $fp
 }
 
+proc ts {{opt ""}} {
+  global ts_flag
+  global te_control
+  if {$opt == ""} {
+    if {$ts_flag == 0} {
+      echo "timestamps are off"
+    } else {
+      echo "timestamps are on"
+    }
+  } elseif {$opt == "help"} {
+    echo "ts: set or display timestamp mode"
+    echo {Usage: ts [on | off | help]}
+    echo "  on:   Enable timestamps in trace messages"
+    echo "  off:  Disable timstamps in trace messages"
+    echo "  help: Display this message"
+    echo ""
+    echo "ts with no arguments will display the current status of timestamps (on or off)"
+    echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set timestamp mode while trace is enabled"
+  } elseif {$opt == "on"} {
+    set ts_flag 1
+    echo -n ""
+  } elseif {$opt == "off"} {
+    set ts_flag 0
+    echo -n ""
+  } else {
+    echo {Error: Usage: ts [on | off | help]}
+  }
+}
+
+proc stoponwrap {{opt ""}} {
+  global sow_flag
+  global te_control
+  if {$opt == ""} {
+    if {$sow_flag == 0} {
+      echo "stop on wrap is off (disabled)"
+    } else {
+      echo "stop on wrap is on (enabled)"
+    }
+  } elseif {$opt == "help"} {
+    echo "stoponwrap: set or display trace buffer wrap mode"
+    echo {Usage: stoponwrap [on | off | help]}
+    echo "  on:   Enable stop trace collection when buffer is full (default)"
+    echo "  off:  Continue tracing when the buffer fills, causing it to wrap"
+    echo "  help: Display this message"
+    echo ""
+    echo "stoponwrap with no arguments will display the current status of trace buffer wrap (on or off)"
+    echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set wrap mode while trace is enabled"
+  } elseif {$opt == "on"} {
+    set sow_flag 1
+    echo -n ""
+  } elseif {$opt == "off"} {
+    set sow_flag 0
+    echo -n ""
+  } else {
+    echo {Error: Usage: stoponwrap [on | off | help]}
+  }
+}
+
+proc tracemode {{opt ""}} {
+  global tm_flag
+  global te_control
+  if {$opt == ""} {
+    switch $tm_flag {
+      0 {
+        echo "tracemode: Do not generate BTM or Sync messages"
+      }
+      1 {
+        echo "tracemode: Generate Sync messages only (no BTM messages)"
+      }
+      3 {
+        echo "tracemode: Generate both BTM and Symc messages"
+      }
+      default {
+        echo "Error: tracemode: invalid trace type: $tm_flag"
+      }
+    }
+  } elseif {$opt == "help"} {
+    echo "tracemode: set or display trace type (sync, sync+btm)"
+    echo {Usage: tracemode [sync | all | none | help]}
+    echo "  sync: Generate only sync trace messages"
+    echo "  all:  Generate both sync and btm trace messages"
+    echo "  none: Do not generate sync or btm trace messages"
+    echo "  help: Display this message"
+    echo ""
+    echo "tracemode with no arguments will display the current setting for the type"
+    echo "of messages to generate"
+    echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set trace mode while trace is enabled"
+  } elseif {$opt == "sync"} {
+    set tm_flag 1
+    echo -n ""
+  } elseif {$opt == "all"} {
+    set tm_flag 3
+    echo -n ""
+  } elseif {$opt == "none"} {
+    set tm_flag 0
+    echo -n ""
+  } else {
+    echo {Error: Usage: tracemode [sync | all | none | help]}
+  }
+}
+
+proc itc {{opt ""} {mask ""}} {
+  global itc_mode
+  global itc_mask
+  global te_control
+  if {$opt == ""} {
+    switch $itc_mode {
+      0 {
+        echo "itc: All ITC messages are disabled"
+      }
+      1 {
+        echo "itc: All ITC messages are enbaled"
+        echo [format "ITC mask: 0x%08x" $itc_mask]
+      }
+      2 {
+        echo "itc: Generate ownership messages for stimulus 15 and 31"
+        echo [format "ITC mask: 0x%08x" $itc_mask]
+      }
+      3 {
+        echo "itc: Generate ownership messages for stimulus 15 and 31, and ITC messages"
+        echo "for all other stimulus"
+        echo [format "ITC mask: 0x%08x" $itc_mask]
+      }
+      default {
+        echo "Error: itc: invalid itc mode: $itc_mode"
+      }
+    }
+  } elseif {$opt == "help"} {
+    echo "itc: set or display itc settings"
+    echo {Usage: itc [off | ownership | all | all+ownership | mask nn | help]}
+    echo "  off:           Disable ITC message generation"
+    echo "  ownership:     Enable ITC messages for stiumlus 15 and 31 only. Set the stimulus"
+    echo "                 mask to 0x80008000"
+    echo "  all:           Enable ITC messages for all stimulus 0 - 31. Set the stimulus"
+    echo "                 mask to 0xffffffff"
+    echo "  all+ownership: Generate ownership messages for stimulus 15 and 32, and"
+    echo "                 ITC messages for all other stimulus. Set the stimulus mask to"
+    echo "                 0xffffffff"
+    echo "  mask nn:       Set the stimulus mask to nn, where nn is a 32 bit number. Note"
+    echo "                 nn should be prefixed with 0x if it is a hex number, or just 0 if"
+    echo "                 it is an octal number; otherwise it will be interpreted as a decimal"
+    echo "                 number. Does not effect the ITC mode (off, ownership, all, all+ownership)"
+    echo "  help:          Display this message"
+    echo ""
+    echo "itc with no arguments will display the current itc settings"
+    echo ""
+  } elseif {$opt == "off"} {
+    set itc_mode 0
+    set itc_mask 0
+    echo -n ""
+  } elseif {$opt == "all"} {
+    set itc_mode 1
+    set itc_mask 0xffffffff
+    echo -n ""
+  } elseif {$opt == "ownership"} {
+    set itc_mode 2
+    set itc_mask 0x80008000
+    echo -n ""
+  } elseif {$opt == "all+ownership"} {
+    set itc_mode 3
+    set itc_mask 0xffffffff
+    echo -n ""
+  } elseif {$opt == "mask"} {
+    if {$mask == ""} {
+      echo [format "ITC mask: 0x%08x" $itc_mask]
+    } else {
+      set itc_mask [expr $mask]
+      echo -n ""
+    }
+  } else {
+    echo {Error: Usage: itc [off | ownership | all | all+ownership | mask nn | help]}
+  }
+}
+
+proc maxicnt {{opt ""}} {
+  global max_icnt_val
+  global te_control
+  if {$opt == ""} {
+      echo "max icnt: [expr {$max_icnt_val + 5}] ([expr {2 ** ($max_icnt_val + 5)}])"
+  } elseif {$opt == "help"} {
+    echo "maxicnt: set or dipspaly the maximum i-cnt field"
+    echo {Usage: maxicnt [nn | help]}
+    echo "  nn: Set max i-cnt value to 2^(nn+5). nn must be between 5 and 16 for"
+    echo "      a range between 32 and 65536"
+    echo "  help: Display this message"
+    echo ""
+    echo "maxicnt with no arguments will display the current maximum i-cnt value"
+    echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set the max i-cnt value while trace is enabled"
+  } elseif {$opt >= 5 && $opt <= 16} {
+    set max_icnt_val [expr {$opt - 5}]
+    echo -n ""
+  } else {
+    echo {Error: Usage: maxicnt [5 - 16]}
+  }
+}
+
+proc maxbtm {{opt ""}} {
+  global max_btm_val
+  global te_control
+  if {$opt == ""} {
+    echo "max btm: [expr {$max_btm_val + 5}] ([expr {2 ** ($max_btm_val + 5)}])"
+  } elseif {$opt == "help"} {
+    echo "maxbtm: set or display the maximum number of BTMs between Sync messages"
+    echo {Usage: maxbtm [nn | help]}
+    echo "  nn:   Set the maximum number of BTMs between Syncs to nn. nn must be between"
+    echo "        5 and 16 for a range between 32 and 65536"
+    echo "  help: Display this message"
+    echo ""
+    echo "maxbtm with no arguments will display the current maximum number of BTMs"
+    echo "between sync messages"
+    echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set the maxbtm value while trace is enabled"
+  } elseif {$opt >= 5 && $opt <= 16} {
+    set max_btm_val [expr {$opt - 5}]
+    echo -n ""
+  } else {
+    echo {Error: Usage: maxbtm [5 - 16 | help]}
+  }
+}
+
+proc tracesettings {} {
+  itc
+  maxicnt
+  maxbtm
+  tracemode
+  stoponwrap
+  ts
+}
+
 proc wtb {{file "trace.rtd"}} {
   riscv set_prefer_sba on
   global tracesize
@@ -208,12 +448,73 @@ proc resettrace {} {
     mww $te_control 0x01830001   ;# activate the TE
 }
 
+proc readts {} {
+	global ts_control
+        echo "[format {0x%08x} [word $ts_control]]"
+}
+
+proc resetts {} {
+    global te_control
+    global ts_control
+    if {( [expr [word $te_control] & 0x02] != 0)} {
+	    echo "cannot reset timestamp while trace is enabled"
+    } else {
+	    mww $ts_control 0x04
+	    mww $ts_control 0x00
+	    echo "timestamp reset"
+    }
+}
+
 proc starttrace {} {
+    global ts_control
     global te_control
     global te_sinkwp
-    mww $te_control 0x01830001   ;# disable trace
+    global tm_flag
+    global ts_flag
+    global sow_flag
+    global itc_mode
+    global itc_mask
+    global max_icnt_val
+    global max_btm_val
+    global itc_traceenable
+
+    mww $te_control 0x00000001   ;# disable trace
     mww $te_sinkwp 0             ;# clear WP
-    mww $te_control 0x01830037   ;# enable trace
+
+    set te_control_val 0
+    set ts_control_val 0
+    set itc_val 0
+
+    if {($ts_flag != 0)} {
+	    set ts_control_val 0x000f8023
+    }
+
+    set te_control_val [expr $te_control_val | ($tm_flag << 4)]
+
+    set te_control_val [expr $te_control_val | ($itc_mode << 7)]
+
+    if {($sow_flag != 0)} {
+	    set te_control_val [expr $te_control_val | (1 << 14)]
+    }
+
+    set te_control_val [expr $te_control_val | ($max_btm_val << 16)]
+
+    set te_control_val [expr $te_control_val | ($max_icnt_val << 20)]
+
+    set te_control_val [expr $te_control_val | (1 << 24) | 0x07]
+
+    mww $ts_control $ts_control_val
+    mww $itc_traceenable $itc_mask
+    mww $te_control $te_control_val
+
+#    echo "tm_flag: $tm_flag"
+#    echo "itc_mode: $itc_mode"
+#    echo "sow_flag: $sow_flag"
+#    echo "max_btm_val: $max_btm_val"
+#    echo "max_icnt_val: $max_icnt_val"
+#    echo [format "ts_control: 0x%08x" $ts_control_val]
+#    echo [format "itc_traceenable: 0x%08x" $itc_mask]
+#    echo [format "te_control: 0x%08x" $te_control_val]
 }
 
 proc stoptrace {} {
@@ -223,6 +524,11 @@ proc stoptrace {} {
     mww $te_control 0x01830003   ;# stop trace
     mww $te_control 0x01830001   ;# disable and flush trace
     set tracewp [word $te_sinkwp]
+    if {$tracewp & 1} {
+	echo "[expr $tracesize / 4] trace words collected"
+    } else {
+        echo "[expr $tracewp / 4] trace words collected"
+    }
 }
 
 proc wordscollected {} {
@@ -246,7 +552,6 @@ proc analytics {} {
   echo "max fifo usage:   [expr $analytics0 & 0x7fffffff]"
   echo "overflow occur:   [expr ($analytics0 >> 30) & 1]"
 }
-
 
 set btmRP 0
 set btmWord 0
@@ -390,4 +695,12 @@ mww $te_control 0x01830001
 mww $te_sinkrp 0xffffffff
 mww $te_sinkwp 0x00000000
 set tracesize [expr [word $te_sinkrp] + 4]
+echo $tracesize
 
+set tm_flag 3
+set ts_flag 0
+set sow_flag 1
+set itc_mode 0
+set itc_mask 0
+set max_icnt_val 8
+set max_btm_val 3
