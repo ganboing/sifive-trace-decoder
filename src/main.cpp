@@ -57,6 +57,9 @@ static void usage(char *name)
 	printf("-notrace:     Do not display trace information in output.\n");
 	printf("--strip=path: Strip of the specified path when displaying source file name/path. Strips off all that matches.\n");
 	printf("              Path may be enclosed in quotes if it contains spaces.\n");
+	printf("-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatinated\n");
+	printf("              and displayed as a string until a terminating \\0 is found\n");
+	printf("-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -122,6 +125,7 @@ int main(int argc, char *argv[])
 	bool trace_flag = false;
 	bool func_flag = false;
 	char *strip_flag = nullptr;
+	bool itcprint_flag = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -241,6 +245,12 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp("-h",argv[i]) == 0) {
 			usage_flag = true;
+		}
+		else if (strcmp("-itcprint",argv[i]) == 0) {
+			itcprint_flag = true;
+		}
+		else if (strcmp("-noitcprint",argv[i]) == 0) {
+			itcprint_flag = false;
 		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
@@ -408,27 +418,40 @@ int main(int argc, char *argv[])
 				firstPrint = false;
 			}
 
-			if (trace_flag && (msgInfo != nullptr)) {
+			if ((trace_flag || itcprint_flag) && (msgInfo != nullptr)) {
 				// got the goods! Get to it!
+				char *itcprint = nullptr;
 
-				msgInfo->messageToText(dst,msgLevel);
+				msgInfo->messageToText(dst,&itcprint,msgLevel);
 
-				if (firstPrint == false) {
+				if (trace_flag) {
+					if (firstPrint == false) {
+						printf("\n");
+					}
+
+					printf("Trace: %s",dst);
+
 					printf("\n");
+
+					firstPrint = false;
 				}
 
-				printf("Trace: %s",dst);
+				if (itcprint_flag && (itcprint != nullptr)) {
+					if (firstPrint == false) {
+						printf("\n");
+					}
 
-				printf("\n");
+					puts(itcprint);
 
-				firstPrint = false;
+					firstPrint = false;
+				}
 			}
 		}
 	} while (ec == dqr::DQERR_OK);
 
-	if (firstPrint == false) {
-		cout << endl;
-	}
+//	if (firstPrint == false) {
+//		cout << endl;
+//	}
 
 	delete trace;
 

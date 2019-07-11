@@ -244,15 +244,15 @@ private:
 class NexusMessage {
 public:
 	NexusMessage();
-	void messageToText(char *dst,int level);
+	void messageToText(char *dst,char **pdst,int level);
 	void dump();
 
-	int        msgNum;
+	int        		msgNum;
 	dqr::TCode      tcode;
-    bool       haveTimestamp;
-    uint64_t   timestamp;
+    bool       		haveTimestamp;
+    uint64_t   		timestamp;
     dqr::ADDRESS    currentAddress;
-    uint64_t   time;
+    uint64_t   		time;
 
     union {
     	struct {

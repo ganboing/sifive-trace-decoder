@@ -735,13 +735,17 @@ NexusMessage::NexusMessage()
 	time           = 0;
 }
 
-void NexusMessage::messageToText(char *dst,int level)
+void NexusMessage::messageToText(char *dst, char **pdst, int level)
 {
 	assert(dst != nullptr);
 
 	const char *sr;
 	const char *bt;
 	int n;
+
+	if (pdst != nullptr) {
+		*pdst = nullptr;
+	}
 
 	// level = 0, nothing
 	// level = 1, timestamp and target
@@ -1000,6 +1004,45 @@ void NexusMessage::messageToText(char *dst,int level)
 
 		if (level >= 2) {
 			sprintf(dst+n," Addr: 0x%08x Data: %08x",auxAccessWrite.addr,auxAccessWrite.data);
+		}
+
+		if (auxAccessWrite.addr == 0) {
+			char *p = (char *)&auxAccessWrite.data;
+			bool done = false;
+			static bool eol = true;
+			static char pbuff[512];
+			static int pbi = 0;
+
+
+			// fill in buffer until eol is found (\n or \0)
+
+			for (int i = 0; !done && ((size_t)i < sizeof auxAccessWrite.data); i++) {
+				if (p[i] != 0) {
+					if (eol) {
+						strcpy(pbuff+pbi,"ITC Print: ");
+						pbi += (sizeof "ITC Print: ") - 1;
+					}
+
+					eol = false;
+				}
+
+				pbuff[pbi++] = p[i];
+
+				if (p[i] == '\n') {
+					eol = true;
+				}
+				else if (p[i] == 0) {
+					done = true;
+					if (pbi > 0) {
+						pbi = 0;
+						eol = true;
+
+						if (pdst != nullptr) {
+							*pdst = pbuff;
+						}
+					}
+				}
+			}
 		}
 		break;
 	case dqr::TCODE_AUXACCESS_READNEXT:
