@@ -4,7 +4,7 @@
 
 # riscv set_prefer_sba on
 
-set baseaddress 0x20007000
+#set baseaddress 0x20007000
 set te_control $baseaddress
 set te_impl [expr $baseaddress + 0x04]
 set te_sinkbase [expr $baseaddress + 0x10]
