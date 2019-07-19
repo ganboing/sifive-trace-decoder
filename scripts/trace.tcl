@@ -142,14 +142,20 @@ proc wt {{file "trace.txt"}} {
 }
 
 proc ts {{opt ""}} {
-  global ts_flag
+  global tsenable_flag
   global te_control
   if {$opt == ""} {
-    if {$ts_flag == 0} {
+    if {$tsenable_flag == 0} {
       echo "timestamps are off"
     } else {
       echo "timestamps are on"
     }
+    tsdebug
+    tsclock
+    tsprescale
+    tsbranch
+    tsitc
+    tsowner
   } elseif {$opt == "help"} {
     echo "ts: set or display timestamp mode"
     echo {Usage: ts [on | off | help]}
@@ -162,13 +168,245 @@ proc ts {{opt ""}} {
   } elseif {[expr [word $te_control] & 0x02] != 0} {
     echo "Error: Cannot set timestamp mode while trace is enabled"
   } elseif {$opt == "on"} {
-    set ts_flag 1
+    set tsenable_flag 1
     echo -n ""
   } elseif {$opt == "off"} {
-    set ts_flag 0
+    set tsenable_flag 0
     echo -n ""
   } else {
     echo {Error: Usage: ts [on | off | help]}
+  }
+}
+
+proc tsdebug {{opt ""}} {
+  global tsdebug_flag
+  global te_control
+  if {$opt == ""} {
+    if {$tsdebug_flag == 0} {
+      echo "timestamp internal clock stops while in debug (on)"
+    } else {
+      echo "timestamp internal clock continues to run while in debug (off)"
+    }
+  } elseif {$opt == "help"} {
+    echo "tsdebug: set or display if timestamp internal clock runs while in debug"
+    echo {Usage: tsdebug [on | off | help]}
+    echo "  on:   Timestamp clock continues to run while in debug"
+    echo "  off:  Timnestamp clock halts while in debug"
+    echo "  help: Display this message"
+    echo ""
+    echo "tsdebug with no arguments will display the current status of timstamp debug (on or off)"
+    echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set timestamp debug mode while trace is enabled"
+  } elseif {$opt == "on"} {
+    set tsdebug_flag 1
+    echo -n ""
+  } elseif {$opt == "off"} {
+    set tsdebug_flag 0
+    echo -n ""
+  } else {
+    echo {Error: Usage: tsdebug [on | off | help]}
+  }
+}
+
+proc tsclock {{opt ""}} {
+  global tstype_flag
+  global te_control
+  if {$opt == ""} {
+    switch $tstype_flag {
+      0 {
+        echo "timestamp clock source set to none"
+      }
+      1 {
+        echo "timestamp clock source set to external"
+      }
+      2 {
+        echo "timestamp clock source set to internal"
+      }
+      default {
+	echo "Error: invalid source for timestamp clock"
+      }
+    }
+  } elseif {$opt == "help"} {
+    echo "tsclock: set or display the source of the timestamp clock (internal or external)"
+    echo {Usage: tsclock [none | internal | external | help]}
+    echo "  none:     No source for the timestampe clock"
+    echo "  internal: Set the source of the timestamp clock to internal"
+    echo "  external: Set the srouce of the timestamp clock to external"
+    echo "  help:     Display this message"
+    echo ""
+    echo "tsclock with no arguments will display the current source of hte timestamp clock (internal, external, or non)"
+    echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set timestamp clock source while trace is enabled"
+  } elseif {$opt == "none" } {
+    set tstype_flag 0
+    echo -n ""
+  } elseif {$opt == "internal"} {
+    set tstype_flag 2
+    echo -n ""
+  } elseif {$opt == "external"} {
+    set tstype_flag 1
+    echo -n ""
+  } else {
+    echo {Error: Usage: tsclock [none | internal | external | help]}
+  }
+}
+
+proc tsprescale {{opt ""}} {
+  global tsprescale_flag
+  global te_control
+  if {$opt == ""} {
+    switch $tsprescale_flag {
+      0 {
+        echo "tsprescale is set to 1"
+      }
+      1 {
+        echo "tsprescale is set to 4"
+      }
+      2 {
+        echo "tsprescale is set to 16"
+      }
+      3 {
+        echo "tsprescale is set to 64"
+      }
+      default {
+	echo "Error: invalid prescale value"
+      }
+    }
+  } elseif {$opt == "help"} {
+    echo "tsprescale: set or display the timesampe clock prescalser (1, 4, 16, or 64)"
+    echo {Usage: tsprescale [1 | 4 | 16 | 64 | help]}
+    echo "   1:    Set the prescaler to 1"
+    echo "   4:    Set the prescaler to 4"
+    echo "  16:    Set the prescaler to 16"
+    echo "  64:    Set the prescaler to 64"
+    echo "  help:  Display this message"
+    echo ""
+    echo "tspresacle with no arguments will display the current timestamp clock prescaler value (1, 4, 16, or 64)"
+    echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set timestamp clock prescaler while trace is enabled"
+  } elseif {$opt == 1} {
+    set tsprescal_flag 0
+    echo -n ""
+  } elseif {$opt == 4} {
+    set tsprescale_flag 1
+    echo -n ""
+  } elseif {$opt == 16} {
+    set tsprescale_flag 2
+    echo -n ""
+  } elseif {$opt == 64} {
+    set tsprescale_flag 3
+    echo -n ""
+  } else {
+    echo {Error: Usage: tsprescale [1 | 4 | 16 | 64 | help]}
+  }
+}
+
+proc tsbranch {{opt ""}} {
+  global tsbranch_flag
+  global te_control
+  if {$opt == ""} {
+    switch $tsbranch_flag {
+      0 {
+        echo "do not generate timestamps for branch messages (off)"
+      }
+      1 {
+	echo "generate timestamps for all indirect branch and exception messages (indirect)"
+      }
+      3 {
+	echo "generate timestamps for all branch, exception, PTCM, and Error messages (all)"
+      }
+      default {
+	echo "Invalid setting for tsbranch"
+      }
+    }
+  } elseif {$opt == "help"} {
+    echo "tsbranch: set or display if timestamps are generated for branch messages"
+    echo {Usage: tsbranch [off | indirect | all | help]}
+    echo "  off:      Timestamps are not generated for branch messages"
+    echo "  indirect: Generate timestamps for all indirect branch and exception messages"
+    echo "  all:      Generate timestamps for all branch, exception, PTCM, and Error messages"
+    echo "  help:     Display this message"
+    echo ""
+    echo "tsbranch with no arguments will display the current setting for tsbranch (off, indirect, all)"
+    echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set branch timestamp mode while trace is enabled"
+  } elseif {$opt == "off"} {
+    set tsbranch_flag 0
+    echo -n ""
+  } elseif {$opt == "indirect"} {
+    set tsbranch_flag 1
+    echo -n ""
+  } elseif {$opt == "all"} {
+    set tsbranch_flag 3
+    echo -n ""
+  } else {
+    echo {Error: Usage: tsbranch [off | indirect | all | help]}
+  }
+}
+
+proc tsitc {{opt ""}} {
+  global tsitc_flag
+  global te_control
+  if {$opt == ""} {
+    if {$tsitc_flag == 0} {
+      echo "do not generate timestamps for itc messages (off)"
+    } else {
+      echo "generate timestamps for itc messages (on)"
+    }
+  } elseif {$opt == "help"} {
+    echo "tsitc: set or display if timestamp messages are generated for itc messages"
+    echo {Usage: tsitc [on | off | help]}
+    echo "  on:   Timestamp are generated for itc messages"
+    echo "  off:  Timestamp are not generated for itc messages"
+    echo "  help: Display this message"
+    echo ""
+    echo "tsitc with no arguments will display whether or not timestamps are generated for itc messages"
+    echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set itc timestamp mode while trace is enabled"
+  } elseif {$opt == "on"} {
+    set tsitc_flag 1
+    echo -n ""
+  } elseif {$opt == "off"} {
+    set tsitc_flag 0
+    echo -n ""
+  } else {
+    echo {Error: Usage: tsitc [on | off | help]}
+  }
+}
+
+proc tsowner {{opt ""}} {
+  global tsowner_flag
+  global te_control
+  if {$opt == ""} {
+    if {$tsowner_flag == 0} {
+      echo "do not generate timestamps for ownership messages (off)"
+    } else {
+      echo "generate timestamps for ownership messages (on)"
+    }
+  } elseif {$opt == "help"} {
+    echo "tsowner: set or display if timestamp messages are generated for ownership messages"
+    echo {Usage: tsowner [on | off | help]}
+    echo "  on:   Timestamp are generated for ownership messages"
+    echo "  off:  Timestamp are not generated for ownership messages"
+    echo "  help: Display this message"
+    echo ""
+    echo "tsowner with no arguments will display whether or not timestamps are generated for ownership messages"
+    echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set ownership timestamp mode while trace is enabled"
+  } elseif {$opt == "on"} {
+    set tsowner_flag 1
+    echo -n ""
+  } elseif {$opt == "off"} {
+    set tsowner_flag 0
+    echo -n ""
+  } else {
+    echo {Error: Usage: tsowner [on | off | help]}
   }
 }
 
@@ -215,7 +453,7 @@ proc tracemode {{opt ""}} {
         echo "tracemode: Generate Sync messages only (no BTM messages)"
       }
       3 {
-        echo "tracemode: Generate both BTM and Symc messages"
+        echo "tracemode: Generate both BTM and Sync messages"
       }
       default {
         echo "Error: tracemode: invalid trace type: $tm_flag"
@@ -293,6 +531,8 @@ proc itc {{opt ""} {mask ""}} {
     echo ""
     echo "itc with no arguments will display the current itc settings"
     echo ""
+  } elseif {[expr [word $te_control] & 0x02] != 0} {
+    echo "Error: Cannot set trace mode while trace is enabled"
   } elseif {$opt == "off"} {
     set itc_mode 0
     set itc_mask 0
@@ -470,7 +710,13 @@ proc starttrace {} {
     global te_control
     global te_sinkwp
     global tm_flag
-    global ts_flag
+    global tsenable_flag
+    global tsdebug_flag
+    global tstype_flag
+    global tsprescale_flag
+    global tsbranch_flag
+    global tsitc_flag
+    global tsowner_flag
     global sow_flag
     global itc_mode
     global itc_mask
@@ -485,8 +731,25 @@ proc starttrace {} {
     set ts_control_val 0
     set itc_val 0
 
-    if {($ts_flag != 0)} {
-	    set ts_control_val 0x000f8023
+    if {($tsenable_flag != 0)} {
+      set ts_control_val 0x00008001
+
+      set ts_control_val [expr $ts_control_val | ($tsdebug_flag << 3)]
+
+      set ts_control_val [expr $ts_control_val | ($tstype_flag << 4)]
+
+      if {($tstype_flag == 2)} {
+        set ts_control_val [expr $ts_control_val | 0x00000006]
+      }
+
+      set ts_control_val [expr $ts_control_val | ($tsprescale_flag << 8)]
+
+      set ts_control_val [expr $ts_control_val | ($tsbranch_flag << 16)]
+
+      set ts_control_val [expr $ts_control_val | ($tsitc_flag << 18)]
+
+      set ts_control_val [expr $ts_control_val | ($tsowner_flag << 19)]
+
     }
 
     set te_control_val [expr $te_control_val | ($tm_flag << 4)]
@@ -698,7 +961,13 @@ set tracesize [expr [word $te_sinkrp] + 4]
 echo $tracesize
 
 set tm_flag 3
-set ts_flag 0
+set tsenable_flag 0
+set tsdebug_flag 0
+set tstype_flag 2
+set tsprescale_flag 0
+set tsbranch_flag 3
+set tsitc_flag 1
+set tsowner_flag 1
 set sow_flag 1
 set itc_mode 0
 set itc_mask 0
