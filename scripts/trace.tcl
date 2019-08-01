@@ -955,6 +955,21 @@ proc printonebtm {} {
     if {$tcode == 2}  { echo [format "%4d: Ownership, Process [expr $icntF]" $btmRP] }
 }
 
+proc is_itc_implemented {} {
+    # Caller is responsible for enabling trace before calling this
+    # proc, otherwise behavior is undefined
+    global itc_traceenable
+    # We'll write a non-zero value to itc_traceenable, verify a
+    # non-zero readback, and restore the original value
+    set originalval [word $itc_traceenable]
+    mww $itc_traceenable 0xFFFFFFFF
+    set readback [word $itc_traceenable]
+    set result [expr $readback != 0]
+    mww $itc_traceenable $originalval
+    return $result
+}
+
+
 mww $te_control 0x01830001
 mww $te_sinkrp 0xffffffff
 mww $te_sinkwp 0x00000000
