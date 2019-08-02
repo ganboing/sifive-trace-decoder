@@ -969,6 +969,52 @@ proc is_itc_implemented {} {
     return $result
 }
 
+proc get_num_external_trigger_outputs {} {
+    global xto_control_
+    # We'll write non-zero nybbles to xto_control, count
+    # non-zero nybbles on readback,
+    # restore the original xto_control value.  0x1 seems a good
+    # nybble to write, that bit is always legal if an external
+    # trigger output exists in the nybble slot, regardless of whether other
+    # optional trace features are present
+
+    set originalval [word $xto_control_]
+    mww $xto_control_ 0x11111111
+    set readback [word $xto_control_]
+    mww $xto_control_ $originalval
+    set result 0
+    for {set i 0} {$i < 8} {incr i} {
+	if {($readback & 0xF) == 1} {
+	    incr result
+	}
+	set readback [expr $readback >> 4]
+    }
+    return $result
+}
+
+proc get_num_external_trigger_inputs {} {
+    global xti_control
+    # We'll write non-zero nybbles to xti_control, count
+    # non-zero nybbles on readback,
+    # restore the original xti_control value.  2 seems a good
+    # nybble to write, that bit is always legal if an external
+    # trigger input exists in the nybble slot, regardless of whether other
+    # optional trace features are present
+
+    set originalval [word $xti_control]
+    mww $xti_control 0x22222222
+    set readback [word $xti_control]
+    mww $xti_control $originalval
+    set result 0
+    for {set i 0} {$i < 8} {incr i} {
+	if {($readback & 0xF) == 0x2} {
+	    incr result
+	}
+	set readback [expr $readback >> 4]
+    }
+    return $result
+}
+
 
 mww $te_control 0x01830001
 mww $te_sinkrp 0xffffffff
