@@ -1,7 +1,7 @@
 %.o: ../src/%.cpp
 	@echo 'Building file: $<'
 	@echo 'Invoking: GCC C++ Compiler'
-	g++ -I"../include" $(CFLAGS) -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -o "$@" "$<"
+	$(CROSSPREFIX)g++ -I"../include" $(CFLAGS) -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -o "$@" "$<"
 	@echo 'Finished building: $<'
 	@echo ' '
 
@@ -16,11 +16,19 @@ ifeq ($(OS),Windows_NT)
 else
     UNAME_S := $(shell uname -s)
     ifeq ($(UNAME_S),Linux)
-        CFLAGS += -D LINUX -std=c++11
-        LIBPATH = ../lib/linux
-        LIBS := -lbfd -lopcodes -liberty -lz -ldl
-        LNFLAGS = -static
-        EXECUTABLE := dqr
+        ifeq ($(CROSSPREFIX),x86_64-w64-mingw32-)
+            CFLAGS += -D WINDOWS -std=c++11
+            LIBPATH = ../lib/windows
+            LNFLAGS = -static
+            LIBS := -lbfd -lopcodes -lintl -liberty -lz
+            EXECUTABLE := dqr.exe
+        else
+            CFLAGS += -D LINUX -std=c++11
+            LIBPATH = ../lib/linux
+            LIBS := -lbfd -lopcodes -liberty -lz -ldl
+            LNFLAGS = -static
+            EXECUTABLE := dqr
+        endif
     endif
     ifeq ($(UNAME_S),Darwin)
         CFLAGS += -D OSX -std=c++11

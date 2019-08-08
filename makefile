@@ -4,6 +4,8 @@ SUBDIRS := Debug Release
 
 CONFIG := Debug
 
+CROSSPREFIX :=
+
 $(TOPTARGETS): $(CONFIG)
 
 $(CONFIG):
