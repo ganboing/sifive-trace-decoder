@@ -495,6 +495,7 @@ proc tracemode {{opt ""}} {
 proc itc {{opt ""} {mask ""}} {
   global itc_mode
   global itc_mask
+  global itc_trigmask
   global te_control
   if {$opt == ""} {
     switch $itc_mode {
@@ -516,7 +517,7 @@ proc itc {{opt ""} {mask ""}} {
     }
   } elseif {$opt == "help"} {
     echo "itc: set or display itc settings"
-    echo {Usage: itc [off | ownership | all | all+ownership | mask [ nn ] | help]}
+    echo {Usage: itc [off | ownership | all | all+ownership | mask [ nn ] | trigmask [ nn ] | help]}
     echo "  off:           Disable ITC message generation"
     echo "  ownership:     Enable ITC messages for stiumlus 15 and 31 only. Set the stimulus"
     echo "                 mask to 0x80008000"
@@ -530,29 +531,32 @@ proc itc {{opt ""} {mask ""}} {
     echo "                 it is an octal number; otherwise it will be interpreted as a decimal"
     echo "                 number. Does not effect the ITC mode (off, ownership, all, all+ownership)."
     echo "                 itc mask without nn displays the current value of themask"
+    echo "  trigmask nn:   Set the trigger enable mask to nn, where nn is a 32 bit number. Note"
+    echo "                 nn should be prefixed with 0x if it is a hex number, or just 0 if"
+    echo "                 it is an octal number; otherwise it will be interpreted as a decimal"
+    echo "                 number. Does not effect the ITC mode (off, ownership, all, all+ownership)."
+    echo "                 itc trigmask without nn displays the current value of the trigger enable mask"
     echo "  help:          Display this message"
     echo ""
     echo "itc with no arguments will display the current itc settings"
     echo ""
   } elseif {$opt == "mask" && $mask == "" } {
       return [format "0x%08x" $itc_mask]
+  } elseif {$opt == "trigmask" && $mask == "" } {
+      return [format "0x%08x" $itc_trigmask]
   } elseif {[expr [word $te_control] & 0x02] != 0} {
     echo "Error: Cannot set trace mode while trace is enabled"
   } elseif {$opt == "off"} {
     set itc_mode 0
-    set itc_mask 0
     echo -n ""
   } elseif {$opt == "all"} {
     set itc_mode 1
-    set itc_mask 0xffffffff
     echo -n ""
   } elseif {$opt == "ownership"} {
     set itc_mode 2
-    set itc_mask 0x80008000
     echo -n ""
   } elseif {$opt == "all+ownership"} {
     set itc_mode 3
-    set itc_mask 0xffffffff
     echo -n ""
   } elseif {$opt == "mask"} {
     if {$mask == ""} {
@@ -561,8 +565,15 @@ proc itc {{opt ""} {mask ""}} {
       set itc_mask [expr $mask]
       echo -n ""
     }
+  } elseif {$opt == "trigmask"} {
+    if {$mask == ""} {
+	# This case was covered above!
+    } else {
+      set itc_trigmask [expr $mask]
+      echo -n ""
+    }
   } else {
-    echo {Error: Usage: itc [off | ownership | all | all+ownership | mask [ nn ] | help]}
+    echo {Error: Usage: itc [off | ownership | all | all+ownership | mask [ nn ] | trigmask [ nn ] | help]}
   }
 }
 
@@ -768,6 +779,7 @@ proc trace {{opt ""}} {
 
         mww $ts_control $ts_control_val
         mww $itc_traceenable $itc_mask
+        mww $itc_trigenable $itc_trigmask
         mww $te_control $te_control_val
     } elseif {$opt == "off"} {
         mww $te_control 0x01000003   ;# stop trace
@@ -1033,6 +1045,7 @@ set tsowner_flag 1
 set sow_flag 1
 set itc_mode 0
 set itc_mask 0
+set itc_trigmask 0
 set max_icnt_val 8
 set max_btm_val 3
 
