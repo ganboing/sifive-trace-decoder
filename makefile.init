@@ -16,18 +16,27 @@ ifeq ($(OS),Windows_NT)
 else
     UNAME_S := $(shell uname -s)
     ifeq ($(UNAME_S),Linux)
-        ifeq ($(CROSSPREFIX),x86_64-w64-mingw32-)
-            CFLAGS += -D WINDOWS -std=c++11
-            LIBPATH = ../lib/windows
-            LNFLAGS = -static
-            LIBS := -lbfd -lopcodes -lintl -liberty -lz
-            EXECUTABLE := dqr.exe
-        else
+        REDHAT_REL := $(wildcard /etc/redhat-release)
+        ifneq ($(REDHAT_REL),)
             CFLAGS += -D LINUX -std=c++11
             LIBPATH = ../lib/linux
             LIBS := -lbfd -lopcodes -liberty -lz -ldl
-            LNFLAGS = -static
+            LNFLAGS =
             EXECUTABLE := dqr
+        else
+            ifeq ($(CROSSPREFIX),x86_64-w64-mingw32-)
+                CFLAGS += -D WINDOWS -std=c++11
+                LIBPATH = ../lib/windows
+                LNFLAGS = -static
+                LIBS := -lbfd -lopcodes -lintl -liberty -lz
+                EXECUTABLE := dqr.exe
+            else
+                CFLAGS += -D LINUX -std=c++11
+                LIBPATH = ../lib/linux
+                LIBS := -lbfd -lopcodes -liberty -lz -ldl
+                LNFLAGS = -static
+                EXECUTABLE := dqr
+            endif
         endif
     endif
     ifeq ($(UNAME_S),Darwin)
