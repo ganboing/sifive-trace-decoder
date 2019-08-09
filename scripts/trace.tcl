@@ -719,6 +719,8 @@ proc trace {{opt ""}} {
     global max_btm_val
     global itc_traceenable
     global tracesize
+    global itc_trigenable
+    global itc_trigmask    
 
     if {$opt == ""} {
         set tracectl [word $te_control]
