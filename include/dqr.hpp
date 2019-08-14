@@ -46,9 +46,7 @@ class dqr {
 public:
   typedef uint32_t RV_INST;
 
-  typedef uint64_t ADDRESS64;
-  typedef uint32_t ADDRESS32;
-  typedef ADDRESS64 ADDRESS;
+  typedef uint64_t ADDRESS;
   typedef uint64_t TIMESTAMP;
 
   typedef enum {
@@ -84,15 +82,15 @@ public:
   	TCODE_DATA_WRITE_WS      = 13,
   	TCODE_DATA_READ_WS       = 14,
   	TCODE_WATCHPOINT         = 15,
-  	TCODE_OUTPUT_PORTREPLACEMENT = 20,
-  	TCODE_INPUT_PORTREPLACEMENT = 21,
-  	TCODE_AUXACCESS_READ        = 22,
-  	TCODE_AUXACCESS_WRITE       = 23,
-  	TCODE_AUXACCESS_READNEXT    = 24,
-  	TCODE_AUXACCESS_WRITENEXT   = 25,
-  	TCODE_AUXACCESS_RESPONSE    = 26,
-  	TCODE_RESURCEFULL           = 27,
-  	TCODE_INDIRECTBRANCHHISOTRY = 28,
+  	TCODE_OUTPUT_PORTREPLACEMENT  = 20,
+  	TCODE_INPUT_PORTREPLACEMENT   = 21,
+  	TCODE_AUXACCESS_READ          = 22,
+  	TCODE_AUXACCESS_WRITE         = 23,
+  	TCODE_AUXACCESS_READNEXT      = 24,
+  	TCODE_AUXACCESS_WRITENEXT     = 25,
+  	TCODE_AUXACCESS_RESPONSE      = 26,
+  	TCODE_RESURCEFULL             = 27,
+  	TCODE_INDIRECTBRANCHHISOTRY   = 28,
   	TCODE_INDIRECTBRANCHHISORY_WS = 29,
   	TCODE_REPEATBRANCH            = 30,
   	TCODE_REPEATINSTRUCITON       = 31,
@@ -130,6 +128,11 @@ public:
 
   	BTYPE_UNDEFINED
   } BType;
+
+  typedef enum {
+	  ADDRDISP_WIDTHAUTO = 1,
+	  ADDRDISP_SEP  = 2,
+  } AddrDisp;
 };
 
 // class section: work with elf file sections using libbfd
@@ -137,15 +140,16 @@ public:
 class section {
 public:
 	section();
-	section  *initSection(section **head,asection *newsp);
-	section  *getSectionByAddress(dqr::ADDRESS addr);
-	section  *next;
-	bfd      *abfd;
-	dqr::ADDRESS   startAddr;
-	dqr::ADDRESS   endAddr;
-	int       size;
-	asection *asecptr;
-	uint16_t *code;
+	section *initSection(section **head,asection *newsp);
+	section *getSectionByAddress(dqr::ADDRESS addr);
+
+	section     *next;
+	bfd         *abfd;
+	dqr::ADDRESS startAddr;
+	dqr::ADDRESS endAddr;
+	int          size;
+	asection    *asecptr;
+	uint16_t    *code;
 };
 
 // class Instruction: work with an instruction
@@ -156,26 +160,29 @@ public:
 	void opcodeToText();
 	void instructionToText(char *dst,int labelLevel);
 
-	dqr::ADDRESS address;
-	dqr::RV_INST instruction;
-	char instructionText[64];
-	int instSize;
-	const char *addressLabel;
-	int addressLabelOffset;
-	bool haveOperandAddress;
-	dqr::ADDRESS operandAddress;
-	const char *operandLabel;
-	int operandLabelOffset;
+	dqr::ADDRESS      address;
+	dqr::RV_INST      instruction;
+	char              instructionText[64];
+	int               instSize;
+	static int        addrSize;
+	static uint32_t   addrDispFlags;
+	static int        addrPrintWidth;
+	const char       *addressLabel;
+	int               addressLabelOffset;
+	bool              haveOperandAddress;
+	dqr::ADDRESS      operandAddress;
+	const char       *operandLabel;
+	int               operandLabelOffset;
 };
 
 // class Source: Helper class for source code information for an address
 
 class Source {
 public:
-	const char *sourceFile;
-	const char *sourceFunction;
+	const char  *sourceFile;
+	const char  *sourceFunction;
 	unsigned int sourceLineNum;
-	const char *sourceLine;
+	const char  *sourceLine;
 };
 
 // class fileReader: Helper class to handler list of source code files
@@ -184,9 +191,9 @@ class fileReader {
 public:
 	struct fileList {
 		fileList *next;
-		char *name;
-		int lineCount;
-		char **lines;
+		char     *name;
+		int       lineCount;
+		char    **lines;
 	};
 
 	fileReader(/*paths?*/);
@@ -203,40 +210,45 @@ private:
 
 class Symtab {
 public:
-	            Symtab(bfd *abfd);
-	           ~Symtab();
-	const char *getSymbolByAddress(dqr::ADDRESS addr);
-	const char *getNextSymbolByAddress();
-	dqr::ADDRESS     getSymbolByName();
-	asymbol   **getSymbolTable() { return symbol_table; }
-	void        dump();
+	             Symtab(bfd *abfd);
+	            ~Symtab();
+	const char  *getSymbolByAddress(dqr::ADDRESS addr);
+	const char  *getNextSymbolByAddress();
+	dqr::ADDRESS getSymbolByName();
+	asymbol    **getSymbolTable() { return symbol_table; }
+	void         dump();
 
 private:
-	bfd *abfd;
-	long number_of_symbols;
+	bfd      *abfd;
+	long      number_of_symbols;
     asymbol **symbol_table;
 
-    bfd_vma vma;
-    int index;
+    dqr::ADDRESS vma;
+    int          index;
 };
 
 // Class ElfReader: Interface class between dqr and bfd
 
 class ElfReader {
 public:
-        	 ElfReader(char *elfname);
-	        ~ElfReader();
-	dqr::DQErr    getStatus() { return status; }
-	dqr::DQErr    getInstructionByAddress(dqr::ADDRESS addr, dqr::RV_INST &inst);
-	Symtab  *getSymtab();
-	bfd     *get_bfd() {return abfd;}
+        	   ElfReader(char *elfname);
+	          ~ElfReader();
+	dqr::DQErr getStatus() { return status; }
+	dqr::DQErr getInstructionByAddress(dqr::ADDRESS addr, dqr::RV_INST &inst);
+	Symtab    *getSymtab();
+	bfd       *get_bfd() {return abfd;}
+	int        getArchSize() { return archSize; }
+	int        getBitsPerAddress() { return bitsPerAddress; }
 
 private:
-	static bool  init;
-	dqr::DQErr        status;
-	bfd         *abfd;
-	section	    *codeSectionLst;
-	Symtab      *symtab;
+	static bool init;
+	dqr::DQErr  status;
+	bfd        *abfd;
+	int         archSize;
+	int	        bitsPerWord;
+	int         bitsPerAddress;
+	section	   *codeSectionLst;
+	Symtab     *symtab;
 };
 
 // class NexusMessage: class to hold Nexus messages and convert them to text
@@ -247,43 +259,43 @@ public:
 	void messageToText(char *dst,char **pdst,int level);
 	void dump();
 
-	int        		msgNum;
-	dqr::TCode      tcode;
-    bool       		haveTimestamp;
-    uint64_t   		timestamp;
-    dqr::ADDRESS    currentAddress;
-    uint64_t   		time;
+	int        	   msgNum;
+	dqr::TCode     tcode;
+    bool       	   haveTimestamp;
+    dqr::TIMESTAMP timestamp;
+    dqr::ADDRESS   currentAddress;
+    dqr::TIMESTAMP time;
 
     union {
     	struct {
     		int i_cnt;
     	} directBranch;
     	struct {
-    		int      i_cnt;
-    		uint64_t u_addr;
-    		dqr::BType    b_type;
+    		int          i_cnt;
+    		dqr::ADDRESS u_addr;
+    		dqr::BType   b_type;
     	} indirectBranch;
     	struct {
-    		int        i_cnt;
-    		uint64_t   f_addr;
+    		int             i_cnt;
+    		dqr::ADDRESS    f_addr;
     		dqr::SyncReason sync;
     	} directBranchWS;
     	struct {
-    		int        i_cnt;
-    		uint64_t   f_addr;
+    		int             i_cnt;
+    		dqr::ADDRESS    f_addr;
     		dqr::BType      b_type;
     		dqr::SyncReason sync;
     	} indirectBranchWS;
     	struct {
-    		int i_cnt;
-    		uint64_t f_addr;
+    		int             i_cnt;
+    		dqr::ADDRESS    f_addr;
     		dqr::SyncReason sync;
     	} sync;
     	struct {
     		uint8_t etype;
     	} error;
     	struct {
-    		int i_cnt;
+    		int     i_cnt;
     		uint8_t cdf;
     		uint8_t evcode;
     	} correlation;
@@ -303,26 +315,27 @@ private:
 // class SliceFileParser: Class to parse binary or ascii nexus messages into a NexusMessage object
 class SliceFileParser {
 public:
-        SliceFileParser(char *filename, bool binary);
+             SliceFileParser(char *filename, bool binary);
   dqr::DQErr nextTraceMsg(NexusMessage &nm);
   dqr::DQErr getErr() { return status; };
-  void  dump();
+  void       dump();
 
 private:
-  dqr::DQErr    status;
-  int      numTraceMsgs;
-  int      numSyncMsgs;
+  dqr::DQErr status;
+  int        numTraceMsgs;
+  int        numSyncMsgs;
+
   // add other counts for each message type
 
-  bool     binary;
+  bool          binary;
   std::ifstream tf;
-  int      bitIndex;
-  int      msgSlices;
-  uint8_t  msg[64];
-  bool     eom = false;
+  int           bitIndex;
+  int           msgSlices;
+  uint8_t       msg[64];
+  bool          eom = false;
 
-  uint64_t	currentAddress;
-  uint64_t  currentTime;
+  dqr::ADDRESS	 currentAddress;
+  dqr::TIMESTAMP currentTime;
 
   dqr::DQErr readBinaryMsg();
   dqr::DQErr readNextByte(uint8_t *byte);
@@ -370,42 +383,42 @@ public:
 	int   decodeInstructionSize(uint32_t inst, int &inst_size);
 	int   decodeInstruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch);
 
-	void  overridePrintAddress(bfd_vma addr, struct disassemble_info *info); // hmm.. don't need into - part of object!
+	void  overridePrintAddress(bfd_vma addr, struct disassemble_info *info); // hmm.. don't need info - part of object!
 
 	Instruction getInstructionInfo() { return instruction; }
-	Source getSourceInfo() { return source; }
+	Source      getSourceInfo() { return source; }
 
 	dqr::DQErr getStatus() {return status;}
 
 private:
 	typedef struct {
 		flagword sym_flags;
-		bfd_vma func_vma;
-		int func_size;
+		bfd_vma  func_vma;
+		int      func_size;
 	} func_info_t;
 
-	bfd *abfd;
+	bfd               *abfd;
 	disassembler_ftype disassemble_func;
-	dqr::DQErr status;
+	dqr::DQErr         status;
 
-	bfd_vma start_address;
-	long number_of_syms;
-	asymbol **symbol_table;
-	asymbol **sorted_syms;
-	func_info_t *func_info;
+	bfd_vma           start_address;
+	long              number_of_syms;
+	asymbol         **symbol_table;
+	asymbol         **sorted_syms;
+	func_info_t      *func_info;
 	disassemble_info *info;
-	section	    *codeSectionLst;
-	int prev_index;
-	int cached_sym_index;
-	bfd_vma cached_sym_vma;
-	int cached_sym_size;
+	section	         *codeSectionLst;
+	int               prev_index;
+	int               cached_sym_index;
+	bfd_vma           cached_sym_vma;
+	int               cached_sym_size;
 
 	Instruction instruction;
-	Source source;
+	Source      source;
 
 	class fileReader *fileReader;
 
-	const char *lastFileName;
+	const char  *lastFileName;
 	unsigned int lastLineNumber;
 
 	void print_address(bfd_vma vma);
@@ -424,9 +437,9 @@ private:
 
 struct NexusMessageSync {
 	NexusMessageSync();
-	int firstMsgNum;
-	int lastMsgNum;
-	int index;
+	int          firstMsgNum;
+	int          lastMsgNum;
+	int          index;
 	NexusMessage msgs[512];
 };
 
@@ -436,10 +449,10 @@ class Trace {
 public:
 	enum SymFlags {
 		SYMFLAGS_NONE = 0,
-		SYMFLAGS_xx = 1 << 0,
+		SYMFLAGS_xx   = 1 << 0,
 	};
-	Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags);
-	~Trace();
+	           Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags);
+	          ~Trace();
 	dqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
 
 	enum traceFlags {
@@ -454,7 +467,9 @@ public:
 
 	const char *getSymbolByAddress(dqr::ADDRESS addr) { return symtab->getSymbolByAddress(addr); }
 	const char *getNextSymbolByAddress() { return symtab->getNextSymbolByAddress(); }
-	int Disassemble(dqr::ADDRESS addr);
+	int         Disassemble(dqr::ADDRESS addr);
+	int         getArchSize();
+	int         getAddressSize();
 
 private:
 	enum state {
@@ -469,15 +484,15 @@ private:
 		TRACE_STATE_ERROR
 	};
 
-	dqr::DQErr            status;
+	dqr::DQErr       status;
 	SliceFileParser *sfp;
 	ElfReader       *elfReader;
 	Symtab          *symtab;
 	Disassembler    *disassembler;
 	SymFlags		 symflags;
-	dqr::ADDRESS          currentAddress;
-	dqr::ADDRESS			 lastFaddr;
-	uint64_t	     lastTime;
+	dqr::ADDRESS     currentAddress;
+	dqr::ADDRESS	 lastFaddr;
+	dqr::TIMESTAMP   lastTime;
 	enum state       state;
 
 	int              startMessageNum;
@@ -493,7 +508,7 @@ private:
 
 	//	or maybe have this stuff in the nexus messages??
 
-	int              i_cnt;
+	int i_cnt;
 
 	uint32_t               inst = -1;
 	int                    inst_size = -1;
@@ -506,7 +521,7 @@ private:
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,Disassembler::instType &inst_type,int32_t &immeadiate,bool &is_branch);
 
-	uint64_t computeAddress();
+	dqr::ADDRESS computeAddress();
 };
 
 #endif /* DQR_HPP_ */

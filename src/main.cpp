@@ -60,6 +60,24 @@ static void usage(char *name)
 	printf("-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatinated\n");
 	printf("              and displayed as a string until a terminating \\0 is found\n");
 	printf("-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair\n");
+	printf("-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and\n");
+	printf("              cause the address field to be jagged. Overrides value address size read from elf file.\n");
+	printf("-addrsize=n+: Display address as n bits (32 <= n <= 64) unless a larger address size is seen, in which case the address\n");
+	printf("              size is increased to accommodate the larger value. When the address size is increased, it stays increased\n");
+	printf("              (sticky) and will be again increased if a new larger value is encountered. Overrides the address size\n");
+	printf("              read from the elf file.\n");
+	printf("-32:          Display addresses as 32 bits. Values lager than 32 bits will print, but take more space and cause\n");
+    printf("              the address field to be jagged. Selected by default if elf file indicates 32 bit address size.\n");
+	printf("              Specifying -32 overrides address size read from elf file\n");
+	printf("-32+          Display addresses as 32 bits until larger addresses are displayed and then adjust up to a larger\n");
+	printf("              enough size to display the entire address. When addresses are adjusted up, they do not later adjust\n");
+	printf("              back down, but stay at the new size unless they need to adjust up again. This is the default setting\n");
+	printf("              if the elf file specifies > 32 bit address size (such as 64). Specifying -32+ overrides the value\n");
+	printf("              read from the elf file\n");
+	printf("-64:          Display addresses as 64 bits. Overrides value read from elf file\n");
+	printf("-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'");
+	printf("-noaddrsep:   Do not add a separatfor For addresses greater than 32 bit between the upper bits and the lower 32 bits\n");
+	printf("              (default)\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -126,6 +144,8 @@ int main(int argc, char *argv[])
 	bool func_flag = false;
 	char *strip_flag = nullptr;
 	bool itcprint_flag = false;
+	int  numAddrBits = 0;
+	uint32_t addrDispFlags = 0;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -252,6 +272,50 @@ int main(int argc, char *argv[])
 		else if (strcmp("-noitcprint",argv[i]) == 0) {
 			itcprint_flag = false;
 		}
+		else if (strcmp("-32",argv[i]) == 0) {
+			numAddrBits = 32;
+			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_WIDTHAUTO;
+		}
+		else if (strcmp("-64",argv[i]) == 0) {
+			numAddrBits = 64;
+			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_WIDTHAUTO;
+		}
+		else if (strcmp("-32+",argv[i]) == 0) {
+			numAddrBits = 32;
+			addrDispFlags = addrDispFlags | dqr::ADDRDISP_WIDTHAUTO;
+		}
+		else if (strncmp("-addrsize=",argv[i],strlen("-addrsize=")) == 0) {
+			int l;
+			char *endptr;
+
+			l = strtol(&argv[i][strlen("-addrsize=")], &endptr, 10);
+
+			if (endptr[0] == 0 ) {
+				numAddrBits = l;
+				addrDispFlags = addrDispFlags  & ~dqr::ADDRDISP_WIDTHAUTO;
+			}
+			else if (endptr[0] == '+') {
+				numAddrBits = l;
+				addrDispFlags = addrDispFlags | dqr::ADDRDISP_WIDTHAUTO;
+			}
+			else {
+				printf("Error: option -addressize= requires a valid number <= 32, >= 64\n");
+				usage(argv[0]);
+				return 1;
+			}
+
+			if ((l < 32) || (l > 64)) {
+				printf("Error: option -addressize= requires a valid number <= 32, >= 64\n");
+				usage(argv[0]);
+				return 1;
+			}
+		}
+		else if (strcmp("-addrsep", argv[i]) == 0) {
+			addrDispFlags = addrDispFlags | dqr::ADDRDISP_SEP;
+		}
+		else if (strcmp("-noaddrsep", argv[i]) == 0) {
+			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_SEP;
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -294,7 +358,7 @@ int main(int argc, char *argv[])
 
 	// might want to include some path info!
 
-	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags);
+	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags,numAddrBits,addrDispFlags);
 
 	assert(trace != nullptr);
 

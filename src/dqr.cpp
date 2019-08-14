@@ -79,7 +79,7 @@ static int asymbol_compare_func(const void *arg1,const void *arg2)
 	first = *(asymbol **)arg1;
 	second = *(asymbol **)arg2;
 
-	// note: use bfd_asymbol_value() because first and second symnbols may not be in same section
+	// note: use bfd_asymbol_value() because first and second symbols may not be in same section
 
 	return bfd_asymbol_value((asymbol*)first) - bfd_asymbol_value((asymbol*)second);
 }
@@ -262,7 +262,7 @@ section *section::getSectionByAddress(dqr::ADDRESS addr)
 	section *sp = this;
 
 	while (sp != nullptr) {
-		if (addr >= sp->startAddr && addr <= sp->endAddr) {
+		if ((addr >= sp->startAddr) && (addr <= sp->endAddr)) {
 			return sp;
 		}
 
@@ -272,27 +272,38 @@ section *section::getSectionByAddress(dqr::ADDRESS addr)
 	return nullptr;
 }
 
+int      Instruction::addrSize;
+uint32_t Instruction::addrDispFlags;
+int      Instruction::addrPrintWidth;
+
 void Instruction::addressToText(char *dst,int labelLevel)
 {
 	assert(dst != nullptr);
 
 	dst[0] = 0;
 
-	if (labelLevel == 1) {
-		if (addressLabel != nullptr) {
-			if (addressLabelOffset != 0) {
-				sprintf(dst,"%08x <%s+%x>",address,addressLabel,addressLabelOffset);
-			}
-			else {
-				sprintf(dst,"%08x <%s>",address,addressLabel);
-			}
-		}
-		else {
-			sprintf(dst,"%08x",address);
+	if (addrDispFlags & dqr::ADDRDISP_WIDTHAUTO) {
+		while (address > (0xffffffffffffffffllu >> (64 - addrPrintWidth*4))) {
+			addrPrintWidth += 1;
 		}
 	}
-	else if (labelLevel == 0) {
-		sprintf(dst,"%08x",address);
+
+    int n;
+
+	if ((addrPrintWidth > 8) && (addrDispFlags & dqr::ADDRDISP_SEP)) {
+		n = sprintf(dst,"%0*x.%08x",addrPrintWidth-8,(uint32_t)(address >> 32),(uint32_t)address);
+	}
+	else {
+		n = sprintf(dst,"%0*llx",addrPrintWidth,address);
+	}
+
+    if ((labelLevel >= 1) && (addressLabel != nullptr)) {
+    	if (addressLabelOffset != 0) {
+		    sprintf(dst+n," <%s+%x>",addressLabel,addressLabelOffset);
+		}
+		else {
+		    sprintf(dst+n," <%s>",addressLabel);
+		}
 	}
 }
 
@@ -312,7 +323,7 @@ void Instruction::instructionToText(char *dst,int labelLevel)
 	}
 
 	if (haveOperandAddress) {
-		n += sprintf(dst+n,"%x",operandAddress);
+		n += sprintf(dst+n,"%llx",operandAddress);
 
 		if (labelLevel >= 1) {
 			if (operandLabel != nullptr) {
@@ -625,6 +636,45 @@ ElfReader::ElfReader(char *elfname)
 	return;
   }
 
+  const bfd_arch_info_type *aitp;
+
+  aitp = bfd_get_arch_info(abfd);
+  if (aitp == nullptr) {
+	  printf("Error: ElfReader(): Cannot get arch in for file %s\n",elfname);
+
+	  status = dqr::dqr::DQERR_ERR;
+	  return;
+  }
+
+// lines below are commented out because the bfd is reaturning the wrong arch for
+// riscv arch (returning 67 and not 74)
+//
+//  printf("arch: %d, bfd_arch_riscv: %d, mach: %d\n",aitp->arch,bfd_arch_riscv,aitp->mach);
+//
+//  if (aitp->arch != bfd_arch_riscv) {
+//    printf("Error: ElfReader(): elf file is not for risc-v architecture\n");
+//
+//	  status = dqr::dqr::DQERR_ERR;
+//	  return;
+//  }
+
+  switch (aitp->mach) {
+  case bfd_mach_riscv32:
+	  archSize = 32;
+	  bitsPerWord = aitp->bits_per_word;
+	  bitsPerAddress = aitp->bits_per_address;
+	  break;
+  case bfd_mach_riscv64:
+	  archSize = 64;
+	  bitsPerWord = aitp->bits_per_word;
+	  bitsPerAddress = aitp->bits_per_address;
+	  break;
+  default:
+	  printf("Error: ElfReader(): elf file is for unknown machine type\n");
+
+	  status = dqr::dqr::DQERR_ERR;
+	  return;
+  }
   symtab = nullptr;
   codeSectionLst = nullptr;
 
@@ -757,10 +807,10 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 	}
 
 	if (haveTimestamp) {
-		n = sprintf(dst,"Msg # %d, Tics: %d, NxtAddr: %08x, TCode: ",msgNum,time,currentAddress);
+		n = sprintf(dst,"Msg # %d, Tics: %lld, NxtAddr: %08llx, TCode: ",msgNum,time,currentAddress);
 	}
 	else {
-		n = sprintf(dst,"Msg # %d, NxtAddr: %08x, TCode: ",msgNum,currentAddress);
+		n = sprintf(dst,"Msg # %d, NxtAddr: %08llx, TCode: ",msgNum,currentAddress);
 	}
 
 	switch (tcode) {
@@ -772,6 +822,7 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 		break;
 	case dqr::TCODE_OWNERSHIP_TRACE:
 		n += sprintf(dst+n,"OWNERSHIP TRACE (%d)",tcode);
+
 		if (level >= 2) {
 			sprintf(dst+n," process: %d",ownership.process);
 		}
@@ -804,7 +855,7 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 				break;
 			}
 
-			sprintf(dst+n," Branch Type: %s (%d) I-CNT: %d U-ADDR: 0x%08x ",bt,indirectBranch.b_type,indirectBranch.i_cnt,indirectBranch.u_addr);
+			sprintf(dst+n," Branch Type: %s (%d) I-CNT: %d U-ADDR: 0x%08llx ",bt,indirectBranch.b_type,indirectBranch.i_cnt,indirectBranch.u_addr);
 		}
 		break;
 	case dqr::TCODE_DATA_WRITE:
@@ -865,7 +916,7 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 				break;
 			}
 
-			sprintf(dst+n," Reason: (%d) %s I-CNT: %d F-Addr: 0x%08x",sync.sync,sr,sync.i_cnt,sync.f_addr);
+			sprintf(dst+n," Reason: (%d) %s I-CNT: %d F-Addr: 0x%08llx",sync.sync,sr,sync.i_cnt,sync.f_addr);
 		}
 		break;
 	case dqr::TCODE_CORRECTION:
@@ -914,7 +965,7 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 				break;
 			}
 
-			sprintf(dst+n," Reason: (%d) %s I-CNT: %d F-Addr: 0x%08x",directBranchWS.sync,sr,directBranchWS.i_cnt,directBranchWS.f_addr);
+			sprintf(dst+n," Reason: (%d) %s I-CNT: %d F-Addr: 0x%08llx",directBranchWS.sync,sr,directBranchWS.i_cnt,directBranchWS.f_addr);
 		}
 		break;
 	case dqr::TCODE_INDIRECT_BRANCH_WS:
@@ -978,7 +1029,7 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 				break;
 			}
 
-			sprintf(dst+n," Reason: (%d) %s Branch Type %s (%d) I-CNT: %d F-Addr: 0x%08x",indirectBranchWS.sync,sr,bt,indirectBranchWS.b_type,indirectBranchWS.i_cnt,indirectBranchWS.f_addr);
+			sprintf(dst+n," Reason: (%d) %s Branch Type %s (%d) I-CNT: %d F-Addr: 0x%08llx",indirectBranchWS.sync,sr,bt,indirectBranchWS.b_type,indirectBranchWS.i_cnt,indirectBranchWS.f_addr);
 		}
 		break;
 	case dqr::TCODE_DATA_WRITE_WS:
@@ -1002,11 +1053,32 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 	case dqr::TCODE_AUXACCESS_WRITE:
 		n += sprintf(dst+n,"AUX ACCESS WRITE (%d)",tcode);
 
-		if (level >= 2) {
-			sprintf(dst+n," Addr: 0x%08x Data: %08x",auxAccessWrite.addr,auxAccessWrite.data);
+		if (level >= 2) { // here, if addr not on word boudry, have a partial write!
+			uint32_t val;
+
+			switch (auxAccessWrite.addr & 0x03) {
+			case 0:
+//				printf("ITC: full write\n");
+				val = auxAccessWrite.data;
+				break;
+			case 1:
+//				printf("ITC: 3 byte write\n");
+				val = auxAccessWrite.data >> 1;
+				break;
+			case 2:
+//				printf("ITC: 2 byte write\n");
+				val = auxAccessWrite.data >> 2;
+				break;
+			case 3:
+//				printf("ITC: 1 byte write\n");
+				val = auxAccessWrite.data >> 3;
+				break;
+			}
+
+			sprintf(dst+n," Addr: 0x%08x Data: %08x",auxAccessWrite.addr,val);
 		}
 
-		if (auxAccessWrite.addr == 0) {
+		if (auxAccessWrite.addr < 4) {
 			char *p = (char *)&auxAccessWrite.data;
 			bool done = false;
 			static bool eol = true;
@@ -1016,7 +1088,7 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 
 			// fill in buffer until eol is found (\n or \0)
 
-			for (int i = 0; !done && ((size_t)i < sizeof auxAccessWrite.data); i++) {
+			for (int i = auxAccessWrite.addr & 0x03; !done && ((size_t)i < sizeof auxAccessWrite.data); i++) {
 				if (p[i] != 0) {
 					if (eol) {
 						strcpy(pbuff+pbi,"ITC Print: ");
@@ -1215,7 +1287,7 @@ dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm)
 {
 	dqr::DQErr    rc;
 	uint64_t i_cnt;
-	uint64_t timestamp;
+	dqr::TIMESTAMP timestamp;
 	bool     haveTimestamp;
 
 	// parse the variable length the i-cnt
@@ -1267,8 +1339,8 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm)
 	dqr::DQErr    rc;
 	uint64_t i_cnt;
 	uint64_t sync;
-	uint64_t f_addr;
-	uint64_t timestamp;
+	dqr::ADDRESS f_addr;
+	dqr::TIMESTAMP timestamp;
 	bool     haveTimestamp;
 
 	// parse the fixed length sync reason field
@@ -1323,8 +1395,8 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm)
 	nm.directBranchWS.sync   = (dqr::SyncReason)sync;
 	nm.directBranchWS.i_cnt  = i_cnt;
 	nm.directBranchWS.f_addr = f_addr;
-	nm.haveTimestamp = haveTimestamp;
-	nm.timestamp     = timestamp;
+	nm.haveTimestamp         = haveTimestamp;
+	nm.timestamp             = timestamp;
 
 	numTraceMsgs += 1;
 	numSyncMsgs  += 1;
@@ -1339,8 +1411,8 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm)
 	dqr::DQErr    rc;
 	uint64_t b_type;
 	uint64_t i_cnt;
-	uint64_t u_addr;
-	uint64_t timestamp;
+	dqr::ADDRESS u_addr;
+	dqr::TIMESTAMP timestamp;
 	bool     haveTimestamp;
 
 	// parse the fixed lenght b-type
@@ -1410,8 +1482,8 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm)
 	uint64_t sync;
 	uint64_t b_type;
 	uint64_t i_cnt;
-	uint64_t f_addr;
-	uint64_t timestamp;
+	dqr::ADDRESS f_addr;
+	dqr::TIMESTAMP timestamp;
 	bool     haveTimestamp;
 
 	// parse the fixed length sync field
@@ -1476,8 +1548,8 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm)
 	nm.indirectBranchWS.b_type = (dqr::BType)b_type;
 	nm.indirectBranchWS.i_cnt  = (int)i_cnt;
 	nm.indirectBranchWS.f_addr = f_addr;
-	nm.haveTimestamp = haveTimestamp;
-	nm.timestamp = timestamp;
+	nm.haveTimestamp           = haveTimestamp;
+	nm.timestamp               = timestamp;
 
 	numTraceMsgs += 1;
 	numSyncMsgs  += 1;
@@ -1491,9 +1563,9 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm)
 {
 	dqr::DQErr    rc;
 	uint64_t i_cnt;
-	uint64_t timestamp;
+	dqr::TIMESTAMP timestamp;
 	uint64_t sync;
-	uint64_t f_addr;
+	dqr::ADDRESS f_addr;
 	bool     haveTimestamp;
 
 	// parse the variable length the i-cnt

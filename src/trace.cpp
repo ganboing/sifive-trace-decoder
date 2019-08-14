@@ -45,7 +45,7 @@ int Trace::decodeInstruction(uint32_t instruction,int &inst_size,Disassembler::i
 	return disassembler->decodeInstruction(instruction,inst_size,inst_type,immeadiate,is_branch);
 }
 
-Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags)
+Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags)
 {
   sfp          = nullptr;
   elfReader    = nullptr;
@@ -152,6 +152,18 @@ Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags)
   instructionInfo.address = 0;
   instructionInfo.instruction = 0;
   instructionInfo.instSize = 0;
+
+  if (numAddrBits != 0 ) {
+	  instructionInfo.addrSize = numAddrBits;
+  }
+  else {
+	  instructionInfo.addrSize = elfReader->getBitsPerAddress();
+  }
+
+  instructionInfo.addrDispFlags = addrDispFlags;
+
+  instructionInfo.addrPrintWidth = (instructionInfo.addrSize + 3) / 4;
+
   instructionInfo.addressLabel = nullptr;
   instructionInfo.addressLabelOffset = 0;
   instructionInfo.haveOperandAddress = false;
@@ -180,6 +192,24 @@ Trace::~Trace()
 	}
 }
 
+int Trace::getArchSize()
+{
+	if (elfReader == nullptr) {
+		return 0;
+	}
+
+	return elfReader->getArchSize();
+}
+
+int Trace::getAddressSize()
+{
+	if (elfReader == nullptr) {
+		return 0;
+	}
+
+	return elfReader->getBitsPerAddress();
+}
+
 dqr::DQErr Trace::setTraceRange(int start_msg_num,int stop_msg_num)
 {
 	if (start_msg_num < 0) {
@@ -205,7 +235,7 @@ dqr::DQErr Trace::setTraceRange(int start_msg_num,int stop_msg_num)
 	return dqr::DQERR_OK;
 }
 
-uint64_t Trace::computeAddress()
+dqr::ADDRESS Trace::computeAddress()
 {
 	switch (nm.tcode) {
 	case dqr::TCODE_DEBUG_STATUS:
@@ -271,6 +301,10 @@ int Trace::Disassemble(dqr::ADDRESS addr)
 	  status = s;
 	  return 0;
 	}
+
+	// the two lines below copy each structure completely. This is probably
+	// pretty inefficient, and just returning pointers and using pointers
+	// would likely be better
 
 	instructionInfo = disassembler->getInstructionInfo();
 	sourceInfo = disassembler->getSourceInfo();
