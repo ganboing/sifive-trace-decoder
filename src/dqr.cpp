@@ -1054,65 +1054,64 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 		n += sprintf(dst+n,"AUX ACCESS WRITE (%d)",tcode);
 
 		if (level >= 2) { // here, if addr not on word boudry, have a partial write!
-			uint32_t val;
-
 			switch (auxAccessWrite.addr & 0x03) {
 			case 0:
-//				printf("ITC: full write\n");
-				val = auxAccessWrite.data;
-				break;
 			case 1:
-//				printf("ITC: 3 byte write\n");
-				val = auxAccessWrite.data >> 1;
+				sprintf(dst+n," Addr: 0x%08x Data: 0x%08x",auxAccessWrite.addr,auxAccessWrite.data);
 				break;
 			case 2:
-//				printf("ITC: 2 byte write\n");
-				val = auxAccessWrite.data >> 2;
+				sprintf(dst+n," Addr: 0x%08x Data: 0x%04x",auxAccessWrite.addr,(uint16_t)auxAccessWrite.data);
 				break;
 			case 3:
-//				printf("ITC: 1 byte write\n");
-				val = auxAccessWrite.data >> 3;
+				sprintf(dst+n," Addr: 0x%08x Data: 0x%02x",auxAccessWrite.addr,(uint8_t)auxAccessWrite.data);
 				break;
 			}
-
-			sprintf(dst+n," Addr: 0x%08x Data: %08x",auxAccessWrite.addr,val);
 		}
 
-		if (auxAccessWrite.addr < 4) {
+		if (auxAccessWrite.addr < 4) {	// itc 0 only
 			char *p = (char *)&auxAccessWrite.data;
-			bool done = false;
+			bool flush = false;
 			static bool eol = true;
-			static char pbuff[512];
+			static char pbuff[1024];
 			static int pbi = 0;
 
 
-			// fill in buffer until eol is found (\n or \0)
+			// fill in buffer until eol is found (\n, \r, or \0). Need to dump buffer if
+			// it gets full
 
-			for (int i = auxAccessWrite.addr & 0x03; !done && ((size_t)i < sizeof auxAccessWrite.data); i++) {
-				if (p[i] != 0) {
-					if (eol) {
-						strcpy(pbuff+pbi,"ITC Print: ");
-						pbi += (sizeof "ITC Print: ") - 1;
-					}
-
-					eol = false;
+			for (int i = 0; ((size_t)i < ((sizeof auxAccessWrite.data) - (auxAccessWrite.addr & 0x03))); i++ ) {
+				if (eol == true) {
+					strcpy(pbuff+pbi,"ITC Print: ");
+					pbi += (sizeof "ITC Print: ") - 1;
 				}
 
 				pbuff[pbi++] = p[i];
 
-				if (p[i] == '\n') {
+				switch (p[i]) {
+				case 0:
+				case '\n':
+				case '\r':
 					eol = true;
+					flush = true;
+					break;
+				default:
+					eol = false;
 				}
-				else if (p[i] == 0) {
-					done = true;
-					if (pbi > 0) {
-						pbi = 0;
-						eol = true;
+			}
 
-						if (pdst != nullptr) {
-							*pdst = pbuff;
-						}
-					}
+			if ((size_t)pbi > (sizeof pbuff) - 20) {
+				// flush if buffer is almost full
+				flush = true;
+			} else if (auxAccessWrite.addr == 0x00000003) {
+				// all one byte writes flush
+				flush = true;
+			}
+
+			if (flush) {
+				pbuff[pbi] = 0;
+				pbi = 0;
+				if (pdst != nullptr) {
+					*pdst = pbuff;
 				}
 			}
 		}
