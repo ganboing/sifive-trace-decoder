@@ -1029,6 +1029,17 @@ proc get_num_external_trigger_inputs {} {
     return $result
 }
 
+# Surprisingly, Jim Tcl lacks a primitive that returns the value of a
+# register.  It only exposes a "cooked" line of output suitable for
+# display.  But we can use that to extract the actual register value
+# and return it
+proc regval {name} {
+	set displayval [ocd_reg $name]
+	set splitval [split $displayval ':']
+	set val [lindex $splitval 1]
+	return [string trim $val]
+}
+
 
 mww $te_control 0x01830001
 mww $te_sinkrp 0xffffffff
