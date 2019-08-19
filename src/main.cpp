@@ -146,6 +146,7 @@ int main(int argc, char *argv[])
 	bool itcprint_flag = false;
 	int  numAddrBits = 0;
 	uint32_t addrDispFlags = 0;
+	bool multicore_flag = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -316,6 +317,12 @@ int main(int argc, char *argv[])
 		else if (strcmp("-noaddrsep", argv[i]) == 0) {
 			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_SEP;
 		}
+		else if (strcmp("-multicore", argv[i]) == 0) {
+			multicore_flag = true;
+		}
+		else if (strcmp("-nomulticore", argv[i]) == 0) {
+			multicore_flag = false;
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -358,7 +365,7 @@ int main(int argc, char *argv[])
 
 	// might want to include some path info!
 
-	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags,numAddrBits,addrDispFlags);
+	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags,numAddrBits,addrDispFlags, multicore_flag);
 
 	assert(trace != nullptr);
 

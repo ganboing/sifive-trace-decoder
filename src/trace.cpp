@@ -45,7 +45,7 @@ int Trace::decodeInstruction(uint32_t instruction,int &inst_size,Disassembler::i
 	return disassembler->decodeInstruction(instruction,inst_size,inst_type,immeadiate,is_branch);
 }
 
-Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags)
+Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags, bool ismulticore)
 {
   sfp          = nullptr;
   elfReader    = nullptr;
@@ -54,7 +54,9 @@ Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, 
 
   assert(tf_name != nullptr);
 
-  sfp = new (std::nothrow) SliceFileParser(tf_name,binaryFlag);
+  multicore = ismulticore;
+
+  sfp = new (std::nothrow) SliceFileParser(tf_name,binaryFlag,multicore);
 
   assert(sfp != nullptr);
 

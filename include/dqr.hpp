@@ -160,6 +160,7 @@ public:
 	void opcodeToText();
 	void instructionToText(char *dst,int labelLevel);
 
+	uint8_t           coreId;
 	dqr::ADDRESS      address;
 	dqr::RV_INST      instruction;
 	char              instructionText[64];
@@ -179,6 +180,7 @@ public:
 
 class Source {
 public:
+	uint8_t      coreId;
 	const char  *sourceFile;
 	const char  *sourceFunction;
 	unsigned int sourceLineNum;
@@ -266,6 +268,8 @@ public:
     dqr::ADDRESS   currentAddress;
     dqr::TIMESTAMP time;
 
+    uint8_t        src;
+
     union {
     	struct {
     		int i_cnt;
@@ -304,6 +308,10 @@ public:
     		uint32_t addr;
     	} auxAccessWrite;
     	struct {
+    		uint32_t idTag;
+    		uint32_t data;
+    	} dataAcquisition;
+    	struct {
     		uint32_t process;
     	} ownership;
     };
@@ -315,7 +323,7 @@ private:
 // class SliceFileParser: Class to parse binary or ascii nexus messages into a NexusMessage object
 class SliceFileParser {
 public:
-             SliceFileParser(char *filename, bool binary);
+             SliceFileParser(char *filename, bool binary, bool ismulticore);
   dqr::DQErr nextTraceMsg(NexusMessage &nm);
   dqr::DQErr getErr() { return status; };
   void       dump();
@@ -328,6 +336,7 @@ private:
   // add other counts for each message type
 
   bool          binary;
+  bool          multicore;
   std::ifstream tf;
   int           bitIndex;
   int           msgSlices;
@@ -349,6 +358,7 @@ private:
   dqr::DQErr parseSync(NexusMessage &nm);
   dqr::DQErr parseCorrelation(NexusMessage &nm);
   dqr::DQErr parseAuxAccessWrite(NexusMessage &nm);
+  dqr::DQErr parseDataAcquisition(NexusMessage &nm);
   dqr::DQErr parseOwnershipTrace(NexusMessage &nm);
   dqr::DQErr parseError(NexusMessage &nm);
 };
@@ -451,7 +461,7 @@ public:
 		SYMFLAGS_NONE = 0,
 		SYMFLAGS_xx   = 1 << 0,
 	};
-	           Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags);
+	           Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags, bool ismulticore);
 	          ~Trace();
 	dqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
 
@@ -494,6 +504,7 @@ private:
 	dqr::ADDRESS	 lastFaddr;
 	dqr::TIMESTAMP   lastTime;
 	enum state       state;
+	bool             multicore;
 
 	int              startMessageNum;
 	int              endMessageNum;

@@ -779,6 +779,7 @@ NexusMessage::NexusMessage()
 {
 	msgNum         = 0;
 	tcode          = dqr::TCODE_UNDEFINED;
+	src            = 0;
 	haveTimestamp  = false;
 	timestamp      = 0;
 	currentAddress = 0;
@@ -1235,9 +1236,11 @@ void NexusMessage::dump()
 	}
 }
 
-SliceFileParser::SliceFileParser(char *filename, bool binary)
+SliceFileParser::SliceFileParser(char *filename, bool binary, bool ismulticore)
 {
 	assert(filename != nullptr);
+
+	multicore = ismulticore;
 
 	numTraceMsgs   = 0;
 	numSyncMsgs    = 0;
@@ -1284,26 +1287,44 @@ void SliceFileParser::dump()
 
 dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm)
 {
-	dqr::DQErr    rc;
-	uint64_t i_cnt;
-	dqr::TIMESTAMP timestamp;
-	bool     haveTimestamp;
+	dqr::DQErr     rc;
+	uint64_t       tmp;
+
+	nm.tcode = dqr::TCODE_DIRECT_BRANCH;
+
+	// if multicore, parse src field
+
+	if (multicore) {
+        rc = parseFixedField(4,&tmp);
+        if (rc != dqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        nm.src = (uint8_t)tmp;
+	}
+	else {
+		nm.src = 0;
+	}
 
 	// parse the variable length the i-cnt
 
-	rc = parseVarField(&i_cnt);
+	rc = parseVarField(&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
 
+    nm.directBranch.i_cnt = (int)tmp;
+
 	if (eom == true) {
-		haveTimestamp = false;
-		timestamp = 0;
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
 	}
 	else {
-		rc = parseVarField(&timestamp); // this field is optional - check err
+		rc = parseVarField(&tmp); // this field is optional - check err
 		if (rc != dqr::DQERR_OK) {
 			status = rc;
 
@@ -1318,13 +1339,9 @@ dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm)
 			return status;
 		}
 
-		haveTimestamp = true;
+		nm.haveTimestamp = true;
+		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
-
-	nm.tcode     = dqr::TCODE_DIRECT_BRANCH;
-	nm.directBranch.i_cnt     = (int)i_cnt;
-	nm.haveTimestamp = haveTimestamp;
-	nm.timestamp = timestamp;
 
 	numTraceMsgs += 1;
 
@@ -1335,51 +1352,71 @@ dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm)
 
 dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm)
 {
-	dqr::DQErr    rc;
-	uint64_t i_cnt;
-	uint64_t sync;
-	dqr::ADDRESS f_addr;
-	dqr::TIMESTAMP timestamp;
-	bool     haveTimestamp;
+	dqr::DQErr rc;
+	uint64_t   tmp;
+
+	nm.tcode = dqr::TCODE_DIRECT_BRANCH_WS;
+
+	// if multicore, parse src field
+
+	if (multicore) {
+        rc = parseFixedField(4,&tmp);
+        if (rc != dqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        nm.src = (uint8_t)tmp;
+	}
+	else {
+		nm.src = 0;
+	}
 
 	// parse the fixed length sync reason field
 
-	rc = parseFixedField(4,&sync);
+	rc = parseFixedField(4,&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
+
+	nm.directBranchWS.sync   = (dqr::SyncReason)tmp;
 
 	// parse the variable length the i-cnt
 
-	rc = parseVarField(&i_cnt);
+	rc = parseVarField(&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
 
-	rc = parseVarField(&f_addr);
+	nm.directBranchWS.i_cnt  = (int)tmp;
+
+	rc = parseVarField(&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
+
+	nm.directBranchWS.f_addr = (dqr::ADDRESS)tmp;
 
 	if (eom == true) {
-		haveTimestamp = false;
-		timestamp = 0;
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
 	}
 	else {
-		rc = parseVarField(&timestamp); // this field is optional - check err
+		rc = parseVarField(&tmp); // this field is optional - check err
 		if (rc != dqr::DQERR_OK) {
 			status = rc;
 
 			return status;
 		}
 
-		// check if entire message have been consumed
+		// check if entire message has been consumed
 
 		if (eom != true) {
 			status = dqr::DQERR_BM;
@@ -1387,15 +1424,9 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm)
 			return status;
 		}
 
-		haveTimestamp = true;
+		nm.haveTimestamp = true;
+		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
-
-	nm.tcode                 = dqr::TCODE_DIRECT_BRANCH_WS;
-	nm.directBranchWS.sync   = (dqr::SyncReason)sync;
-	nm.directBranchWS.i_cnt  = i_cnt;
-	nm.directBranchWS.f_addr = f_addr;
-	nm.haveTimestamp         = haveTimestamp;
-	nm.timestamp             = timestamp;
 
 	numTraceMsgs += 1;
 	numSyncMsgs  += 1;
@@ -1407,66 +1438,81 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm)
 
 dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm)
 {
-	dqr::DQErr    rc;
-	uint64_t b_type;
-	uint64_t i_cnt;
-	dqr::ADDRESS u_addr;
-	dqr::TIMESTAMP timestamp;
-	bool     haveTimestamp;
+	dqr::DQErr rc;
+	uint64_t   tmp;
+
+	nm.tcode = dqr::TCODE_INDIRECT_BRANCH;
+
+	// if multicore, parse src field
+
+	if (multicore) {
+        rc = parseFixedField(4,&tmp);
+        if (rc != dqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        nm.src = (uint8_t)tmp;
+	}
+	else {
+		nm.src = 0;
+	}
 
 	// parse the fixed lenght b-type
 
-	rc = parseFixedField(2,&b_type);
+	rc = parseFixedField(2,&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
+
+	nm.indirectBranch.b_type = (dqr::BType)tmp;
 
 	// parse the variable length the i-cnt
 
-	rc = parseVarField(&i_cnt);
+	rc = parseVarField(&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
 
-	rc = parseVarField(&u_addr);
+	nm.indirectBranch.i_cnt  = (int)tmp;
+
+	rc = parseVarField(&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
+
+	nm.indirectBranch.u_addr = (dqr::ADDRESS)tmp;
 
 	if (eom == true) {
-		haveTimestamp = false;
-		timestamp = 0;
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
 	}
 	else {
-		rc = parseVarField(&timestamp); // this field is optional - check err
+		rc = parseVarField(&tmp); // this field is optional - check err
 		if (rc != dqr::DQERR_OK) {
 			status = rc;
 
 			return status;
 		}
 
-		// check if entire message have been consumed
+		// check if entire message has been consumed
 
 		if (eom != true) {
 			status = dqr::DQERR_BM;
 
 			return status;
 		}
-		haveTimestamp = true;
-	}
 
-	nm.tcode                 = dqr::TCODE_INDIRECT_BRANCH;
-	nm.indirectBranch.b_type = (dqr::BType)b_type;
-	nm.indirectBranch.i_cnt  = (int)i_cnt;
-	nm.indirectBranch.u_addr = u_addr;
-	nm.haveTimestamp = haveTimestamp;
-	nm.timestamp     = timestamp;
+		nm.haveTimestamp = true;
+		nm.timestamp = (dqr::TIMESTAMP)tmp;
+	}
 
 	numTraceMsgs += 1;
 
@@ -1477,61 +1523,82 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm)
 
 dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm)
 {
-	dqr::DQErr    rc;
-	uint64_t sync;
-	uint64_t b_type;
-	uint64_t i_cnt;
-	dqr::ADDRESS f_addr;
-	dqr::TIMESTAMP timestamp;
-	bool     haveTimestamp;
+	dqr::DQErr rc;
+	uint64_t   tmp;
+
+	nm.tcode = dqr::TCODE_INDIRECT_BRANCH_WS;
+
+	// if multicore, parse src field
+
+	if (multicore) {
+        rc = parseFixedField(4,&tmp);
+        if (rc != dqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        nm.src = (uint8_t)tmp;
+	}
+	else {
+		nm.src = 0;
+	}
 
 	// parse the fixed length sync field
 
-	rc = parseFixedField(4,&sync);
+	rc = parseFixedField(4,&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
+
+	nm.indirectBranchWS.sync = (dqr::SyncReason)tmp;
 
 	// parse the fixed length b-type
 
-	rc = parseFixedField(2,&b_type);
+	rc = parseFixedField(2,&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
+
+	nm.indirectBranchWS.b_type = (dqr::BType)tmp;
 
 	// parse the variable length the i-cnt
 
-	rc = parseVarField(&i_cnt);
+	rc = parseVarField(&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
 
-	rc = parseVarField(&f_addr);
+	nm.indirectBranchWS.i_cnt = (int)tmp;
+
+	rc = parseVarField(&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
+
+	nm.indirectBranchWS.f_addr = (dqr::ADDRESS)tmp;
 
 	if (eom == true) {
-		haveTimestamp = false;
-		timestamp = 0;
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
 	}
 	else {
-		rc = parseVarField(&timestamp); // this field is optional - check err
+		rc = parseVarField(&tmp); // this field is optional - check err
 		if (rc != dqr::DQERR_OK) {
 			status = rc;
 
 			return status;
 		}
 
-		// check if entire message have been consumed
+		// check if entire message has been consumed
 
 		if (eom != true) {
 			status = dqr::DQERR_BM;
@@ -1539,16 +1606,9 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm)
 			return status;
 		}
 
-		haveTimestamp = true;
+		nm.haveTimestamp = true;
+		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
-
-	nm.tcode                   = dqr::TCODE_INDIRECT_BRANCH_WS;
-	nm.indirectBranchWS.sync   = (dqr::SyncReason)sync;
-	nm.indirectBranchWS.b_type = (dqr::BType)b_type;
-	nm.indirectBranchWS.i_cnt  = (int)i_cnt;
-	nm.indirectBranchWS.f_addr = f_addr;
-	nm.haveTimestamp           = haveTimestamp;
-	nm.timestamp               = timestamp;
 
 	numTraceMsgs += 1;
 	numSyncMsgs  += 1;
@@ -1560,49 +1620,69 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm)
 
 dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm)
 {
-	dqr::DQErr    rc;
-	uint64_t i_cnt;
-	dqr::TIMESTAMP timestamp;
-	uint64_t sync;
-	dqr::ADDRESS f_addr;
-	bool     haveTimestamp;
+	dqr::DQErr rc;
+	uint64_t   tmp;
+
+	nm.tcode         = dqr::TCODE_SYNC;
+
+	// if multicore, parse src field
+
+	if (multicore) {
+        rc = parseFixedField(4,&tmp);
+        if (rc != dqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        nm.src = (uint8_t)tmp;
+	}
+	else {
+		nm.src = 0;
+	}
 
 	// parse the variable length the i-cnt
 
-	rc = parseFixedField(4,&sync);
+	rc = parseFixedField(4,&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
 
-	rc = parseVarField(&i_cnt);
+	nm.sync.sync     = (dqr::SyncReason)tmp;
+
+	rc = parseVarField(&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
 
-	rc = parseVarField(&f_addr);
+	nm.sync.i_cnt    = (int)tmp;
+
+	rc = parseVarField(&tmp);
 	if (rc != dqr::DQERR_OK) {
 		status = rc;
 
 		return status;
 	}
+
+	nm.sync.f_addr   = (dqr::ADDRESS)tmp;
 
 	if (eom == true) {
-		haveTimestamp = false;
-		timestamp = 0;
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
 	}
 	else {
-		rc = parseVarField(&timestamp); // this field is optional - check err
+		rc = parseVarField(&tmp); // this field is optional - check err
 		if (rc != dqr::DQERR_OK) {
 			status = rc;
 
 			return status;
 		}
 
-		// check if entire message have been consumed
+		// check if entire message has been consumed
 
 		if (eom != true) {
 			status = dqr::DQERR_BM;
@@ -1610,15 +1690,9 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm)
 			return status;
 		}
 
-		haveTimestamp = true;
+		nm.haveTimestamp = true;
+		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
-
-	nm.tcode         = dqr::TCODE_SYNC;
-	nm.sync.sync     = (dqr::SyncReason)sync;
-	nm.sync.i_cnt    = (int)i_cnt;
-	nm.sync.f_addr   = f_addr;
-	nm.haveTimestamp = haveTimestamp;
-	nm.timestamp     = timestamp;
 
 	numTraceMsgs += 1;
 	numSyncMsgs  += 1;
@@ -1630,11 +1704,26 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm)
 
 dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm)
 {
-	dqr::DQErr    rc;
-	uint64_t tmp;
-	bool     haveTimestamp;
+	dqr::DQErr rc;
+	uint64_t   tmp;
 
 	nm.tcode = dqr::TCODE_CORRELATION;
+
+	// if multicore, parse src field
+
+	if (multicore) {
+        rc = parseFixedField(4,&tmp);
+        if (rc != dqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        nm.src = (uint8_t)tmp;
+	}
+	else {
+		nm.src = 0;
+	}
 
 	// parse the 4-bit evcode field
 
@@ -1645,9 +1734,9 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm)
 		return status;
 	}
 
-	nm.correlation.evcode = tmp;
+	nm.correlation.evcode = (uint8_t)tmp;
 
-	// parse the 2-bit cdf field
+	// parse the 2-bit cdf field.
 
 	rc = parseFixedField(2,&tmp);
 	if (rc != dqr::DQERR_OK) {
@@ -1664,7 +1753,7 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm)
 		return status;
 	}
 
-	nm.correlation.cdf = tmp;
+	nm.correlation.cdf = (uint8_t)tmp;
 
 	// parse the variable length i-cnt field
 
@@ -1678,8 +1767,8 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm)
 	nm.correlation.i_cnt = (int)tmp;
 
 	if (eom == true) {
-		haveTimestamp = false;
-		tmp = 0;
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
 	}
 	else {
 		rc = parseVarField(&tmp); // this field is optional - check err
@@ -1689,7 +1778,7 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm)
 			return status;
 		}
 
-		// check if entire message have been consumed
+		// check if entire message has been consumed
 
 		if (eom != true) {
 			status = dqr::DQERR_BM;
@@ -1697,11 +1786,9 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm)
 			return status;
 		}
 
-		haveTimestamp = true;
+		nm.haveTimestamp = true;
+		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
-
-	nm.haveTimestamp = haveTimestamp;
-	nm.timestamp = tmp;
 
 	numTraceMsgs += 1;
 
@@ -1712,11 +1799,26 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm)
 
 dqr::DQErr SliceFileParser::parseError(NexusMessage &nm)
 {
-	dqr::DQErr    rc;
-	uint64_t tmp;
-	bool     haveTimestamp;
+	dqr::DQErr rc;
+	uint64_t   tmp;
 
 	nm.tcode = dqr::TCODE_ERROR;
+
+	// if multicore, parse src field
+
+	if (multicore) {
+        rc = parseFixedField(4,&tmp);
+        if (rc != dqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        nm.src = (uint8_t)tmp;
+	}
+	else {
+		nm.src = 0;
+	}
 
 	// parse the 4 bit ETYPE field
 
@@ -1739,8 +1841,8 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm)
 	}
 
 	if (eom == true) {
-		haveTimestamp = false;
-		tmp = 0;
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
 	}
 	else {
 		rc = parseVarField(&tmp); // this field is optional - check err
@@ -1750,7 +1852,7 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm)
 			return status;
 		}
 
-		// check if entire message have been consumed
+		// check if entire message has been consumed
 
 		if (eom != true) {
 			status = dqr::DQERR_BM;
@@ -1758,11 +1860,9 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm)
 			return status;
 		}
 
-		haveTimestamp = true;
+		nm.haveTimestamp = true;
+		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
-
-	nm.haveTimestamp = haveTimestamp;
-	nm.timestamp = tmp;
 
 	numTraceMsgs += 1;
 
@@ -1773,11 +1873,26 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm)
 
 dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm)
 {
-	dqr::DQErr    rc;
-	uint64_t tmp;
-	bool     haveTimestamp;
+	dqr::DQErr rc;
+	uint64_t   tmp;
 
 	nm.tcode = dqr::TCODE_OWNERSHIP_TRACE;
+
+	// if multicore, parse src field
+
+	if (multicore) {
+        rc = parseFixedField(4,&tmp);
+        if (rc != dqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        nm.src = (uint8_t)tmp;
+	}
+	else {
+		nm.src = 0;
+	}
 
 	// parse the variable length process ID field
 
@@ -1791,8 +1906,8 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm)
 	nm.ownership.process = (int)tmp;
 
 	if (eom == true) {
-		haveTimestamp = false;
-		tmp = 0;
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
 	}
 	else {
 		rc = parseVarField(&tmp); // this field is optional - check err
@@ -1802,7 +1917,7 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm)
 			return status;
 		}
 
-		// check if entire message have been consumed
+		// check if entire message has been consumed
 
 		if (eom != true) {
 			status = dqr::DQERR_BM;
@@ -1810,11 +1925,9 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm)
 			return status;
 		}
 
-		haveTimestamp = true;
+		nm.haveTimestamp = true;
+		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
-
-	nm.haveTimestamp = haveTimestamp;
-	nm.timestamp = tmp;
 
 	numTraceMsgs += 1;
 
@@ -1825,11 +1938,26 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm)
 
 dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm)
 {
-	dqr::DQErr    rc;
-	uint64_t tmp;
-	bool     haveTimestamp;
+	dqr::DQErr rc;
+	uint64_t   tmp;
 
 	nm.tcode = dqr::TCODE_AUXACCESS_WRITE;
+
+	// if multicore, parse src field
+
+	if (multicore) {
+        rc = parseFixedField(4,&tmp);
+        if (rc != dqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        nm.src = (uint8_t)tmp;
+	}
+	else {
+		nm.src = 0;
+	}
 
 	// parse the ADDR field
 
@@ -1854,8 +1982,8 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm)
 	nm.auxAccessWrite.data = (uint32_t)tmp;
 
 	if (eom == true) {
-		haveTimestamp = false;
-		tmp = 0;
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
 	}
 	else {
 		rc = parseVarField(&tmp); // this field is optional - check err
@@ -1865,7 +1993,7 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm)
 			return status;
 		}
 
-		// check if entire message have been consumed
+		// check if entire message has been consumed
 
 		if (eom != true) {
 			status = dqr::DQERR_BM;
@@ -1873,11 +2001,85 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm)
 			return status;
 		}
 
-		haveTimestamp = true;
+		nm.haveTimestamp = true;
+		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
 
-	nm.haveTimestamp = haveTimestamp;
-	nm.timestamp = tmp;
+	numTraceMsgs += 1;
+
+	nm.msgNum = numTraceMsgs;
+
+	return dqr::DQERR_OK;
+}
+
+dqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm)
+{
+	dqr::DQErr rc;
+	uint64_t   tmp;
+
+	nm.tcode = dqr::TCODE_AUXACCESS_WRITE;
+
+	// if multicore, parse src field
+
+	if (multicore) {
+        rc = parseFixedField(4,&tmp);
+        if (rc != dqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        nm.src = (uint8_t)tmp;
+	}
+	else {
+		nm.src = 0;
+	}
+
+	// parse the idTag field
+
+	rc = parseVarField(&tmp);
+	if (rc != dqr::DQERR_OK) {
+		status = rc;
+
+		return status;
+	}
+
+	nm.dataAcquisition.idTag = (uint32_t)tmp;
+
+	// parse the data field
+
+	rc = parseVarField(&tmp);
+	if (rc != dqr::DQERR_OK) {
+		status = rc;
+
+		return status;
+	}
+
+	nm.dataAcquisition.data = (uint32_t)tmp;
+
+	if (eom == true) {
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
+	}
+	else {
+		rc = parseVarField(&tmp); // this field is optional - check err
+		if (rc != dqr::DQERR_OK) {
+			status = rc;
+
+			return status;
+		}
+
+		// check if entire message has been consumed
+
+		if (eom != true) {
+			status = dqr::DQERR_BM;
+
+			return status;
+		}
+
+		nm.haveTimestamp = true;
+		nm.timestamp = (dqr::TIMESTAMP)tmp;
+	}
 
 	numTraceMsgs += 1;
 
