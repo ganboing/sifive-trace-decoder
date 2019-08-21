@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define	baseAddress	0x20007000
 
@@ -51,6 +52,8 @@
 #define	atbSink			((uint32_t*)(baseAddress+Offset_atbSink))
 #define pibSink			((uint32_t*)(baseAddress+Offset_pibSink))
 
+int itc_puts(const char *f);
+
 static int enable_itc(int reg)
 {
 	if ((reg < 0) || (reg > 31)) {
@@ -84,7 +87,7 @@ static inline void write_itc_uint16(uint16_t data)
 	itc_uint16[1] = data;
 }
 
-int itcprintf(const char *f, ... )
+int itc_printf(const char *f, ... )
 {
 	char buffer[256];
 	va_list args;
@@ -94,11 +97,11 @@ int itcprintf(const char *f, ... )
 	rc = vsnprintf(buffer,sizeof buffer, f, args);
 	va_end(args);
 
-	itcprintstr(buffer);
+	itc_puts(buffer);
 	return rc;
 }
 
-int itcprintstr(const char *f)
+int itc_puts(const char *f)
 {
 	static int inited = 0;
 
@@ -113,7 +116,7 @@ int itcprintstr(const char *f)
 		inited = 1;
 	}
 
-	int rc = strlen(f);
+	unsigned int rc = strlen(f);
 
 	int words = (rc/4)*4;
 	int bytes = rc & 0x03;
@@ -121,23 +124,23 @@ int itcprintstr(const char *f)
 	uint16_t a;
 
     for (i = 0; i < words; i += 4) {
-		write_itc(*(uint32_t*)(buffer+i));
+		write_itc(*(uint32_t*)(f+i));
 	}
 
     switch (bytes) {
     case 0:
     	break;
     case 1:
-    	write_itc_uint8(*(uint8_t*)(buffer+i));
+    	write_itc_uint8(*(uint8_t*)(f+i));
     	break;
     case 2:
-    	write_itc_uint16(*(uint16_t*)(buffer+i));
+    	write_itc_uint16(*(uint16_t*)(f+i));
     	break;
     case 3:
-    	a = *(uint16_t*)(buffer+i);
+    	a = *(uint16_t*)(f+i);
     	write_itc_uint16(a);
 
-    	a = ((uint16_t)(*(uint8_t*)(buffer+i+2)));
+    	a = ((uint16_t)(*(uint8_t*)(f+i+2)));
     	write_itc_uint8((uint8_t)a);
     	break;
     }
