@@ -36,12 +36,13 @@ using namespace std;
 
 static void usage(char *name)
 {
-	printf("Usage: dqr (-t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src] [-nosrc]\n");
-	printf("            [-file] [-nofile] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path] [-v] [-h]\n");
+	printf("Usage: dqr -t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src] [-nosrc]\n");
+	printf("           [-file] [-nofile] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path] [-v] [-h]\n");
+	printf("           [-multicore] [-nomulticore] [-unicore] [-32] [-64] [-32+] [-addrsep] [-noaddrsep]\n");
 	printf("\n");
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
-	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extention (such as .elf).\n");
-	printf("-n basename:  Specify the base name of hte Nexus trace message file and the executable elf file. No extension\n");
+	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
+	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
 	printf("-start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is\n");
 	printf("              not specified, continues to last trace message.\n");
@@ -57,8 +58,11 @@ static void usage(char *name)
 	printf("-notrace:     Do not display trace information in output.\n");
 	printf("--strip=path: Strip of the specified path when displaying source file name/path. Strips off all that matches.\n");
 	printf("              Path may be enclosed in quotes if it contains spaces.\n");
-	printf("-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatinated\n");
+	printf("-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatenated\n");
 	printf("              and displayed as a string until a terminating \\0 is found\n");
+	printf("-itcprintnobuffer:    Display ITC 0 data as a null terminated string without buffering multiple itc messages into a\n");
+	printf("              single message. Data from consecutive ITC 0's will not be concatenated. Potentially useful where the\n");
+	printf("              buffering of itc 0 print messages causes flushing issues.\n");
 	printf("-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair\n");
 	printf("-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and\n");
 	printf("              cause the address field to be jagged. Overrides value address size read from elf file.\n");
@@ -75,9 +79,16 @@ static void usage(char *name)
 	printf("              if the elf file specifies > 32 bit address size (such as 64). Specifying -32+ overrides the value\n");
 	printf("              read from the elf file\n");
 	printf("-64:          Display addresses as 64 bits. Overrides value read from elf file\n");
-	printf("-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'");
+	printf("-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'\n");
 	printf("-noaddrsep:   Do not add a separatfor For addresses greater than 32 bit between the upper bits and the lower 32 bits\n");
-	printf("              (default)\n");
+	printf("              (default).\n");
+	printf("-multicore:   Decode a multicore trace file; up to 8 cores. Trace, instruction, source lines, and file info is all\n");
+	printf("              prefixed with a core number in square brackes.  i.e. [2] would be core 2. Single core trace files will\n");
+	printf("              give errors with processed with the -multicore flag because the trace formats are different.\n");
+	printf("-nomulticore: Decode a single core trace file. Output data is not prefixed with the core number. Multicore trace\n");
+	printf("              files cannot be processed if the -nomulticore flag is given because the trace formats are different for\n");
+	printf("              single core and multi-core traces.\n");
+	printf("-unicore:     Same as the -nomulticore flag\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -147,6 +158,7 @@ int main(int argc, char *argv[])
 	int  numAddrBits = 0;
 	uint32_t addrDispFlags = 0;
 	bool multicore_flag = false;
+	bool itcbuffer_flag = true;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -269,6 +281,11 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp("-itcprint",argv[i]) == 0) {
 			itcprint_flag = true;
+			itcbuffer_flag = true;
+		}
+		else if (strcmp("-itcprintnobuffer",argv[i]) == 0) {
+			itcprint_flag = true;
+			itcbuffer_flag = false;
 		}
 		else if (strcmp("-noitcprint",argv[i]) == 0) {
 			itcprint_flag = false;
@@ -323,6 +340,9 @@ int main(int argc, char *argv[])
 		else if (strcmp("-nomulticore", argv[i]) == 0) {
 			multicore_flag = false;
 		}
+		else if (strcmp("-unicore", argv[i]) == 0) {
+			multicore_flag = false;
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -365,7 +385,7 @@ int main(int argc, char *argv[])
 
 	// might want to include some path info!
 
-	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags,numAddrBits,addrDispFlags, multicore_flag);
+	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags,numAddrBits,addrDispFlags,multicore_flag);
 
 	assert(trace != nullptr);
 
@@ -377,6 +397,8 @@ int main(int argc, char *argv[])
 
 		return 1;
 	}
+
+	trace->setITCBuffering(itcbuffer_flag);
 
 	trace->setTraceRange(start_msg_num,stop_msg_num);
 
@@ -438,7 +460,12 @@ int main(int argc, char *argv[])
 
 							sfp = stripPath(strip_flag,srcInfo->sourceFile);
 
-							printf("File: %s:%d\n",sfp,srcInfo->sourceLineNum);
+							if (multicore_flag) {
+								printf("[%d] File: %s:%d\n",srcInfo->coreId,sfp,srcInfo->sourceLineNum);
+							}
+							else {
+								printf("File: %s:%d\n",sfp,srcInfo->sourceLineNum);
+							}
 
 							firstPrint = false;
 						}
@@ -446,7 +473,12 @@ int main(int argc, char *argv[])
 
 					if (src_flag) {
 						if (srcInfo->sourceLine != nullptr) {
-							printf("Source: %s\n",srcInfo->sourceLine);
+							if (multicore_flag) {
+								printf("[%d] Source: %s\n",srcInfo->coreId,srcInfo->sourceLine);
+							}
+							else {
+								printf("Source: %s\n",srcInfo->sourceLine);
+							}
 
 							firstPrint = false;
 						}
@@ -459,6 +491,10 @@ int main(int argc, char *argv[])
 				instInfo->addressToText(dst,0);
 
 				if (func_flag) {
+					if (multicore_flag) {
+						printf("[%d] ",instInfo->coreId);
+					}
+
 					if (instInfo->address != (lastAddress + lastInstSize / 8)) {
 						if (instInfo->addressLabel != nullptr) {
 							printf("<%s",instInfo->addressLabel);
@@ -471,6 +507,10 @@ int main(int argc, char *argv[])
 
 					lastAddress = instInfo->address;
 					lastInstSize = instInfo->instSize;
+				}
+
+				if (multicore_flag) {
+					printf("[%d] ", instInfo->coreId);
 				}
 
 				int n;
@@ -500,6 +540,10 @@ int main(int argc, char *argv[])
 						printf("\n");
 					}
 
+					if (multicore_flag) {
+						printf("[%d] ",msgInfo->src);
+					}
+
 					printf("Trace: %s",dst);
 
 					printf("\n");
@@ -510,6 +554,10 @@ int main(int argc, char *argv[])
 				if (itcprint_flag && (itcprint != nullptr)) {
 					if (firstPrint == false) {
 						printf("\n");
+					}
+
+					if (multicore_flag) {
+						printf("[%d] ",msgInfo->src);
 					}
 
 					puts(itcprint);

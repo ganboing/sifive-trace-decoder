@@ -775,6 +775,105 @@ Symtab *ElfReader::getSymtab()
 	return symtab;
 }
 
+bool itcPrint::inited = itcPrint::init();
+
+bool itcPrint::buffering;
+bool itcPrint::eol[DQR_MAXCORES];
+char itcPrint::pbuff[DQR_MAXCORES][1024];
+int itcPrint::pbi[DQR_MAXCORES];
+
+bool itcPrint::init()
+{
+	buffering = true;
+
+	for (int i = 0; (size_t)i < (sizeof eol / sizeof eol[0]); i++) {
+		eol[i] = true;
+	}
+
+	for (int i = 0; (size_t)i < (sizeof pbuff / sizeof pbuff[0]); i++ ) {
+		pbuff[i][0] = 0;
+	}
+
+	for (int i = 0; (size_t)i < (sizeof pbi / sizeof pbi[0]); i++ ) {
+		pbi[i] = 0;
+	}
+
+	return 1;
+}
+
+char *itcPrint::print(uint8_t core, uint32_t addr, uint32_t data)
+{
+	assert((core >= 0) && (core <= DQR_MAXCORES));
+
+	if (addr >= 4) {
+		// not an itc 0 print
+		pbuff[core][pbi[core]] = 0;
+
+		return nullptr;
+	}
+
+	if (buffering) {
+		char *p = (char *)&data;
+		bool flush = false;
+
+		// fill in buffer until eol is found (\n, \r, or \0). Need to dump buffer if
+		// it gets full
+
+		for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
+			if (eol[core] == true) {
+				pbi[core] += sprintf(pbuff[core]+pbi[core],"ITC Print: ");
+			}
+
+			pbuff[core][pbi[core]++] = p[i];
+
+			switch (p[i]) {
+			case 0:
+			case '\n':
+			case '\r':
+				eol[core] = true;
+				flush = true;
+				break;
+			default:
+				eol[core] = false;
+			}
+		}
+
+		if ((size_t)pbi[core] > (sizeof pbuff[core]) - 20) {
+			// flush if buffer is almost full
+			flush = true;
+		} else if (addr == 0x00000003) {
+			// all one byte writes flush
+			flush = true;
+		}
+
+		if (flush) {
+			pbuff[core][pbi[core]] = 0;
+			pbi[core] = 0;
+
+			return pbuff[core];
+		}
+	}
+	else {
+		// no buffering
+
+		char *p = (char *)&data;
+
+		pbi[core] += sprintf(pbuff[core]+pbi[core],"ITC Print: ");
+
+		for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
+			pbuff[core][pbi[core]++] = p[i];
+		}
+
+		pbuff[core][pbi[core]] = 0;
+		pbi[core] = 0;
+		eol[core] = true;
+
+		return pbuff[core];
+	}
+
+	return nullptr;
+}
+
 NexusMessage::NexusMessage()
 {
 	msgNum         = 0;
@@ -864,9 +963,6 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 		break;
 	case dqr::TCODE_DATA_READ:
 		sprintf(dst+n,"DATA READ (%d)",tcode);
-		break;
-	case dqr::TCODE_DATA_ACQUISITION:
-		sprintf(dst+n,"DATA ACQUISITION (%d)",tcode);
 		break;
 	case dqr::TCODE_ERROR:
 		n += sprintf(dst+n,"ERROR (%d)",tcode);
@@ -1051,6 +1147,28 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 	case dqr::TCODE_AUXACCESS_READ:
 		sprintf(dst+n,"AUX ACCESS READ (%d)",tcode);
 		break;
+	case dqr::TCODE_DATA_ACQUISITION:
+		n += sprintf(dst+n,"DATA ACQUISITION (%d)",tcode);
+
+		if (level >= 2) { // here, if addr not on word boudry, have a partial write!
+			switch (dataAcquisition.idTag & 0x03) {
+			case 0:
+			case 1:
+				sprintf(dst+n," idTag: 0x%08x Data: 0x%08x",dataAcquisition.idTag,dataAcquisition.data);
+				break;
+			case 2:
+				sprintf(dst+n," idTag: 0x%08x Data: 0x%04x",dataAcquisition.idTag,(uint16_t)dataAcquisition.data);
+				break;
+			case 3:
+				sprintf(dst+n," idTag: 0x%08x Data: 0x%02x",dataAcquisition.idTag,(uint8_t)dataAcquisition.data);
+				break;
+			}
+		}
+
+		if (pdst != nullptr) {
+			*pdst = itcPrint::print(src,dataAcquisition.idTag,dataAcquisition.data);
+		}
+		break;
 	case dqr::TCODE_AUXACCESS_WRITE:
 		n += sprintf(dst+n,"AUX ACCESS WRITE (%d)",tcode);
 
@@ -1069,52 +1187,8 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 			}
 		}
 
-		if (auxAccessWrite.addr < 4) {	// itc 0 only
-			char *p = (char *)&auxAccessWrite.data;
-			bool flush = false;
-			static bool eol = true;
-			static char pbuff[1024];
-			static int pbi = 0;
-
-
-			// fill in buffer until eol is found (\n, \r, or \0). Need to dump buffer if
-			// it gets full
-
-			for (int i = 0; ((size_t)i < ((sizeof auxAccessWrite.data) - (auxAccessWrite.addr & 0x03))); i++ ) {
-				if (eol == true) {
-					strcpy(pbuff+pbi,"ITC Print: ");
-					pbi += (sizeof "ITC Print: ") - 1;
-				}
-
-				pbuff[pbi++] = p[i];
-
-				switch (p[i]) {
-				case 0:
-				case '\n':
-				case '\r':
-					eol = true;
-					flush = true;
-					break;
-				default:
-					eol = false;
-				}
-			}
-
-			if ((size_t)pbi > (sizeof pbuff) - 20) {
-				// flush if buffer is almost full
-				flush = true;
-			} else if (auxAccessWrite.addr == 0x00000003) {
-				// all one byte writes flush
-				flush = true;
-			}
-
-			if (flush) {
-				pbuff[pbi] = 0;
-				pbi = 0;
-				if (pdst != nullptr) {
-					*pdst = pbuff;
-				}
-			}
+		if (pdst != nullptr) {
+			*pdst = itcPrint::print(src,auxAccessWrite.addr,auxAccessWrite.data);
 		}
 		break;
 	case dqr::TCODE_AUXACCESS_READNEXT:
@@ -1265,6 +1339,12 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, bool ismulticore)
 	else {
 		status = dqr::DQERR_OK;
 	}
+
+#ifdef foo
+	// read entire slice file, create multiple quese base on src field
+
+	readAllTraceMsgs();
+#endif // foo
 }
 
 void SliceFileParser::dump()
@@ -2200,15 +2280,29 @@ dqr::DQErr SliceFileParser::readBinaryMsg()
 	do {
 		tf.read((char*)&msg[0],sizeof msg[0]);
 		if (!tf) {
-			status = dqr::DQERR_EOF;
+			if (tf.eof()) {
+				status = dqr::DQERR_EOF;
 
-			return dqr::DQERR_EOF;
+				std::cout << "End of trace file\n";
+			}
+			else {
+				status = dqr::DQERR_ERR;
+
+				std::cout << "Error reading trace file\n";
+			}
+
+			tf.close();
+
+			return status;
 		}
 	} while ((msg[0] & 0x3) == dqr::MSEO_END);
 
 	// make sure this is start of nexus message
 
 	if ((msg[0] & 0x3) != dqr::MSEO_NORMAL) {
+
+		tf.close();
+
 		status = dqr::DQERR_ERR;
 
 		std::cout << "Error: SliceFileParser::readBinaryMsg(): expected start of message; got" << std::hex << static_cast<uint8_t>(msg[0] & 0x3) << std::dec << std::endl;
@@ -2220,6 +2314,9 @@ dqr::DQErr SliceFileParser::readBinaryMsg()
 
 	for (int i = 1; !done; i++) {
 		if (i >= (int)(sizeof msg / sizeof msg[0])) {
+
+			tf.close();
+
 			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
 
 			status = dqr::DQERR_ERR;
@@ -2229,11 +2326,20 @@ dqr::DQErr SliceFileParser::readBinaryMsg()
 
 		tf.read((char*)&msg[i],sizeof msg[0]);
 		if (!tf) {
-			status = dqr::DQERR_ERR;
+			if (tf.eof()) {
+				status = dqr::DQERR_EOF;
 
-			std::cout << "error reading stream\n";
+				std::cout << "End of trace file\n";
+			}
+			else {
+				status = dqr::DQERR_ERR;
 
-			return dqr::DQERR_ERR;
+				std::cout << "Error reading trace filem\n";
+			}
+
+			tf.close();
+
+			return status;
 		}
 
 		if ((msg[i] & 0x03) == dqr::MSEO_END) {
@@ -2264,6 +2370,8 @@ dqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
 	do {
 		tf.read((char*)&c,sizeof c);
 		if (!tf) {
+			tf.close();
+
 			status = dqr::DQERR_EOF;
 
 			return dqr::DQERR_EOF;
@@ -2300,6 +2408,8 @@ dqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
 
 	tf.read((char*)&c,sizeof c);
 	if (!tf) {
+		tf.close();
+
 		status = dqr::DQERR_EOF;
 
 		return dqr::DQERR_EOF;
@@ -2362,6 +2472,8 @@ dqr::DQErr SliceFileParser::readAscMsg()
 
 	for (int i = 1; !done; i++) {
 		if (i >= (int)(sizeof msg / sizeof msg[0])) {
+			tf.close();
+
 			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
 
 			status = dqr::DQERR_ERR;
@@ -2386,14 +2498,13 @@ dqr::DQErr SliceFileParser::readAscMsg()
 	return dqr::DQERR_OK;
 }
 
-dqr::DQErr SliceFileParser::nextTraceMsg(NexusMessage &nm)	// generator to return trace messages one at a time
+dqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm)	// generator to read trace messages one at a time
 {
-
 	assert(status == dqr::DQERR_OK);
 
-	dqr::DQErr    rc;
-	uint64_t val;
-	uint8_t  tcode;
+	dqr::DQErr rc;
+	uint64_t   val;
+	uint8_t    tcode;
 
 	// read from file, store in object, compute and fill out full fields, such as address and more later
 	// need some place to put it. An object
@@ -2506,12 +2617,92 @@ dqr::DQErr SliceFileParser::nextTraceMsg(NexusMessage &nm)	// generator to retur
 		status = parseAuxAccessWrite(nm);
 		break;
 	default:
-		std::cout << "Error: nextTraceMsg(): Unknown TCODE " << std::hex << tcode << std::dec << std::endl;
+		std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << tcode << std::dec << std::endl;
 		status = dqr::DQERR_ERR;
 	}
 
 	return status;
 }
+
+#ifdef foo
+linkedNexusMessage *linkedNexusMessage::firstMsg = nullptr;
+int                 linkedNexusMessage::lastCore = -1;
+linkedNexusMessage *linkedNexusMessage::linkedNexusMessageHeads[8];
+linkedNexusMessage *linkedNexusMessage::lastNexusMsgPtr[8];
+
+linkedNexusMessage::linkedNexusMessage()
+{
+	nextCoreMessage = nullptr;
+	nextInOrderMessage = nullptr;
+	consumed = false;
+}
+
+void linkedNexusMessage::init()
+{
+	firstMsg = nullptr;
+	lastCore = -1;
+
+    for (int i = 0; i < (int)(sizeof linkedNexusMessageHeads) / (int)(sizeof linkedNexusMessageHeads[0]); i++) {
+    	linkedNexusMessageHeads[i] = nullptr;
+    	lastNexusMsgPtr[i] = nullptr;
+    }
+}
+
+dqr::DQErr linkedNexusMessage::buildLinkedMsgs(NexusMessage &nm)
+{
+	linkedNexusMessage *lnm = new linkedNexusMessage;
+
+	int core = nm.src;
+
+	if ((core < 0) || (core >= (int)(sizeof linkedNexusMessageHeads) / (int)(sizeof linkedNexusMessageHeads[0]))) {
+		printf("Error: SliceFileParser::buildLinkedMsgs(): coreID out of bounds: %d\n",core);
+
+		return dqr::DQERR_ERR;
+	}
+
+	lnm->nm = nm;
+
+	if (firstMsg == nullptr) {
+		firstMsg = lnm;
+	}
+
+	if (linkedNexusMessageHeads[core] == nullptr) {
+		linkedNexusMessageHeads[core] = lnm;
+
+		if (lastCore != -1) {
+			lastNexusMsgPtr[lastCore]->nextInOrderMessage = lnm;
+		}
+	}
+	else {
+		lastNexusMsgPtr[core]->nextCoreMessage = lnm;
+		lastNexusMsgPtr[lastCore]->nextInOrderMessage = lnm;
+	}
+
+	lastNexusMsgPtr[core] = lnm;
+	lastCore = core;
+
+	return dqr::DQERR_OK;
+}
+
+dqr::DQErr SliceFileParser::readAllTraceMsgs()	// generator to return trace messages one at a time
+{
+    NexusMessage nm;
+    dqr::DQErr rc;
+
+    linkedNexusMessage::init();
+
+	while ((rc = readNextTraceMsg(nm)) == dqr::DQERR_OK) {
+		// stick message in the Q with linkage!
+
+		rc = linkedNexusMessage::buildLinkedMsgs(nm);
+		if (rc != dqr::DQERR_OK) {
+			return rc;
+		}
+	}
+
+	return dqr::DQERR_OK;
+}
+#endif // foo
 
 Disassembler::Disassembler(bfd *abfd)
 {
@@ -2965,6 +3156,9 @@ int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,in
 
 	inst_size = 16;
 	is_branch = false;
+	immeadiate = 0;
+
+	printf("instruction & 0x0003 = %0x\n",instruction & 0x0003);
 
 	if ((instruction & 0x0003) != 0x0000) {
 		return 1;
@@ -3231,6 +3425,7 @@ int Disassembler::decodeInstruction(uint32_t instruction,int &inst_size,instType
 
 	switch (instruction & 0x0003) {
 	case 0x0000:	// quadrant 0, compressed
+		printf("q0!\n");
 		rc = decodeRV32Q0Instruction(instruction,inst_size,inst_type,immeadiate,is_branch);
 		break;
 	case 0x0001:	// quadrant 1, compressed
