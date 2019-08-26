@@ -156,9 +156,9 @@ public:
 
 class Instruction {
 public:
-	void addressToText(char *dst,int labelLevel);
+	void addressToText(char *dst,size_t len,int labelLevel);
 	void opcodeToText();
-	void instructionToText(char *dst,int labelLevel);
+	void instructionToText(char *dst,size_t len,int labelLevel);
 
 	uint8_t           coreId;
 	dqr::ADDRESS      address;
@@ -271,7 +271,7 @@ public:
 class NexusMessage {
 public:
 	NexusMessage();
-	void messageToText(char *dst,char **pdst,int level);
+	void messageToText(char *dst,size_t dst_len,char **pdst,int level);
 	void dump();
 
 	int        	   msgNum;

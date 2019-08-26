@@ -250,7 +250,7 @@ section *section::initSection(section **head, asection *newsp)
     bfd_boolean rc;
     rc = bfd_get_section_contents(abfd,newsp,(void*)code,0,size);
     if (rc != TRUE) {
-      printf("bfd_get_section_contents() failed\n");
+      printf("Error: bfd_get_section_contents() failed\n");
       return nullptr;
     }
 
@@ -276,7 +276,7 @@ int      Instruction::addrSize;
 uint32_t Instruction::addrDispFlags;
 int      Instruction::addrPrintWidth;
 
-void Instruction::addressToText(char *dst,int labelLevel)
+void Instruction::addressToText(char *dst,size_t len,int labelLevel)
 {
 	assert(dst != nullptr);
 
@@ -291,23 +291,23 @@ void Instruction::addressToText(char *dst,int labelLevel)
     int n;
 
 	if ((addrPrintWidth > 8) && (addrDispFlags & dqr::ADDRDISP_SEP)) {
-		n = sprintf(dst,"%0*x.%08x",addrPrintWidth-8,(uint32_t)(address >> 32),(uint32_t)address);
+		n = snprintf(dst,len,"%0*x.%08x",addrPrintWidth-8,(uint32_t)(address >> 32),(uint32_t)address);
 	}
 	else {
-		n = sprintf(dst,"%0*llx",addrPrintWidth,address);
+		n = snprintf(dst,len,"%0*llx",addrPrintWidth,address);
 	}
 
     if ((labelLevel >= 1) && (addressLabel != nullptr)) {
     	if (addressLabelOffset != 0) {
-		    sprintf(dst+n," <%s+%x>",addressLabel,addressLabelOffset);
+		    snprintf(dst+n,len-n," <%s+%x>",addressLabel,addressLabelOffset);
 		}
 		else {
-		    sprintf(dst+n," <%s>",addressLabel);
+		    snprintf(dst+n,len-n," <%s>",addressLabel);
 		}
 	}
 }
 
-void Instruction::instructionToText(char *dst,int labelLevel)
+void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 {
 	assert(dst != nullptr);
 
@@ -316,22 +316,22 @@ void Instruction::instructionToText(char *dst,int labelLevel)
 	dst[0] = 0;
 
 	if (instSize == 32) {
-		n = sprintf(dst,"%08x           %s",instruction,instructionText);
+		n = snprintf(dst,len,"%08x           %s",instruction,instructionText);
 	}
 	else {
-		n = sprintf(dst,"%04x               %s",instruction,instructionText);
+		n = snprintf(dst,len,"%04x               %s",instruction,instructionText);
 	}
 
 	if (haveOperandAddress) {
-		n += sprintf(dst+n,"%llx",operandAddress);
+		n += snprintf(dst+n,len-n,"%llx",operandAddress);
 
 		if (labelLevel >= 1) {
 			if (operandLabel != nullptr) {
 				if (operandLabelOffset != 0) {
-					sprintf(dst+n," <%s+%x>",operandLabel,operandLabelOffset);
+					snprintf(dst+n,len-n," <%s+%x>",operandLabel,operandLabelOffset);
 				}
 				else {
-					sprintf(dst+n," <%s>",operandLabel);
+					snprintf(dst+n,len-n," <%s>",operandLabel);
 				}
 			}
 		}
@@ -541,8 +541,6 @@ Symtab::~Symtab()
 
 const char *Symtab::getSymbolByAddress(dqr::ADDRESS addr)
 {
-	printf("getSymbolByAddress()\n");
-
 	if (addr == 0) {
 		return nullptr;
 	}
@@ -558,10 +556,10 @@ const char *Symtab::getSymbolByAddress(dqr::ADDRESS addr)
 		section = symbol_table[i]->section;
 	    section_base_vma = section->vma;
 
-	    if (section_base_vma + symbol_table[i]->value == vma) {
-	    	printf("symabol match for address %p, name: %s\n",vma,symbol_table[i]->name);
-//	    	&& (symbol_table[i]->flags & BSF_FUNCTION))
-	    }
+//	    if (section_base_vma + symbol_table[i]->value == vma) {
+//	    	printf("symabol match for address %p, name: %s\n",vma,symbol_table[i]->name);
+////	    	&& (symbol_table[i]->flags & BSF_FUNCTION))
+//	    }
 
 	    if ((section_base_vma + symbol_table[i]->value == vma) && (symbol_table[i]->flags & BSF_FUNCTION)) {
 	    	index = i;
@@ -885,7 +883,7 @@ NexusMessage::NexusMessage()
 	time           = 0;
 }
 
-void NexusMessage::messageToText(char *dst, char **pdst, int level)
+void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 {
 	assert(dst != nullptr);
 
@@ -907,34 +905,34 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 	}
 
 	if (haveTimestamp) {
-		n = sprintf(dst,"Msg # %d, Tics: %lld, NxtAddr: %08llx, TCode: ",msgNum,time,currentAddress);
+		n = snprintf(dst,dst_len,"Msg # %d, Tics: %lld, NxtAddr: %08llx, TCode: ",msgNum,time,currentAddress);
 	}
 	else {
-		n = sprintf(dst,"Msg # %d, NxtAddr: %08llx, TCode: ",msgNum,currentAddress);
+		n = snprintf(dst,dst_len,"Msg # %d, NxtAddr: %08llx, TCode: ",msgNum,currentAddress);
 	}
 
 	switch (tcode) {
 	case dqr::TCODE_DEBUG_STATUS:
-		sprintf(dst+n,"DEBUG STATUS (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"DEBUG STATUS (%d)",tcode);
 		break;
 	case dqr::TCODE_DEVICE_ID:
-		sprintf(dst+n,"DEVICE ID (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"DEVICE ID (%d)",tcode);
 		break;
 	case dqr::TCODE_OWNERSHIP_TRACE:
-		n += sprintf(dst+n,"OWNERSHIP TRACE (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"OWNERSHIP TRACE (%d)",tcode);
 
 		if (level >= 2) {
-			sprintf(dst+n," process: %d",ownership.process);
+			snprintf(dst+n,dst_len-n," process: %d",ownership.process);
 		}
 		break;
 	case dqr::TCODE_DIRECT_BRANCH:
-		n += sprintf(dst+n,"DIRECT BRANCH (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"DIRECT BRANCH (%d)",tcode);
 		if (level >= 2) {
-			sprintf(dst+n," I-CNT: %d",directBranch.i_cnt);
+			snprintf(dst+n,dst_len-n," I-CNT: %d",directBranch.i_cnt);
 		}
 		break;
 	case dqr::TCODE_INDIRECT_BRANCH:
-		n += sprintf(dst+n,"INDIRECT BRANCH (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"INDIRECT BRANCH (%d)",tcode);
 
 		if (level >= 2) {
 			switch (indirectBranch.b_type) {
@@ -955,23 +953,23 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 				break;
 			}
 
-			sprintf(dst+n," Branch Type: %s (%d) I-CNT: %d U-ADDR: 0x%08llx ",bt,indirectBranch.b_type,indirectBranch.i_cnt,indirectBranch.u_addr);
+			snprintf(dst+n,dst_len-n," Branch Type: %s (%d) I-CNT: %d U-ADDR: 0x%08llx ",bt,indirectBranch.b_type,indirectBranch.i_cnt,indirectBranch.u_addr);
 		}
 		break;
 	case dqr::TCODE_DATA_WRITE:
-		sprintf(dst+n,"DATA WRITE (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"DATA WRITE (%d)",tcode);
 		break;
 	case dqr::TCODE_DATA_READ:
-		sprintf(dst+n,"DATA READ (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"DATA READ (%d)",tcode);
 		break;
 	case dqr::TCODE_ERROR:
-		n += sprintf(dst+n,"ERROR (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"ERROR (%d)",tcode);
 		if (level >= 2) {
-			sprintf(dst+n," Error Type %d",error.etype);
+			snprintf(dst+n,dst_len-n," Error Type %d",error.etype);
 		}
 		break;
 	case dqr::TCODE_SYNC:
-		n += sprintf(dst+n,"SYNC (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"SYNC (%d)",tcode);
 
 		if (level >= 2) {
 			switch (sync.sync) {
@@ -1013,14 +1011,14 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 				break;
 			}
 
-			sprintf(dst+n," Reason: (%d) %s I-CNT: %d F-Addr: 0x%08llx",sync.sync,sr,sync.i_cnt,sync.f_addr);
+			snprintf(dst+n,dst_len-n," Reason: (%d) %s I-CNT: %d F-Addr: 0x%08llx",sync.sync,sr,sync.i_cnt,sync.f_addr);
 		}
 		break;
 	case dqr::TCODE_CORRECTION:
-		sprintf(dst+n,"Correction (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"Correction (%d)",tcode);
 		break;
 	case dqr::TCODE_DIRECT_BRANCH_WS:
-		n += sprintf(dst+n,"DIRECT BRANCH WS (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"DIRECT BRANCH WS (%d)",tcode);
 
 		if (level >= 2) {
 			switch (directBranchWS.sync) {
@@ -1062,11 +1060,11 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 				break;
 			}
 
-			sprintf(dst+n," Reason: (%d) %s I-CNT: %d F-Addr: 0x%08llx",directBranchWS.sync,sr,directBranchWS.i_cnt,directBranchWS.f_addr);
+			snprintf(dst+n,dst_len-n," Reason: (%d) %s I-CNT: %d F-Addr: 0x%08llx",directBranchWS.sync,sr,directBranchWS.i_cnt,directBranchWS.f_addr);
 		}
 		break;
 	case dqr::TCODE_INDIRECT_BRANCH_WS:
-		n += sprintf(dst+n,"INDIRECT BRANCH WS (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"INDIRECT BRANCH WS (%d)",tcode);
 
 		if (level >= 2) {
 			switch (indirectBranchWS.sync) {
@@ -1126,41 +1124,41 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 				break;
 			}
 
-			sprintf(dst+n," Reason: (%d) %s Branch Type %s (%d) I-CNT: %d F-Addr: 0x%08llx",indirectBranchWS.sync,sr,bt,indirectBranchWS.b_type,indirectBranchWS.i_cnt,indirectBranchWS.f_addr);
+			snprintf(dst+n,dst_len-n," Reason: (%d) %s Branch Type %s (%d) I-CNT: %d F-Addr: 0x%08llx",indirectBranchWS.sync,sr,bt,indirectBranchWS.b_type,indirectBranchWS.i_cnt,indirectBranchWS.f_addr);
 		}
 		break;
 	case dqr::TCODE_DATA_WRITE_WS:
-		sprintf(dst+n,"DATA WRITE WS (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"DATA WRITE WS (%d)",tcode);
 		break;
 	case dqr::TCODE_DATA_READ_WS:
-		sprintf(dst+n,"DATA READ WS (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"DATA READ WS (%d)",tcode);
 		break;
 	case dqr::TCODE_WATCHPOINT:
-		sprintf(dst+n,"TCode: WATCHPOINT (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"TCode: WATCHPOINT (%d)",tcode);
 		break;
 	case dqr::TCODE_OUTPUT_PORTREPLACEMENT:
-		sprintf(dst+n,"OUTPUT PORT REPLACEMENT (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"OUTPUT PORT REPLACEMENT (%d)",tcode);
 		break;
 	case dqr::TCODE_INPUT_PORTREPLACEMENT:
-		sprintf(dst+n,"INPUT PORT REPLACEMENT (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"INPUT PORT REPLACEMENT (%d)",tcode);
 		break;
 	case dqr::TCODE_AUXACCESS_READ:
-		sprintf(dst+n,"AUX ACCESS READ (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"AUX ACCESS READ (%d)",tcode);
 		break;
 	case dqr::TCODE_DATA_ACQUISITION:
-		n += sprintf(dst+n,"DATA ACQUISITION (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"DATA ACQUISITION (%d)",tcode);
 
 		if (level >= 2) { // here, if addr not on word boudry, have a partial write!
 			switch (dataAcquisition.idTag & 0x03) {
 			case 0:
 			case 1:
-				sprintf(dst+n," idTag: 0x%08x Data: 0x%08x",dataAcquisition.idTag,dataAcquisition.data);
+				snprintf(dst+n,dst_len-n," idTag: 0x%08x Data: 0x%08x",dataAcquisition.idTag,dataAcquisition.data);
 				break;
 			case 2:
-				sprintf(dst+n," idTag: 0x%08x Data: 0x%04x",dataAcquisition.idTag,(uint16_t)dataAcquisition.data);
+				snprintf(dst+n,dst_len-n," idTag: 0x%08x Data: 0x%04x",dataAcquisition.idTag,(uint16_t)dataAcquisition.data);
 				break;
 			case 3:
-				sprintf(dst+n," idTag: 0x%08x Data: 0x%02x",dataAcquisition.idTag,(uint8_t)dataAcquisition.data);
+				snprintf(dst+n,dst_len-n," idTag: 0x%08x Data: 0x%02x",dataAcquisition.idTag,(uint8_t)dataAcquisition.data);
 				break;
 			}
 		}
@@ -1170,19 +1168,19 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 		}
 		break;
 	case dqr::TCODE_AUXACCESS_WRITE:
-		n += sprintf(dst+n,"AUX ACCESS WRITE (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"AUX ACCESS WRITE (%d)",tcode);
 
 		if (level >= 2) { // here, if addr not on word boudry, have a partial write!
 			switch (auxAccessWrite.addr & 0x03) {
 			case 0:
 			case 1:
-				sprintf(dst+n," Addr: 0x%08x Data: 0x%08x",auxAccessWrite.addr,auxAccessWrite.data);
+				snprintf(dst+n,dst_len-n," Addr: 0x%08x Data: 0x%08x",auxAccessWrite.addr,auxAccessWrite.data);
 				break;
 			case 2:
-				sprintf(dst+n," Addr: 0x%08x Data: 0x%04x",auxAccessWrite.addr,(uint16_t)auxAccessWrite.data);
+				snprintf(dst+n,dst_len-n," Addr: 0x%08x Data: 0x%04x",auxAccessWrite.addr,(uint16_t)auxAccessWrite.data);
 				break;
 			case 3:
-				sprintf(dst+n," Addr: 0x%08x Data: 0x%02x",auxAccessWrite.addr,(uint8_t)auxAccessWrite.data);
+				snprintf(dst+n,dst_len-n," Addr: 0x%08x Data: 0x%02x",auxAccessWrite.addr,(uint8_t)auxAccessWrite.data);
 				break;
 			}
 		}
@@ -1192,47 +1190,47 @@ void NexusMessage::messageToText(char *dst, char **pdst, int level)
 		}
 		break;
 	case dqr::TCODE_AUXACCESS_READNEXT:
-		sprintf(dst+n,"AUX ACCESS READNEXT (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"AUX ACCESS READNEXT (%d)",tcode);
 		break;
 	case dqr::TCODE_AUXACCESS_WRITENEXT:
-		sprintf(dst+n,"AUX ACCESS WRITENEXT (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"AUX ACCESS WRITENEXT (%d)",tcode);
 		break;
 	case dqr::TCODE_AUXACCESS_RESPONSE:
-		sprintf(dst+n,"AUXACCESS RESPOINSE (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"AUXACCESS RESPOINSE (%d)",tcode);
 		break;
 	case dqr::TCODE_RESURCEFULL:
-		sprintf(dst+n,"RESOURCE FULL (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"RESOURCE FULL (%d)",tcode);
 		break;
 	case dqr::TCODE_INDIRECTBRANCHHISOTRY:
-		sprintf(dst+n,"INDIRECT BRANCH HISTORY (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY (%d)",tcode);
 		break;
 	case dqr::TCODE_INDIRECTBRANCHHISORY_WS:
-		sprintf(dst+n,"INDIRECT BRANCH HISTORY WS (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY WS (%d)",tcode);
 		break;
 	case dqr::TCODE_REPEATBRANCH:
-		sprintf(dst+n,"REPEAT BRANCH (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"REPEAT BRANCH (%d)",tcode);
 		break;
 	case dqr::TCODE_REPEATINSTRUCITON:
-		sprintf(dst+n,"REPEAT INSTRUCTION (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"REPEAT INSTRUCTION (%d)",tcode);
 		break;
 	case dqr::TCODE_REPEATSINSTURCIONT_WS:
-		sprintf(dst+n,"REPEAT INSTRUCTIN WS (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"REPEAT INSTRUCTIN WS (%d)",tcode);
 		break;
 	case dqr::TCODE_CORRELATION:
-		n += sprintf(dst+n,"CORRELATION (%d)",tcode);
+		n += snprintf(dst+n,dst_len-n,"CORRELATION (%d)",tcode);
 
 		if (level >= 2) {
-			sprintf(dst+n," EVCODE: %d I-CNT: %d",correlation.evcode,correlation.i_cnt);
+			snprintf(dst+n,dst_len-n," EVCODE: %d I-CNT: %d",correlation.evcode,correlation.i_cnt);
 		}
 		break;
 	case dqr::TCODE_INCIRCUITTRACE:
-		sprintf(dst+n,"INCIRCUITTRACE (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"INCIRCUITTRACE (%d)",tcode);
 		break;
 	case dqr::TCODE_UNDEFINED:
-		sprintf(dst+n,"UNDEFINED (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"UNDEFINED (%d)",tcode);
 		break;
 	default:
-		sprintf(dst+n,"BAD TCODE (%d)",tcode);
+		snprintf(dst+n,dst_len-n,"BAD TCODE (%d)",tcode);
 		break;
 	}
 }
@@ -1375,7 +1373,7 @@ dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(4,&tmp);
+        rc = parseFixedField(1,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1440,7 +1438,7 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(4,&tmp);
+        rc = parseFixedField(1,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1526,7 +1524,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(4,&tmp);
+        rc = parseFixedField(1,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1611,7 +1609,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(4,&tmp);
+        rc = parseFixedField(1,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1708,7 +1706,7 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(4,&tmp);
+        rc = parseFixedField(1,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1721,7 +1719,7 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm)
 		nm.src = 0;
 	}
 
-	// parse the variable length the i-cnt
+	// parse the variable length the sync
 
 	rc = parseFixedField(4,&tmp);
 	if (rc != dqr::DQERR_OK) {
@@ -1792,7 +1790,7 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(4,&tmp);
+        rc = parseFixedField(1,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1826,7 +1824,7 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm)
 	}
 
 	if (tmp != 0) {
-		printf("Error: DQErr SliceFileParser::parseCorrelation(): Expected EVCODE to be 0\n");
+		printf("Error: DQErr SliceFileParser::parseCorrelation(): Expected CDF to be 0 (%d)\n",(int)tmp);
 
 		status = dqr::DQERR_ERR;
 
@@ -1887,7 +1885,7 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(4,&tmp);
+        rc = parseFixedField(1,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1961,7 +1959,7 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(4,&tmp);
+        rc = parseFixedField(1,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -2026,7 +2024,7 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(4,&tmp);
+        rc = parseFixedField(1,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -2102,7 +2100,7 @@ dqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(4,&tmp);
+        rc = parseFixedField(1,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -2173,6 +2171,8 @@ dqr::DQErr SliceFileParser::parseFixedField(int width, uint64_t *val)
 	assert(width != 0);
 	assert(val != nullptr);
 
+	uint64_t tmp_val = 0;
+
 	int i;
 	int b;
 
@@ -2186,7 +2186,7 @@ dqr::DQErr SliceFileParser::parseFixedField(int width, uint64_t *val)
 	// for read error checking we should make sure that the MSEO bits are
 	// correct for this field. But for now, we don't
 
-	if (i >= msgSlices) {
+	if (bitIndex >= msgSlices * 6) {
 		// read past end of message
 
 		status = dqr::DQERR_EOM;
@@ -2195,23 +2195,46 @@ dqr::DQErr SliceFileParser::parseFixedField(int width, uint64_t *val)
 	}
 
 	if (b+width > 6) {
-		// don't support fixed width > 6 bits or that cross slice boundary
+		// fixed field crossed byte boundry - get the bits at msg[i]
 
-		status = dqr::DQERR_ERR;
+		// work from lsb's to msb's
 
-		return dqr::DQERR_ERR;
+		tmp_val = (uint64_t)(msg[i] >> (b+2));	// add 2 because of the mseo bits
+
+		int consumed = 6-b;
+		int remainingWidth = width - consumed;
+
+		i += 1;
+
+//		b = 0; comment this line out because we jsut don't use b anymore. It is 0 for the rest of the call
+
+		// get the middle bits
+
+		while (remainingWidth >= 6) {
+			tmp_val |= ((uint64_t)(msg[i] >> 2)) << consumed;
+			i += 1;
+			remainingWidth -= 6;
+			consumed += 6;
+		}
+
+		// now get the last bits
+
+		if (remainingWidth > 0) {
+			tmp_val |= ((uint64_t)(((uint8_t)(msg[i] << (6-remainingWidth))) >> (6-remainingWidth+2))) << consumed;
+		}
+
+		*val = tmp_val;
 	}
+	else {
+		uint8_t v;
 
-	uint8_t v;
+		// strip off upper and lower bits not part of field
 
-	// strip off upper and lower bits not part of field
+		v = msg[i] << (6-(b+width));
+		v = v >> ((6-(b+width))+b+2);
 
-	v = msg[i] << (6-(b+width));
-	v = v >> ((6-(b+width))+b+2);
-
-	*val = uint64_t(v);
-
-//	printf("-> bitIndex: %d, value: %x\n",bitIndex,v);
+		*val = uint64_t(v);
+	}
 
 	if ((msg[i] & 0x03) == dqr::MSEO_END) {
 		eom = true;
@@ -2283,7 +2306,7 @@ dqr::DQErr SliceFileParser::readBinaryMsg()
 			if (tf.eof()) {
 				status = dqr::DQERR_EOF;
 
-				std::cout << "End of trace file\n";
+				std::cout << "Info: End of trace file\n";
 			}
 			else {
 				status = dqr::DQERR_ERR;
@@ -2509,6 +2532,11 @@ dqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm)	// generator to r
 	// read from file, store in object, compute and fill out full fields, such as address and more later
 	// need some place to put it. An object
 
+//	do {
+//		rc = readBinaryMsg();
+//		dump();
+//	} while (rc == dqr::DQERR_OK); // foo
+
 	if (binary) {
 		rc = readBinaryMsg();
 		if (rc != dqr::DQERR_OK) {
@@ -2525,7 +2553,7 @@ dqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm)	// generator to r
 		rc = readAscMsg();
 		if (rc != dqr::DQERR_OK) {
 			if (rc != dqr::DQERR_EOF) {
-				std::cout << "Error: (): readTxtMsg() returned error " << rc << std::endl;
+				std::cout << "Error: (): read/TxtMsg() returned error " << rc << std::endl;
 			}
 
 			status = rc;
@@ -2534,9 +2562,10 @@ dqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm)	// generator to r
 		}
 	}
 
-// crow		dump();
+// crow	dump();
 
 	rc = parseFixedField(6, &val);
+
 	if (rc != dqr::DQERR_OK) {
 		std::cout << "Error: (): could not read tcode\n";
 
@@ -3158,8 +3187,6 @@ int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,in
 	is_branch = false;
 	immeadiate = 0;
 
-	printf("instruction & 0x0003 = %0x\n",instruction & 0x0003);
-
 	if ((instruction & 0x0003) != 0x0000) {
 		return 1;
 	}
@@ -3425,7 +3452,6 @@ int Disassembler::decodeInstruction(uint32_t instruction,int &inst_size,instType
 
 	switch (instruction & 0x0003) {
 	case 0x0000:	// quadrant 0, compressed
-		printf("q0!\n");
 		rc = decodeRV32Q0Instruction(instruction,inst_size,inst_type,immeadiate,is_branch);
 		break;
 	case 0x0001:	// quadrant 1, compressed

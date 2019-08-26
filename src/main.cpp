@@ -431,7 +431,7 @@ int main(int argc, char *argv[])
 	Instruction *instInfo;
 	NexusMessage *msgInfo;
 	Source *srcInfo;
-	char dst[80];
+	char dst[1024];
 	int instlevel = 1;
 	int msgLevel = 2;
 	const char *lastSrcFile = nullptr;
@@ -443,6 +443,7 @@ int main(int argc, char *argv[])
 
 	do {
 		ec = trace->NextInstruction(&instInfo,&msgInfo,&srcInfo);
+
 		if (ec == dqr::DQERR_OK) {
 			if (srcInfo != nullptr) {
 				if ((lastSrcFile != srcInfo->sourceFile) || (lastSrcLine != srcInfo->sourceLine) || (lastSrcLineNum != srcInfo->sourceLineNum)) {
@@ -488,7 +489,8 @@ int main(int argc, char *argv[])
 
 			if (dasm_flag && (instInfo != nullptr)) {
 //			    instInfo->addressToText(dst,instlevel);
-				instInfo->addressToText(dst,0);
+
+				instInfo->addressToText(dst,sizeof dst,0);
 
 				if (func_flag) {
 					if (multicore_flag) {
@@ -521,7 +523,7 @@ int main(int argc, char *argv[])
 					printf(" ");
 				}
 
-				instInfo->instructionToText(dst,instlevel);
+				instInfo->instructionToText(dst,sizeof dst,instlevel);
 				printf("  %s",dst);
 
 				printf("\n");
@@ -533,7 +535,7 @@ int main(int argc, char *argv[])
 				// got the goods! Get to it!
 				char *itcprint = nullptr;
 
-				msgInfo->messageToText(dst,&itcprint,msgLevel);
+				msgInfo->messageToText(dst,sizeof dst,&itcprint,msgLevel);
 
 				if (trace_flag) {
 					if (firstPrint == false) {
@@ -567,10 +569,6 @@ int main(int argc, char *argv[])
 			}
 		}
 	} while (ec == dqr::DQERR_OK);
-
-//	if (firstPrint == false) {
-//		cout << endl;
-//	}
 
 	delete trace;
 
