@@ -1040,6 +1040,22 @@ proc regval {name} {
 	return [string trim $val]
 }
 
+proc wp_control_set {bit} {
+    global wp_control
+    set newval [expr (([word $wp_control]) | (1 << $bit))]
+    mww $wp_control $newval
+}
+
+proc wp_control_clear {bit} {
+    global wp_control
+    set newval [expr (([word $wp_control]) & ~(1 << $bit))]
+    mww $wp_control $newval
+}
+
+proc wp_control_get_bit {bit} {
+    global wp_control
+    return [expr (([word $wp_control] >> $bit) & 0x1)]
+}
 
 mww $te_control 0x01830001
 mww $te_sinkrp 0xffffffff
