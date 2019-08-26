@@ -1057,6 +1057,31 @@ proc wp_control_get_bit {bit} {
     return [expr (([word $wp_control] >> $bit) & 0x1)]
 }
 
+proc xti_action_read { idx } {
+    global xti_control
+    return [expr ([word $xti_control] >> ($idx*4)) & 0xF]
+}
+
+proc xti_action_write { idx val } {
+    global xti_control
+    set zeroed [expr ([word $xti_control] & ~(0xF << ($idx*4)))]
+    set ored [expr ($zeroed | (($val & 0xF) << ($idx*4)))]
+    mww $xti_control $ored    
+}
+
+proc xto_event_read { idx } {
+    global xto_control_
+    return [expr ([word $xto_control_] >> ($idx*4)) & 0xF]
+}
+
+proc xto_event_write { idx val } {
+    global xto_control_
+    set zeroed [expr ([word $xto_control_] & ~(0xF << ($idx*4)))]
+    set ored [expr ($zeroed | (($val & 0xF) << ($idx*4)))]
+    mww $xto_control_ $ored    
+}
+
+
 mww $te_control 0x01830001
 mww $te_sinkrp 0xffffffff
 mww $te_sinkwp 0x00000000
