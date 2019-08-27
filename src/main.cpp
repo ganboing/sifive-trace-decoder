@@ -89,6 +89,9 @@ static void usage(char *name)
 	printf("              files cannot be processed if the -nomulticore flag is given because the trace formats are different for\n");
 	printf("              single core and multi-core traces.\n");
 	printf("-unicore:     Same as the -nomulticore flag\n");
+	printf("-srcbits=n:   The size in bits of hte src field in the trace messages. Valid only if -multicore has been specified.\n");
+	printf("              n must be greater than 1 and less than or equal to 4. If the -multicore switch is given, srcbits will be\n");
+	printf("              set to 1 by default.\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -159,6 +162,7 @@ int main(int argc, char *argv[])
 	uint32_t addrDispFlags = 0;
 	bool multicore_flag = false;
 	bool itcbuffer_flag = true;
+	int srcbits = 0;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -336,12 +340,22 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp("-multicore", argv[i]) == 0) {
 			multicore_flag = true;
+			srcbits = 1;
 		}
 		else if (strcmp("-nomulticore", argv[i]) == 0) {
 			multicore_flag = false;
 		}
 		else if (strcmp("-unicore", argv[i]) == 0) {
 			multicore_flag = false;
+		}
+		else if (strncmp("-srcbits=",argv[i],strlen("-srcbits=")) == 0) {
+			srcbits = atoi(argv[i]+strlen("-srcbits="));
+
+			if ((srcbits < 1) || (srcbits > 4)) {
+				printf("Error: option -srcbits=n valic number of trace message src bits >= 1, <= 4\n");
+				usage(argv[0]);
+				return 1;
+			}
 		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
@@ -355,7 +369,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (version_flag) {
-		printf("%s: version %s\n",argv[0],"0.2");
+		printf("%s: version %s\n",argv[0],"0.3");
 		return 0;
 	}
 
@@ -385,7 +399,7 @@ int main(int argc, char *argv[])
 
 	// might want to include some path info!
 
-	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags,numAddrBits,addrDispFlags,multicore_flag);
+	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags,numAddrBits,addrDispFlags,multicore_flag,srcbits);
 
 	assert(trace != nullptr);
 

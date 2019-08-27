@@ -357,7 +357,7 @@ public:
 // class SliceFileParser: Class to parse binary or ascii nexus messages into a NexusMessage object
 class SliceFileParser {
 public:
-             SliceFileParser(char *filename, bool binary, bool ismulticore);
+             SliceFileParser(char *filename, bool binary, bool ismulticore, int srcBits);
   dqr::DQErr readNextTraceMsg(NexusMessage &nm);
 
 // foo  dqr::DQErr readAllTraceMsgs();
@@ -373,6 +373,7 @@ private:
 
   bool          binary;
   bool          multicore;
+  int           srcbits;
   std::ifstream tf;
   int           bitIndex;
   int           msgSlices;
@@ -497,7 +498,7 @@ public:
 		SYMFLAGS_NONE = 0,
 		SYMFLAGS_xx   = 1 << 0,
 	};
-	           Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags, bool multicore);
+	           Trace(char *tf_name,bool binaryFlag,char *ef_name,SymFlags sym_flags,int numAddrBits,uint32_t addrDispFlags,bool multicore,int srcBits);
 	          ~Trace();
 	dqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
 
@@ -544,6 +545,7 @@ private:
 	bool             readNewTraceMessage;
 	int              currentCore;
 	bool             multicore;
+	int              srcbits;
 	bool             bufferItc;
 
 	int              startMessageNum;

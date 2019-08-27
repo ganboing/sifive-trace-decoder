@@ -1308,11 +1308,12 @@ void NexusMessage::dump()
 	}
 }
 
-SliceFileParser::SliceFileParser(char *filename, bool binary, bool ismulticore)
+SliceFileParser::SliceFileParser(char *filename, bool binary, bool ismulticore, int srcBits)
 {
 	assert(filename != nullptr);
 
 	multicore = ismulticore;
+	srcbits = srcBits;
 
 	numTraceMsgs   = 0;
 	numSyncMsgs    = 0;
@@ -1373,7 +1374,7 @@ dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(1,&tmp);
+        rc = parseFixedField(srcbits,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1438,7 +1439,7 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(1,&tmp);
+        rc = parseFixedField(srcbits,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1524,7 +1525,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(1,&tmp);
+        rc = parseFixedField(srcbits,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1609,7 +1610,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(1,&tmp);
+        rc = parseFixedField(srcbits,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1706,7 +1707,7 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(1,&tmp);
+        rc = parseFixedField(srcbits,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1790,7 +1791,7 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(1,&tmp);
+        rc = parseFixedField(srcbits,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1885,7 +1886,7 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(1,&tmp);
+        rc = parseFixedField(srcbits,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -1959,7 +1960,7 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(1,&tmp);
+        rc = parseFixedField(srcbits,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -2024,7 +2025,7 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm)
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(1,&tmp);
+        rc = parseFixedField(srcbits,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -2095,12 +2096,12 @@ dqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm)
 	dqr::DQErr rc;
 	uint64_t   tmp;
 
-	nm.tcode = dqr::TCODE_AUXACCESS_WRITE;
+	nm.tcode = dqr::TCODE_DATA_ACQUISITION;
 
 	// if multicore, parse src field
 
 	if (multicore) {
-        rc = parseFixedField(1,&tmp);
+        rc = parseFixedField(srcbits,&tmp);
         if (rc != dqr::DQERR_OK) {
             status = rc;
 
@@ -2532,7 +2533,10 @@ dqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm)	// generator to r
 	// read from file, store in object, compute and fill out full fields, such as address and more later
 	// need some place to put it. An object
 
+//	int i = 1;
 //	do {
+//		printf("trce msg %d\n",i);
+//		i += 1;
 //		rc = readBinaryMsg();
 //		dump();
 //	} while (rc == dqr::DQERR_OK); // foo
@@ -2605,8 +2609,7 @@ dqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm)	// generator to r
 		status = dqr::DQERR_ERR;
 		break;
 	case dqr::TCODE_DATA_ACQUISITION:
-		std::cout << "unsupported data acquisition trace message\n";
-		status = dqr::DQERR_ERR;
+		status = parseDataAcquisition(nm);
 		break;
 	case dqr::TCODE_ERROR:
 		status = parseError(nm);
@@ -3478,6 +3481,11 @@ int Disassembler::getSrcLines(dqr::ADDRESS addr, const char **filename, const ch
 	// need to loop through all sections with code below and try to find one that succeeds
 
 	section *sp;
+
+	*filename = nullptr;
+	*functionname = nullptr;
+	*linenumber = 0;
+	*lineptr = nullptr;
 
 	if (codeSectionLst == nullptr) {
 		return 0;

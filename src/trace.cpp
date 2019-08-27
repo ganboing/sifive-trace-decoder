@@ -45,7 +45,7 @@ int Trace::decodeInstruction(uint32_t instruction,int &inst_size,Disassembler::i
 	return disassembler->decodeInstruction(instruction,inst_size,inst_type,immeadiate,is_branch);
 }
 
-Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags, bool ismulticore)
+Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags, bool ismulticore, int srcBits)
 {
   sfp          = nullptr;
   elfReader    = nullptr;
@@ -55,9 +55,12 @@ Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, 
   assert(tf_name != nullptr);
 
   multicore = ismulticore;
+
+  srcbits = srcBits;
+
   bufferItc = true;
 
-  sfp = new (std::nothrow) SliceFileParser(tf_name,binaryFlag,multicore);
+  sfp = new (std::nothrow) SliceFileParser(tf_name,binaryFlag,multicore,srcbits);
 
   assert(sfp != nullptr);
 
@@ -376,7 +379,7 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 //		staying in the same state that expects to get another message!!
 
 		if (readNewTraceMessage != false) {
-// foo			rc = linkedNexusMessage::nextTraceMessage(nm);
+//			rc = linkedNexusMessage::nextTraceMessage(nm);
 			rc = sfp->readNextTraceMsg(nm);
 
 			if (rc != dqr::DQERR_OK) {
@@ -509,7 +512,7 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 			}
 			break;
 		case TRACE_STATE_COMPUTESTARTINGADDRESS:
-			// printf("state TRACE_STATE_COMPUTSTARTINGADDRESS\n");
+//			printf("state TRACE_STATE_COMPUTSTARTINGADDRESS\n");
 
 			// compute address from trace message queued up in messageSync->msgs
 
@@ -681,6 +684,8 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 			}
 			break;
 		case TRACE_STATE_GETFIRSTYNCMSG:
+//			printf("state TRACE_STATE_GETFIRSTSYNCMSG\n");
+
 			// read trace messages until a sync is found. Should be the first message normally
 
 			// only exit this state when sync type message is found
@@ -755,6 +760,7 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 			status = dqr::DQERR_OK;
 			return status;
 		case TRACE_STATE_GETSECONDMSG:
+//			printf("state TRACE_STATE_GETSECONDMSG\n");
 
 			// only message with i-cnt will release from this state
 
@@ -828,6 +834,7 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 			}
 			break;
 		case TRACE_STATE_RETIREMESSAGE:
+//			printf("state TRACE_STATE_RETIREMESSAGE\n");
 
 			// Process message being retired (currently in nm) i_cnt has gone to 0
 
@@ -993,6 +1000,7 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 			status = dqr::DQERR_OK;
 			return status;
 		case TRACE_STATE_GETNEXTMSG:
+//			printf("state TRACE_STATE_GETNEXTMSG\n");
 
 			// exit this state when message with i-cnt is read
 
@@ -1030,6 +1038,7 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
 				break;
 			case dqr::TCODE_AUXACCESS_WRITE:
+			case dqr::TCODE_DATA_ACQUISITION:
 			case dqr::TCODE_OWNERSHIP_TRACE:
 			case dqr::TCODE_ERROR:
 				// retire these instantly by returning them through msgInfo
@@ -1058,7 +1067,7 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 			}
 			break;
 		case TRACE_STATE_GETNEXTINSTRUCTION:
-			// printf("Trace::NextInstruction():TRACE_STATE_GETNEXTINSTRUCTION\n");
+//			printf("Trace::NextInstruction():TRACE_STATE_GETNEXTINSTRUCTION\n");
 
 			// get instruction at addr
 
@@ -1146,6 +1155,7 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 			status = dqr::DQERR_OK;
 			return status;
 		case TRACE_STATE_DONE:
+//			printf("Trace::NextInstruction():TRACE_STATE_DONE\n");
 			status = dqr::DQERR_DONE;
 			return status;
 		case TRACE_STATE_ERROR:
