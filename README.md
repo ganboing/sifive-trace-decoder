@@ -42,6 +42,14 @@ https://github.com/sifive/riscv-binutils-gdb
 
 The binaries for these libraries for all supported platforms are included in this distribution in the lib folders.
 
+### New for Version 0.3 (19.08 release)
+
+Support for 64 bit trace decoding. Command line options can specify the address width to display. By default the type of elf file is used to determine address width.
+
+Printing to the ITC Stimulus Registers. Instead of sending printed output to a UART, printed output can be sent to the ITC stimulus registers and captured in thre trace message stream. The trace-decoder (dqr) will can reconstruct the printed output and display it to the user.
+
+Multi-core Support. The trace-decoder now supports multi-core traces, up to 8 cores through the use of the -srcbits-n switch. When decoding multi-core traces, each line output is prefixed with a core number for identification.
+
 ### Building:
 
 To build the trace-decoder, the correct build tools must first be installed. On windows, MinGW and MSYS must be installed.  For Linux, g++ must be installed. On Mac OS X, use either XCode or g++.
@@ -120,21 +128,21 @@ To build the `Release` configuration, use `make CONFIG=Release all` (This is wha
 
 On the Windows and Linux versions, all libraries are statically linked in the executable. On OS X, only the libbfd, libopcodes, libibery, libintl, and libz libraries are statically linked.
 
-
 #### Notes
 
 There is a `makefile.init` at the top level that contains the settings that apply to all configurations, including a list of OBJ files that needs to be updated when new source files are added. Each config sub-folder has a makefile that contains settings for the specific configuration (like optimization flags that generally differentiate a Release build from a Debug build).
 
 ### Running:
 
-Use `dqr -h` to display useage information. It will display something like:
+Use `dqr -h` to display usage information. It will display something like:
 
 ```
-Usage: dqr (-t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src] [-nosrc]
-            [-file] [-nofile] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path] [-v] [-h]
+Usage: dqr -t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src] [-nosrc]
+           [-file] [-nofile] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path] [-v] [-h]
+           [-multicore] [-nomulticore] [-unicore] [-32] [-64] [-32+] [-addrsep] [-noaddrsep]
 
--t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd)
--e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf)
+-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).
+-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).
 -n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension
               should be given. The extensions .rtd and .elf will be added to basename.
 -start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is
@@ -151,7 +159,33 @@ Usage: dqr (-t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src]
 -notrace:     Do not display trace information in output.
 --strip=path: Strip of the specified path when displaying source file name/path. Strips off all that matches.
               Path may be enclosed in quotes if it contains spaces.
--v:           Display the version number of the DQer and exit
+-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatenated
+              and displayed as a string until a terminating \0 is found
+-itcprintnobuffer:    Display ITC 0 data as a null terminated string without buffering multiple itc messages into a
+              single message. Data from consecutive ITC 0's will not be concatenated. Potentially useful where the
+              buffering of itc 0 print messages causes flushing issues.
+-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair
+-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and
+              cause the address field to be jagged. Overrides value address size read from elf file.
+-addrsize=n+: Display address as n bits (32 <= n <= 64) unless a larger address size is seen, in which case the address
+              size is increased to accommodate the larger value. When the address size is increased, it stays increased
+              (sticky) and will be again increased if a new larger value is encountered. Overrides the address size
+              read from the elf file.
+-32:          Display addresses as 32 bits. Values lager than 32 bits will print, but take more space and cause
+              the address field to be jagged. Selected by default if elf file indicates 32 bit address size.
+              Specifying -32 overrides address size read from elf file
+-32+          Display addresses as 32 bits until larger addresses are displayed and then adjust up to a larger
+              enough size to display the entire address. When addresses are adjusted up, they do not later adjust
+              back down, but stay at the new size unless they need to adjust up again. This is the default setting
+              if the elf file specifies > 32 bit address size (such as 64). Specifying -32+ overrides the value
+              read from the elf file
+-64:          Display addresses as 64 bits. Overrides value read from elf file
+-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'
+-noaddrsep:   Do not add a separator for addresses greater than 32 bit between the upper bits and the lower 32 bits
+              (default).
+-srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables
+              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.
+-v:           Display the version number of the DQer and exit.
 -h:           Display this usage information.
 ```
 
@@ -210,5 +244,81 @@ Except it will be much longer.
 
 If the files specified by the -t and -e options are not in the current directory, the path to each should be included. If the trace was collected with timestamps, they will be displayed in the trace information if the -trace option is given.
 
-The trace output is sent to STDOUT.
+All trace output is sent to stdout.
 
+### ITC Print
+
+There are two mechanisms available to capture printed text in the trace message stream; redirected stdio and a custom itcprintf() and itcputs() functions. Both cause writes to the ITC 0 stimulus register which generates either Auxiliary Access Write trace message or Data Acquisition trace messages messages to be generated. Additional detail for both is given below.
+
+Using the trace-decoder to Display ITC Print Data
+
+By default the trace-decoder will not recognize Aux Access Write messages or Data Acquisition messages as ITC print messages. To enable the recognition of ITC print data, the -itcprint flag must be given on the command line, as in:
+
+`dqr -t sort.rtd -e sort.elf -trace -itcprint`
+
+This will cause both Aux Access Write messages and Data Acquisition messages to be recognized and ITC print data and displayed as such. Each itc print data line output by the trace-decoder will be prefixed with "ITC PRINT: "
+
+#### Custom itcprintf()/itcputs() Function
+
+The custom itcprintf() and itcputs() functions take the normal printf() and puts() argument list but sends all output to the ITC 0 stimulus register. Example and completely usable itcprintf() and itcputs() functions are in the examples directory. Add them to your project either by cutting and pasting the source to your source, or copying the files into your project and adding them to the project. 
+
+For example, if your program had a call to itcprintf() as in:
+
+`itcprintf("Hello world!\n");`
+
+and you captured the trace and decoded it with the command line:
+
+`dqr -t helloworld.rtd -e helloworld.elf -trace -itcprint`
+
+Among all the other trace output from dqr would be the line:
+
+`ITC Print: Hello world!`
+
+#### Redirected stdio
+
+The other mechanism for getting print data in the trace message stream is to redirect all stdio output to the ITC 0 stimulus registers. To do that, you must have a bsp for your processor that was build with redirected stdout.
+
+To check if your bsp has stdout redirected, you can check the design.dst file in the bsp directory. There should be a chosen record in the design.dts file, something like:
+
+```
+L18: chosen {
+metal,entry = <&L7 0x400000>:
+stdout-path="/soc/trace-encoder-0@20007000:115200";
+};
+```
+
+If the stdout-path is set to anything else, stdout is not redirected to the ITC 0 stimulus registers. It is no sufficient to just change the stdout-path entry to the trace-encoder; the entire bsp must be rebuilt.
+
+#### Mutli-core and ITC Printing
+
+Currently both mechanisms to capture print data in the trace message stream print only to core 0 ITC 0. This means if doing multi-core tracing, all ITC print messages will show up at core 0 ITC Prints, as in:
+
+`[0] ITC Print: Hello World!`
+
+Also, if multiple cores are printing to the ITC registers, their output could be intermixed and displayed as jumbled. To prevent that, either only print from a single core, or use locks around the prints.
+
+#### ITC Print Flushing
+
+Because the ITC stimulus register is 32 bits, data is grouped in 4-byte packets before writing the register (using either the custom itcprintf()/itcputs() routines, or the redirected stdout). If fewer than 4 bytes are sent, or at the tail of a printf() where fewer than 4 bytes are left to send, the data can partial data can sit there waiting for more bytes to fill out the 32 bits. There is a mechanism to cause a flush - if you terminate your print with either a '\n' or a '\r', the partial word will be flushed. The itcprintf() and itcputs() routines know when they are at the end of the print, and they will always flush the last word - partial or not.
+
+The trace-decoder has a similar issue when reconstructing the print string. It buffers the messages until either a '\n' or a 'r' is seen, and then it will display the data. The trace-decoder will also flush the data when its buffer fills up.
+
+#### Enabling trace and ITC in the trace collection
+
+When using Freedom Studio to view trace data and ITC prints, Freedom Studio provides options to enable tracing and viewing ITC print data. If instead you are collecting trace data using OpenOCD, you will need to telnet into OpenOCD and then load the trace.tcl script file (in the scripts directory). Then you will need to enable the ITC by using the command:
+
+`itc all`
+
+followed by:
+
+`trace on`
+
+When done tracing:
+
+`trace off`
+
+and to write the trace data to a file
+
+`wtb <filename.rtd>`
+
+The trace file can then be processed with the dqr tool.

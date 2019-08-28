@@ -80,7 +80,7 @@ static void usage(char *name)
 	printf("              read from the elf file\n");
 	printf("-64:          Display addresses as 64 bits. Overrides value read from elf file\n");
 	printf("-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'\n");
-	printf("-noaddrsep:   Do not add a separatfor For addresses greater than 32 bit between the upper bits and the lower 32 bits\n");
+	printf("-noaddrsep:   Do not add a separator for addresses greater than 32 bit between the upper bits and the lower 32 bits\n");
 	printf("              (default).\n");
 //	printf("-multicore:   Decode a multicore trace file; up to 8 cores. Trace, instruction, source lines, and file info is all\n");
 //	printf("              prefixed with a core number in square brackes.  i.e. [2] would be core 2. Single core trace files will\n");
@@ -90,7 +90,7 @@ static void usage(char *name)
 //	printf("              single core and multi-core traces.\n");
 //	printf("-unicore:     Same as the -nomulticore flag\n");
 	printf("-srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables\n");
-	printf("              multicore. n > 0 enables multicore.\n");
+	printf("              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
