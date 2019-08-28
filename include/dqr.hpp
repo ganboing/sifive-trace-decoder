@@ -40,7 +40,7 @@
 #include <cstdint>
 #include <cassert>
 
-// could wrap all this in a class to provide namespace scoping - do it later!!
+#define DQR_MAXCORES	8
 
 class dqr {
 public:
@@ -156,10 +156,11 @@ public:
 
 class Instruction {
 public:
-	void addressToText(char *dst,int labelLevel);
+	void addressToText(char *dst,size_t len,int labelLevel);
 	void opcodeToText();
-	void instructionToText(char *dst,int labelLevel);
+	void instructionToText(char *dst,size_t len,int labelLevel);
 
+	uint8_t           coreId;
 	dqr::ADDRESS      address;
 	dqr::RV_INST      instruction;
 	char              instructionText[64];
@@ -179,6 +180,7 @@ public:
 
 class Source {
 public:
+	uint8_t      coreId;
 	const char  *sourceFile;
 	const char  *sourceFunction;
 	unsigned int sourceLineNum;
@@ -251,12 +253,25 @@ private:
 	Symtab     *symtab;
 };
 
+class itcPrint {
+private:
+	static bool init();
+public:
+	static char *print(uint8_t core, uint32_t address, uint32_t data);
+
+	static bool inited;
+	static bool buffering;
+	static bool eol[DQR_MAXCORES];
+	static char pbuff[DQR_MAXCORES][1024];
+	static int pbi[DQR_MAXCORES];
+};
+
 // class NexusMessage: class to hold Nexus messages and convert them to text
 
 class NexusMessage {
 public:
 	NexusMessage();
-	void messageToText(char *dst,char **pdst,int level);
+	void messageToText(char *dst,size_t dst_len,char **pdst,int level);
 	void dump();
 
 	int        	   msgNum;
@@ -265,6 +280,8 @@ public:
     dqr::TIMESTAMP timestamp;
     dqr::ADDRESS   currentAddress;
     dqr::TIMESTAMP time;
+
+    uint8_t        src;
 
     union {
     	struct {
@@ -304,6 +321,10 @@ public:
     		uint32_t addr;
     	} auxAccessWrite;
     	struct {
+    		uint32_t idTag;
+    		uint32_t data;
+    	} dataAcquisition;
+    	struct {
     		uint32_t process;
     	} ownership;
     };
@@ -312,11 +333,34 @@ private:
     // empty
 };
 
+#ifdef foo
+class linkedNexusMessage {
+public:
+	linkedNexusMessage();
+	static void init();
+	static dqr::DQErr buildLinkedMsgs(NexusMessage &nm);
+	static dqr::DQErr nextTraceMessage(NexusMessage &nm);
+
+    linkedNexusMessage *nextCoreMessage;
+    linkedNexusMessage *nextInOrderMessage;
+
+    bool consumed;
+    static linkedNexusMessage *firstMsg;
+    static int lastCore;
+    static linkedNexusMessage *linkedNexusMessageHeads[8];
+    static linkedNexusMessage *lastNexusMsgPtr[8];
+
+    NexusMessage nm;
+};
+#endif // foo
+
 // class SliceFileParser: Class to parse binary or ascii nexus messages into a NexusMessage object
 class SliceFileParser {
 public:
-             SliceFileParser(char *filename, bool binary);
-  dqr::DQErr nextTraceMsg(NexusMessage &nm);
+             SliceFileParser(char *filename, bool binary, bool ismulticore, int srcBits);
+  dqr::DQErr readNextTraceMsg(NexusMessage &nm);
+
+// foo  dqr::DQErr readAllTraceMsgs();
   dqr::DQErr getErr() { return status; };
   void       dump();
 
@@ -328,6 +372,8 @@ private:
   // add other counts for each message type
 
   bool          binary;
+  bool          multicore;
+  int           srcbits;
   std::ifstream tf;
   int           bitIndex;
   int           msgSlices;
@@ -349,6 +395,7 @@ private:
   dqr::DQErr parseSync(NexusMessage &nm);
   dqr::DQErr parseCorrelation(NexusMessage &nm);
   dqr::DQErr parseAuxAccessWrite(NexusMessage &nm);
+  dqr::DQErr parseDataAcquisition(NexusMessage &nm);
   dqr::DQErr parseOwnershipTrace(NexusMessage &nm);
   dqr::DQErr parseError(NexusMessage &nm);
 };
@@ -451,7 +498,7 @@ public:
 		SYMFLAGS_NONE = 0,
 		SYMFLAGS_xx   = 1 << 0,
 	};
-	           Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags);
+	           Trace(char *tf_name,bool binaryFlag,char *ef_name,SymFlags sym_flags,int numAddrBits,uint32_t addrDispFlags,bool multicore,int srcBits);
 	          ~Trace();
 	dqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
 
@@ -470,6 +517,7 @@ public:
 	int         Disassemble(dqr::ADDRESS addr);
 	int         getArchSize();
 	int         getAddressSize();
+	void        setITCBuffering(bool itcbuffer_flag);
 
 private:
 	enum state {
@@ -490,10 +538,15 @@ private:
 	Symtab          *symtab;
 	Disassembler    *disassembler;
 	SymFlags		 symflags;
-	dqr::ADDRESS     currentAddress;
-	dqr::ADDRESS	 lastFaddr;
-	dqr::TIMESTAMP   lastTime;
-	enum state       state;
+	dqr::ADDRESS     currentAddress[DQR_MAXCORES];
+	dqr::ADDRESS	 lastFaddr[DQR_MAXCORES];
+	dqr::TIMESTAMP   lastTime[DQR_MAXCORES];
+	enum state       state[DQR_MAXCORES];
+	bool             readNewTraceMessage;
+	int              currentCore;
+	bool             multicore;
+	int              srcbits;
+	bool             bufferItc;
 
 	int              startMessageNum;
 	int              endMessageNum;
@@ -508,7 +561,7 @@ private:
 
 	//	or maybe have this stuff in the nexus messages??
 
-	int i_cnt;
+	int i_cnt[DQR_MAXCORES];
 
 	uint32_t               inst = -1;
 	int                    inst_size = -1;
@@ -516,7 +569,7 @@ private:
 	int32_t                immeadiate = -1;
 	bool                   is_branch = false;
 
-	NexusMessageSync      *messageSync;
+	NexusMessageSync      *messageSync[DQR_MAXCORES];
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,Disassembler::instType &inst_type,int32_t &immeadiate,bool &is_branch);
