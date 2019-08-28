@@ -82,16 +82,15 @@ static void usage(char *name)
 	printf("-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'\n");
 	printf("-noaddrsep:   Do not add a separatfor For addresses greater than 32 bit between the upper bits and the lower 32 bits\n");
 	printf("              (default).\n");
-	printf("-multicore:   Decode a multicore trace file; up to 8 cores. Trace, instruction, source lines, and file info is all\n");
-	printf("              prefixed with a core number in square brackes.  i.e. [2] would be core 2. Single core trace files will\n");
-	printf("              give errors with processed with the -multicore flag because the trace formats are different.\n");
-	printf("-nomulticore: Decode a single core trace file. Output data is not prefixed with the core number. Multicore trace\n");
-	printf("              files cannot be processed if the -nomulticore flag is given because the trace formats are different for\n");
-	printf("              single core and multi-core traces.\n");
-	printf("-unicore:     Same as the -nomulticore flag\n");
-	printf("-srcbits=n:   The size in bits of hte src field in the trace messages. Valid only if -multicore has been specified.\n");
-	printf("              n must be greater than 1 and less than or equal to 4. If the -multicore switch is given, srcbits will be\n");
-	printf("              set to 1 by default.\n");
+//	printf("-multicore:   Decode a multicore trace file; up to 8 cores. Trace, instruction, source lines, and file info is all\n");
+//	printf("              prefixed with a core number in square brackes.  i.e. [2] would be core 2. Single core trace files will\n");
+//	printf("              give errors with processed with the -multicore flag because the trace formats are different.\n");
+//	printf("-nomulticore: Decode a single core trace file. Output data is not prefixed with the core number. Multicore trace\n");
+//	printf("              files cannot be processed if the -nomulticore flag is given because the trace formats are different for\n");
+//	printf("              single core and multi-core traces.\n");
+//	printf("-unicore:     Same as the -nomulticore flag\n");
+	printf("-srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables\n");
+	printf("              multicore. n > 0 enables multicore.\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -338,21 +337,21 @@ int main(int argc, char *argv[])
 		else if (strcmp("-noaddrsep", argv[i]) == 0) {
 			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_SEP;
 		}
-		else if (strcmp("-multicore", argv[i]) == 0) {
-			multicore_flag = true;
-			srcbits = 1;
-		}
-		else if (strcmp("-nomulticore", argv[i]) == 0) {
-			multicore_flag = false;
-		}
-		else if (strcmp("-unicore", argv[i]) == 0) {
-			multicore_flag = false;
-		}
+//		else if (strcmp("-multicore", argv[i]) == 0) {
+//			multicore_flag = true;
+//			srcbits = 1;
+//		}
+//		else if (strcmp("-nomulticore", argv[i]) == 0) {
+//			multicore_flag = false;
+//		}
+//		else if (strcmp("-unicore", argv[i]) == 0) {
+///			multicore_flag = false;
+//		}
 		else if (strncmp("-srcbits=",argv[i],strlen("-srcbits=")) == 0) {
 			srcbits = atoi(argv[i]+strlen("-srcbits="));
 
-			if ((srcbits < 1) || (srcbits > 4)) {
-				printf("Error: option -srcbits=n valic number of trace message src bits >= 1, <= 4\n");
+			if ((srcbits < 0) || (srcbits > 8)) {
+				printf("Error: option -srcbits=n, n must be a valid number of trace message src bits >= 0, <= 8\n");
 				usage(argv[0]);
 				return 1;
 			}
@@ -371,6 +370,13 @@ int main(int argc, char *argv[])
 	if (version_flag) {
 		printf("%s: version %s\n",argv[0],"0.3");
 		return 0;
+	}
+
+	if (srcbits > 0) {
+		multicore_flag = true;
+	}
+	else {
+		multicore_flag = false;
 	}
 
 	if (tf_name == nullptr) {
