@@ -4,26 +4,28 @@
 
 # riscv set_prefer_sba on
 
-set baseaddress 0x20007000
-set te_control $baseaddress
-set te_impl [expr $baseaddress + 0x04]
-set te_sinkbase [expr $baseaddress + 0x10]
-set te_sinkbasehigh [expr $baseaddress + 0x14]
-set te_sinklimit [expr $baseaddress + 0x18]
-set te_sinkwp [expr $baseaddress + 0x1c]
-set te_sinkrp [expr $baseaddress + 0x20]
-set te_sinkdata [expr $baseaddress + 0x24]
-set te_fifo [expr $baseaddress + 0x30]
-set te_btmcount [expr $baseaddress + 0x34]
-set te_wordcount [expr $baseaddress + 0x38]
-set ts_control [expr $baseaddress + 0x40]
-set ts_lower [expr $baseaddress + 0x44]
-set te_upper [expr $baseaddress + 0x48]
-set xti_control [expr $baseaddress + 0x50]
-set xto_control_ [expr $baseaddress + 0x54]
-set wp_control [expr $baseaddress + 0x58]
-set itc_traceenable [expr $baseaddress + 0x60]
-set itc_trigenable [expr $baseaddress + 0x64]
+# set traceBaseAddresses {0x20007000 0x20008000}
+# set traceFunnelAddress 0x20009000
+
+set te_control_offset      0x00
+set te_impl_offset         0x04
+set te_sinkbase_offset     0x10
+set te_sinkbasehigh_offset 0x14
+set te_sinklimit_offset    0x18
+set te_sinkwp_offset       0x1c
+set te_sinkrp_offset       0x20
+set te_sinkdata_offset     0x24
+set te_fifo_offset         0x30
+set te_btmcount_offset     0x34
+set te_wordcount_offset    0x38
+set ts_control_offset      0x40
+set ts_lower_offset        0x44
+set te_upper_offset        0x48
+set xti_control_offset     0x50
+set xto_control_offset     0x54
+set wp_control_offset      0x58
+set itc_traceenable_offset 0x60
+set itc_trigenable_offset  0x64
 
 proc wordhex {addr} {
     mem2array x 32 $addr 1
@@ -74,7 +76,7 @@ proc pt {{range "end"}} {
 }
 
 proc dt {} {
-  global tracesize
+  global tracebuffersize
   global te_sinkrp
   global te_sinkwp
   global te_sinkdata
@@ -90,7 +92,7 @@ proc dt {} {
   } else {
     echo "Trace wrapped"
     set tracebegin [expr $tracewp & 0xfffffffe]
-    set traceend $tracesize
+    set traceend $tracebuffersize
     echo "Trace from $tracebegin to $traceend, [expr $traceend - $tracebegin] bytes"
     mww $te_sinkrp $tracebegin
     for {set i $tracebegin} {$i < $traceend} {incr i 4} {
@@ -107,7 +109,7 @@ proc dt {} {
 }
 
 proc wt {{file "trace.txt"}} {
-  global tracesize
+  global tracebuffersize
   global te_sinkrp
   global te_sinkwp
   global te_sinkdata
@@ -124,7 +126,7 @@ proc wt {{file "trace.txt"}} {
   } else {
     puts $fp "Trace wrapped"
     set tracebegin [expr $tracewp & 0xfffffffe]
-    set traceend $tracesize
+    set traceend $tracebuffersize
     puts $fp "Trace from $tracebegin to $traceend, [expr $traceend - $tracebegin] bytes"
     mww $te_sinkrp $tracebegin
     for {set i $tracebegin} {$i < $traceend} {incr i 4} {
@@ -141,10 +143,51 @@ proc wt {{file "trace.txt"}} {
   close $fp
 }
 
+# ite = [i]s [t]race [e]nabled
+
+proc ite {} {
+    global te_control_offset
+    global traceBaseAddresses
+    global traceFunnelAddress
+
+    set rc 0
+
+    foreach baseAddress $traceBaseAddresses {
+	set tracectl [word [expr $baseAddress + $te_control_offset]]
+	if {($tracectl & 0x6) != 0} {
+	    return 1
+        }
+    }
+
+    if {$traceFunnelAddress != 0} {
+	set tracectl [word [expr $traceFunnelAddress + $te_control_offset]]
+	if {($tracectl & 0x6) != 0} {
+	    return 1
+        }
+    }
+
+    return 0
+}
+
+proc setAllTeControls {offset val} {
+  global traceBaseAddresses
+
+  foreach controlReg $traceBaseAddresses {
+    mww [expr $controlReg + $offset] $val
+  }
+}
+
+proc setAllTfControls {offset val} {
+  global traceFunnelAddress
+
+  if {$traceFunnelAddress != 0} {
+    mww [expr $traceFunnelAddress + $offset] $val
+  }
+}
+
 proc ts {{opt ""}} {
   global tsenable_flag
-  global te_control
-  global ts_control
+  global ts_control_offset
 
   if {$opt == ""} {
     if {$tsenable_flag == 0} {
@@ -162,7 +205,7 @@ proc ts {{opt ""}} {
     echo ""
     echo "ts with no arguments will display the current status of timestamps (on or off)"
     echo ""
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set timestamp mode or reset timestamp while trace is enabled"
   } elseif {$opt == "on"} {
     set tsenable_flag 1
@@ -171,8 +214,8 @@ proc ts {{opt ""}} {
     set tsenable_flag 0
     echo -n ""
   } elseif {$opt == "reset"} {
-    mww $ts_control 0x04
-    mww $ts_control 0x00
+    setAllTeControls $ts_control_offset 0x04
+    setAllTeControls $ts_control_offset 0x00
     echo "timestamp reset"
   } else {
     echo {Error: Usage: ts [on | off | reset | help]}
@@ -181,7 +224,6 @@ proc ts {{opt ""}} {
 
 proc tsdebug {{opt ""}} {
   global tsdebug_flag
-  global te_control
   if {$opt == ""} {
     if {$tsdebug_flag == 0} {
       return "off"
@@ -198,7 +240,7 @@ proc tsdebug {{opt ""}} {
     echo "tsdebug with no arguments will display the current status of timstamp debug"
     echo "(on or off)"
     echo ""
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set timestamp debug mode while trace is enabled"
   } elseif {$opt == "on"} {
     set tsdebug_flag 1
@@ -211,9 +253,16 @@ proc tsdebug {{opt ""}} {
   }
 }
 
+proc srcbits {} {
+  global te_impl_offset
+  global traceBaseAddresses
+
+  set numbits [expr [word [expr [lindex $traceBaseAddresses 0] + $te_impl_offset]] >> 24 & 7]
+  return $numbits
+}
+
 proc tsclock {{opt ""}} {
   global tstype_flag
-  global te_control
   if {$opt == ""} {
     switch $tstype_flag {
       0 {
@@ -240,7 +289,7 @@ proc tsclock {{opt ""}} {
     echo "tsclock with no arguments will display the current source of hte timestamp clock"
     echo "(internal, external, or none)"
     echo ""
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set timestamp clock source while trace is enabled"
   } elseif {$opt == "none" } {
     set tstype_flag 0
@@ -258,7 +307,6 @@ proc tsclock {{opt ""}} {
 
 proc tsprescale {{opt ""}} {
   global tsprescale_flag
-  global te_control
   if {$opt == ""} {
     switch $tsprescale_flag {
       0 {
@@ -288,7 +336,7 @@ proc tsprescale {{opt ""}} {
     echo ""
     echo "tspresacle with no arguments will display the current timestamp clock prescaler value (1, 4, 16, or 64)"
     echo ""
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set timestamp clock prescaler while trace is enabled"
   } elseif {$opt == 1} {
     set tsprescale_flag 0
@@ -309,7 +357,6 @@ proc tsprescale {{opt ""}} {
 
 proc tsbranch {{opt ""}} {
   global tsbranch_flag
-  global te_control
   if {$opt == ""} {
     switch $tsbranch_flag {
       0 {
@@ -335,7 +382,7 @@ proc tsbranch {{opt ""}} {
     echo ""
     echo "tsbranch with no arguments will display the current setting for tsbranch (off, indirect, all)"
     echo ""
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set branch timestamp mode while trace is enabled"
   } elseif {$opt == "off"} {
     set tsbranch_flag 0
@@ -353,7 +400,6 @@ proc tsbranch {{opt ""}} {
 
 proc tsitc {{opt ""}} {
   global tsitc_flag
-  global te_control
   if {$opt == ""} {
     if {$tsitc_flag == 0} {
       return "off"
@@ -369,7 +415,7 @@ proc tsitc {{opt ""}} {
     echo ""
     echo "tsitc with no arguments will display whether or not timestamps are generated for itc messages (on or off)"
     echo ""
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set itc timestamp mode while trace is enabled"
   } elseif {$opt == "on"} {
     set tsitc_flag 1
@@ -384,7 +430,6 @@ proc tsitc {{opt ""}} {
 
 proc tsowner {{opt ""}} {
   global tsowner_flag
-  global te_control
   if {$opt == ""} {
     if {$tsowner_flag == 0} {
       return "off"
@@ -402,7 +447,7 @@ proc tsowner {{opt ""}} {
     echo "tsowner with no arguments will display whether or not timestamps are generated"
     echo "for ownership messages (on or off)"
     echo ""
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set ownership timestamp mode while trace is enabled"
   } elseif {$opt == "on"} {
     set tsowner_flag 1
@@ -417,7 +462,6 @@ proc tsowner {{opt ""}} {
 
 proc stoponwrap {{opt ""}} {
   global sow_flag
-  global te_control
   if {$opt == ""} {
     if {$sow_flag == 0} {
       return "off"
@@ -434,7 +478,7 @@ proc stoponwrap {{opt ""}} {
     echo "stoponwrap with no arguments will display the current status of trace buffer"
     echo "wrap (on or off)"
     echo ""
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set wrap mode while trace is enabled"
   } elseif {$opt == "on"} {
     set sow_flag 1
@@ -449,7 +493,6 @@ proc stoponwrap {{opt ""}} {
 
 proc tracemode {{opt ""}} {
   global tm_flag
-  global te_control
   if {$opt == ""} {
     switch $tm_flag {
       0 {
@@ -476,7 +519,7 @@ proc tracemode {{opt ""}} {
     echo "tracemode with no arguments will display the current setting for the type"
     echo "of messages to generate (none, sync, or all)"
     echo ""
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set trace mode while trace is enabled"
   } elseif {$opt == "sync"} {
     set tm_flag 1
@@ -496,7 +539,7 @@ proc itc {{opt ""} {mask ""}} {
   global itc_mode
   global itc_mask
   global itc_trigmask
-  global te_control
+  global te_control foo
   if {$opt == ""} {
     switch $itc_mode {
       0 {
@@ -533,7 +576,7 @@ proc itc {{opt ""} {mask ""}} {
     echo "                 itc mask without nn displays the current value of themask"
     echo "  trigmask nn:   Set the trigger enable mask to nn, where nn is a 32 bit number. Note"
     echo "                 nn should be prefixed with 0x if it is a hex number, or just 0 if"
-    echo "                 it is an octal number; otherwise it will be interpreted as a decimal"
+    echo "                 it is an octal number; othwise it will be interpreted as a decimal"
     echo "                 number. Does not effect the ITC mode (off, ownership, all, all+ownership)."
     echo "                 itc trigmask without nn displays the current value of the trigger enable mask"
     echo "  help:          Display this message"
@@ -542,9 +585,9 @@ proc itc {{opt ""} {mask ""}} {
     echo ""
   } elseif {$opt == "mask" && $mask == "" } {
       return [format "0x%08x" $itc_mask]
-  } elseif {$opt == "trigmask" && $mask == "" } {
+  } elseif {$opt == "trigmask" && $mask == ""} {
       return [format "0x%08x" $itc_trigmask]
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set trace mode while trace is enabled"
   } elseif {$opt == "off"} {
     set itc_mode 0
@@ -567,7 +610,7 @@ proc itc {{opt ""} {mask ""}} {
     }
   } elseif {$opt == "trigmask"} {
     if {$mask == ""} {
-	# This case was covered above!
+       # This case was covered above!
     } else {
       set itc_trigmask [expr $mask]
       echo -n ""
@@ -579,7 +622,6 @@ proc itc {{opt ""} {mask ""}} {
 
 proc maxicnt {{opt ""}} {
   global max_icnt_val
-  global te_control
   if {$opt == ""} {
       return "[expr {$max_icnt_val + 5}]"
   } elseif {$opt == "help"} {
@@ -591,7 +633,7 @@ proc maxicnt {{opt ""}} {
     echo ""
     echo "maxicnt with no arguments will display the current maximum i-cnt value"
     echo ""
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set the max i-cnt value while trace is enabled"
   } elseif {$opt >= 5 && $opt <= 16} {
     set max_icnt_val [expr {$opt - 5}]
@@ -603,7 +645,6 @@ proc maxicnt {{opt ""}} {
 
 proc maxbtm {{opt ""}} {
   global max_btm_val
-  global te_control
   if {$opt == ""} {
     return "[expr {$max_btm_val + 5}]"
   } elseif {$opt == "help"} {
@@ -616,7 +657,7 @@ proc maxbtm {{opt ""}} {
     echo "maxbtm with no arguments will display the current maximum number of BTMs"
     echo "between sync messages"
     echo ""
-  } elseif {[expr [word $te_control] & 0x02] != 0} {
+  } elseif {[eval ite] != 0} {
     echo "Error: Cannot set the maxbtm value while trace is enabled"
   } elseif {$opt >= 5 && $opt <= 16} {
     set max_btm_val [expr {$opt - 5}]
@@ -626,39 +667,73 @@ proc maxbtm {{opt ""}} {
   }
 }
 
+proc setreadptr {ptr} {
+    global traceFunnelAddress
+    global traceBaseAddresses
+    global te_sinkrp_offset
+
+    if {$traceFunnelAddress != 0} {
+	mww [expr $traceFunnelAddress + $te_sinkrp_offset] $ptr
+    } else {
+        mww [expr [lindex $traceBaseAddresses 0] + $te_sinkrp_offset] $ptr
+    }
+}
+
+proc readtracedata {} {
+    global traceFunnelAddress
+    global traceBaseAddresses
+    global te_sinkdata_offset
+
+    if {$traceFunnelAddress != 0} {
+	return [word [expr $traceFunnelAddress + $te_sinkdata_offset]]
+    } else {
+        return [word [expr [lindex $traceBaseAddresses 0] + $te_sinkrp_offset]]
+    }
+}
+
 proc wtb {{file "trace.rtd"}} {
   riscv set_prefer_sba on
-  global tracesize
-  global te_sinkrp
-  global te_sinkwp
-  global te_sinkdata
+  global tracebuffersize
+  global te_sinkrp_offset
+  global te_sinkwp_offset
+  global te_sinkdata_offset
+
   set fp [open "$file" wb]
-  set tracewp [word $te_sinkwp]
+
+  set tracewp [eval gettracewp]
+
   if {($tracewp & 1) == 0 } { ;# buffer has not wrapped
     set tracebegin 0
     set traceend $tracewp
     echo "Trace from $tracebegin to $traceend, nowrap, [expr $traceend - $tracebegin] bytes"
-    mww $te_sinkrp 0
+
+    setreadptr 0
     for {set i 0} {$i < $traceend} {incr i 4} {
-      pack w [word $te_sinkdata] -intle 32
+      pack w [eval readtracedata] -intle 32
       puts -nonewline $fp $w
     }
   } else {
     echo "Trace wrapped"
     set tracebegin [expr $tracewp & 0xfffffffe]
-    set traceend $tracesize
+    set traceend $tracebuffersize
     echo "Trace from $tracebegin to $traceend, [expr $traceend - $tracebegin] bytes"
-    mww $te_sinkrp $tracebegin
+
+    setreadptr $tracebegin
+
     for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-      pack w [word $te_sinkdata] -intle 32
+      pack w [eval readtracedata] -intle 32
       puts -nonewline $fp $w
     }
+
     set tracebegin 0
     set traceend [expr $tracewp & 0xfffffffe]
+
     echo "Trace from $tracebegin to $traceend, [expr $traceend - $tracebegin] bytes"
-    mww $te_sinkrp 0
+
+    setreadptr 0
+
     for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-      pack w [word $te_sinkdata] -intle 32
+      pack w [eval readtracedata] -intle 32
       puts -nonewline $fp $w
     }
   }
@@ -666,44 +741,63 @@ proc wtb {{file "trace.rtd"}} {
   riscv set_prefer_sba off
 }
 
-# ite = [i]s [t]race [e]nabled
-#proc ite {} {
-#    global te_control
-#    set tracectl [word $te_control]
-#    if {($tracectl & 0x6) == 0} {
-#        return "0"
-#    } else {
-#        return "1"
-#    }
-#}
-
 proc cleartrace {} {
-    global tracesize
-    global te_sinkrp
-    global te_sinkwp
-    global te_sinkdata
-    mww $te_sinkrp 0
-    for {set i 0} {$i<$tracesize} {incr i 4} {
-      mww $te_sinkdata 0
+    global tracebuffersize
+    global traceFunnelAddress
+    global te_sinkrp_offset
+    global te_sinkwp_offset
+    global te_sinkdata_offset
+
+    if {$traceFunnelAddress != 0} {
+        setAllTfControls $te_sinkrp_offset 0
+        for {set i 0} {$i<$tracebuffersize} {incr i 4} {
+	    setAllTfControls $te_sinkdata_offset 0
+        }
+	setAllTfControls $te_sinkwp_offset 0
+    } else {
+        setAllTeControls $te_sinkrp_offset 0
+        for {set i 0} {$i<$tracebuffersize} {incr i 4} {
+	    setAllTeControls $te_sinkdata_offset 0
+        }
+	setAllTeControls $te_sinkwp_offset 0
     }
-    mww $te_sinkwp 0
 }  
 
 proc resettrace {} {
-    global te_control
-    mww $te_control 0            ;# reset the TE
-    mww $te_control 0x01830001   ;# activate the TE
+    global te_control_offset
+
+    setAllTeControls $te_control_offset 0	;# reset the TE
+    setAllTfControls $te_sinkrp_offset  0	;# reset the TE
+
+    setAllTeControls $te_control_offset 0x01830001	;# reset the TE
+    setAllTfControls $te_sinkrp_offset  0x00000001	;# reset the TE
 }
 
 proc readts {} {
-	global ts_control
-        echo "[format {0x%08x} [word $ts_control]]"
+    global traceBaseAddresses
+    global ts_control_offset
+
+    echo "[format {0x%08x} [word [expr [lindex $traceBaseAddresses 0] + $ts_control_offset]]]"
+}
+
+proc gettracewp {} {
+    global traceBaseAddresses
+    global traceFunnelAddress
+    global te_sinkwp_offset
+
+    if {$traceFunnelAddress != 0} {
+        set tracewp [word [expr $traceFunnelAddress + $te_sinkwp_offset]]
+    } else {
+        set tracewp [word [expr [lindex $traceBaseAddresses 0] + $te_sinkwp_offset]]
+    }
+
+    return $tracewp
 }
 
 proc trace {{opt ""}} {
-    global ts_control
-    global te_control
-    global te_sinkwp
+    global ts_control_offset
+    global te_control_offset
+    global te_sinkwp_offset
     global tm_flag
     global tsenable_flag
     global tsdebug_flag
@@ -717,14 +811,12 @@ proc trace {{opt ""}} {
     global itc_mask
     global max_icnt_val
     global max_btm_val
-    global itc_traceenable
-    global tracesize
-    global itc_trigenable
-    global itc_trigmask    
+    global itc_traceenable_offset
+    global tracebuffersize
 
     if {$opt == ""} {
-        set tracectl [word $te_control]
-        if {($tracectl & 0x6) == 0} {
+        set tracectl ite
+        if {[eval ite] == 0} {
             return "off"
         } else {
             return "on"
@@ -740,8 +832,11 @@ proc trace {{opt ""}} {
         echo "trace with no arguments will display if tracing is currently enabled (on or off)"
         echo ""
     } elseif {$opt == "on"} {
-        mww $te_control 0x01000001   ;# disable trace
-        mww $te_sinkwp 0             ;# clear WP
+        setAllTeControls $te_control_offset 0x01000001   ;# disable trace
+        setAllTeControls $te_sinkwp_offset 0             ;# clear WP
+
+        setAllTfControls $te_control_offset 0x00000001   ;# disable trace
+        setAllTfControls $te_sinkwp_offset 0             ;# clear WP
 
         set te_control_val 0
         set ts_control_val 0
@@ -779,16 +874,26 @@ proc trace {{opt ""}} {
 
         set te_control_val [expr $te_control_val | (1 << 24) | 0x07]
 
-        mww $ts_control $ts_control_val
-        mww $itc_traceenable $itc_mask
-        mww $itc_trigenable $itc_trigmask
-        mww $te_control $te_control_val
+	setAllTeControls $ts_control_offset $ts_control_val
+	setAllTeControls $itc_traceenable_offset $itc_mask
+	setAllTeControls $te_control_offset $te_control_val
+	setAllTfControls $te_control_offset [expr $te_control_val & 0x00000007]
+
+#       echo "te_control: [format "0x%08x" $te_control_val]"
+#       echo "itc_mask: [format "0x%08x" $itc_mask]"
+#       echo "itc_mode: [format "0x%08x" [expr $itc_mode << 7]]"
+
     } elseif {$opt == "off"} {
-        mww $te_control 0x01000003   ;# stop trace
-        mww $te_control 0x01000001   ;# disable and flush trace
-        set tracewp [word $te_sinkwp]
+        setAllTeControls $te_control_offset 0x01000003   ;# stop trace
+        setAllTfControls $te_control_offset 0x00000003   ;# stop trace
+
+        setAllTeControls $te_control_offset 0x01000001   ;# disable and flush trace
+        setAllTfControls $te_control_offset 0x00000001   ;# disable and flush trace
+
+	set tracewp [eval gettracewp]
+
         if {$tracewp & 1} {
-            echo "[expr $tracesize / 4] trace words collected"
+            echo "[expr $tracebuffersize / 4] trace words collected"
         } else {
             echo "[expr $tracewp / 4] trace words collected"
         }
@@ -810,14 +915,99 @@ proc trace {{opt ""}} {
 }
 
 proc wordscollected {} {
-    global tracesize
+    global tracebuffersize
     global te_sinkwp
-    set tracewp [word $te_sinkwp]
+
+    set tracewp [eval gettracewp]
+
     if {$tracewp & 1} {
-	      return "[expr $tracesize / 4] trace words collected"
+	      return "[expr $tracebuffersize / 4] trace words collected"
     } else {
         return "[expr $tracewp / 4] trace words collected"
     }
+}
+
+proc is_itc_implmented {} {
+    # Caller is responsible for enabling trace before calling this
+    # proc, otherwise behavior is undefined
+
+    global itc_traceenable_offset
+    global traceBaseAddresses
+
+    # We'll write a non-zero value to itc_traceenable, verify a
+    # non-zero readback, and restore the original value
+ 
+    set originalval [word [expr [lindex $traceBaseAddresses 0] + $itc_traceenable_offset]]
+    mww [expr [lindex $traceBaseAddresses 0] + $itc_traceenable_offset] 0xFFFFFFFF
+    set readback [word [expr [lindex $traceBaseAddresses 0] + $itc_traceenable_offset]]
+    set result [expr $readback != 0]
+    mww [expr [lindex $traceBaseAddresses 0] + $itc_traceenable_offset] $originalval
+
+    return $result
+}
+
+proc get_num_external_trigger_outputs {} {
+    global xto_control_offset
+    global traceBaseAddresses
+
+    # We'll write non-zero nibbles to xto_control, count
+    # non-zero nibbles on readback,
+    # restore the original xto_control value.  0x1 seems a good
+    # nibble to write, that bit is always legal if an external
+    # trigger output exists in the nibble slot, regardless of whether other
+    # optional trace features are present
+
+    set originalval [word [expr [lindex $traceBaseAddresses 0] + $xto_control_offset]]
+    mww [expr [lindex $traceBaseAddresses 0] + $xto_control_offset] 0x11111111
+    set readback [word [expr [lindex $traceBaseAddresses 0] + $xto_control_offset]]
+    mww [expr [lindex $traceBaseAddresses 0] + $xto_control_offset] $originalval
+
+    set result 0
+    for {set i 0} {$i < 8} {incr i} {
+       if {($readback & 0xF) == 1} {
+	   incr result
+       }
+       set readback [expr $readback >> 4]
+    }
+    return $result
+}
+
+proc get_num_external_trigger_inputs {} {
+    global xti_control_offset
+    global traceBaseAddresses
+
+    # We'll write non-zero nibbles to xti_control, count
+    # non-zero nibbles on readback,
+    # restore the original xti_control value.  2 seems a good
+    # nibble to write, that bit is always legal if an external
+    # trigger input exists in the nibble slot, regardless of whether other
+    # optional trace features are present
+
+    set originalval [word [expr [lindex $traceBaseAddresses 0] + $xti_control_offset]]
+    mww [expr [lindex $traceBaseAddresses 0] + $xti_control_offset] 0x22222222
+    set readback [word [expr [lindex $traceBaseAddresses 0] + $xti_control_offset]]
+    mww [expr [lindex $traceBaseAddresses 0] + $xti_control_offset] $originalval
+
+    set result 0
+    for {set i 0} {$i < 8} {incr i} {
+       if {($readback & 0xF) == 0x2} {
+	   incr result
+       }
+       set readback [expr $readback >> 4]
+    }
+    return $result
+}
+
+# Surprisingly, Jim Tcl lacks a primitive that returns the value of a
+# register.  It only exposes a "cooked" line of output suitable for
+# display.  But we can use that to extrace the actual register value
+# and return it
+
+proc regval {name} {
+    set displayval [ocd_reg $name]
+    set splitval [split $displayval ':']
+    set val [lindex $splitval 1]
+    return [string trim $val]
 }
 
 proc analytics {} {
@@ -845,7 +1035,6 @@ proc nextbyte {} {
   incr btmRP 
   return $retval
 }
-
 
 proc btype {val} {
     if {($valF & 3) == 1} { return "Exception" }
@@ -969,124 +1158,83 @@ proc printonebtm {} {
     if {$tcode == 2}  { echo [format "%4d: Ownership, Process [expr $icntF]" $btmRP] }
 }
 
-proc is_itc_implemented {} {
-    # Caller is responsible for enabling trace before calling this
-    # proc, otherwise behavior is undefined
-    global itc_traceenable
-    # We'll write a non-zero value to itc_traceenable, verify a
-    # non-zero readback, and restore the original value
-    set originalval [word $itc_traceenable]
-    mww $itc_traceenable 0xFFFFFFFF
-    set readback [word $itc_traceenable]
-    set result [expr $readback != 0]
-    mww $itc_traceenable $originalval
-    return $result
-}
-
-proc get_num_external_trigger_outputs {} {
-    global xto_control_
-    # We'll write non-zero nybbles to xto_control, count
-    # non-zero nybbles on readback,
-    # restore the original xto_control value.  0x1 seems a good
-    # nybble to write, that bit is always legal if an external
-    # trigger output exists in the nybble slot, regardless of whether other
-    # optional trace features are present
-
-    set originalval [word $xto_control_]
-    mww $xto_control_ 0x11111111
-    set readback [word $xto_control_]
-    mww $xto_control_ $originalval
-    set result 0
-    for {set i 0} {$i < 8} {incr i} {
-	if {($readback & 0xF) == 1} {
-	    incr result
-	}
-	set readback [expr $readback >> 4]
-    }
-    return $result
-}
-
-proc get_num_external_trigger_inputs {} {
-    global xti_control
-    # We'll write non-zero nybbles to xti_control, count
-    # non-zero nybbles on readback,
-    # restore the original xti_control value.  2 seems a good
-    # nybble to write, that bit is always legal if an external
-    # trigger input exists in the nybble slot, regardless of whether other
-    # optional trace features are present
-
-    set originalval [word $xti_control]
-    mww $xti_control 0x22222222
-    set readback [word $xti_control]
-    mww $xti_control $originalval
-    set result 0
-    for {set i 0} {$i < 8} {incr i} {
-	if {($readback & 0xF) == 0x2} {
-	    incr result
-	}
-	set readback [expr $readback >> 4]
-    }
-    return $result
-}
-
-# Surprisingly, Jim Tcl lacks a primitive that returns the value of a
-# register.  It only exposes a "cooked" line of output suitable for
-# display.  But we can use that to extract the actual register value
-# and return it
-proc regval {name} {
-	set displayval [ocd_reg $name]
-	set splitval [split $displayval ':']
-	set val [lindex $splitval 1]
-	return [string trim $val]
-}
-
 proc wp_control_set {bit} {
-    global wp_control
-    set newval [expr (([word $wp_control]) | (1 << $bit))]
-    mww $wp_control $newval
+    global wp_control_offset
+    global traceBaseAddresses
+
+    foreach baseAddress $traceBaseAddresses {
+        set newval [expr [word [expr $baseAddress + $wp_control_offset]] | (1 << $bit))]
+        mww [expr $baseAddress + $wp_control_offset] $newval
+    }
 }
 
 proc wp_control_clear {bit} {
-    global wp_control
-    set newval [expr (([word $wp_control]) & ~(1 << $bit))]
-    mww $wp_control $newval
+    global wp_control_offset
+    global traceBaseAddresses
+
+    foreach baseAddress $traceBaseAddresses {
+        set newval [expr [word [expr $baseAddress + $wp_control_offset]] & ~(1 << $bit)]
+        mww [expr $baseAddress + $wp_control_offset] $newval
+    }
 }
 
 proc wp_control_get_bit {bit} {
-    global wp_control
-    return [expr (([word $wp_control] >> $bit) & 0x1)]
+    global wp_control_offset
+    global traceBaseAddresses
+
+    set baseAddress [lindex $traceBaseAddresses 0]
+    return [expr ([word [expr $baseAddress + $wp_control_offset]] >> $bit) & 0x01]
 }
 
-proc xti_action_read { idx } {
-    global xti_control
-    return [expr ([word $xti_control] >> ($idx*4)) & 0xF]
+proc xti_action_read {idx} {
+    global xti_control_offset
+    global traceBaseAddresses
+
+    set baseAddress [lindex $traceBaseAddresses 0]
+    return [expr ([word [expr $baseAddress + $xti_control_offset]] >> ($idx*4)) & 0xF]
 }
 
-proc xti_action_write { idx val } {
-    global xti_control
-    set zeroed [expr ([word $xti_control] & ~(0xF << ($idx*4)))]
+# xti_action_write only writes first core control regs. Needs work
+
+proc xti_action_write {idx} {
+    global xto_control_offset
+    global traceBaseAddresses
+
+    set baseAddress [lindex $traceBaseAddresses 0]
+    set zeroed [expr ([word [expr $baseAddress + $xti_control_offset]] & ~(0xF << ($idx*4)))]
     set ored [expr ($zeroed | (($val & 0xF) << ($idx*4)))]
-    mww $xti_control $ored    
+    mww [expr $baseAddress + $xti_control_offset] $ored
 }
 
-proc xto_event_read { idx } {
-    global xto_control_
-    return [expr ([word $xto_control_] >> ($idx*4)) & 0xF]
+proc init {} {
+    global te_control_offset
+    global te_sinkrp_offset
+    global te_sinkwp_offset
+    global traceBaseAddresses
+    global traceFunnelAddress
+    global tracebuffersize
+
+    setAllTeControls $te_control_offset 0x01830001
+    setAllTfControls $te_control_offset 0x00000001
+
+    setAllTeControls $te_sinkrp_offset 0xffffffff
+    setAllTfControls $te_sinkrp_offset 0xffffffff
+
+    setAllTeControls $te_sinkwp_offset 0x00000000
+    setAllTfControls $te_sinkwp_offset 0x00000000
+
+    if {$traceFunnelAddress != 0x00000000} {
+      set tracebuffersize [expr [word [expr $traceFunnelAddress + $te_sinkrp_offset]] + 4]
+    } else {
+      set tracebuffersize [expr [word [expr [lindex $traceBaseAddresses 0] + $te_sinkrp_offset]] + 4]
+    }
+
+    echo -n ""
 }
 
-proc xto_event_write { idx val } {
-    global xto_control_
-    set zeroed [expr ([word $xto_control_] & ~(0xF << ($idx*4)))]
-    set ored [expr ($zeroed | (($val & 0xF) << ($idx*4)))]
-    mww $xto_control_ $ored    
-}
+init
 
-
-mww $te_control 0x01830001
-mww $te_sinkrp 0xffffffff
-mww $te_sinkwp 0x00000000
-set tracesize [expr [word $te_sinkrp] + 4]
-echo $tracesize
+echo $tracebuffersize
 
 set tm_flag 3
 set tsenable_flag 0
