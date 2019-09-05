@@ -687,7 +687,7 @@ proc readtracedata {} {
     if {$traceFunnelAddress != 0} {
 	return [word [expr $traceFunnelAddress + $te_sinkdata_offset]]
     } else {
-        return [word [expr [lindex $traceBaseAddresses 0] + $te_sinkrp_offset]]
+        return [word [expr [lindex $traceBaseAddresses 0] + $te_sinkdata_offset]]
     }
 }
 
