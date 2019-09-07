@@ -169,6 +169,47 @@ proc ite {} {
     return 0
 }
 
+proc enable_trace_lite {} {
+    global te_control_offset
+    global traceBaseAddresses
+    global traceFunnelAddress
+
+    foreach baseAddress $traceBaseAddresses {
+	set addr [expr $baseAddress + $te_control_offset]
+	set tracectl [word $addr]
+	mww $addr [expr $tracectl | 0x7]
+    }
+
+    if {$traceFunnelAddress != 0} {
+	set addr [expr $traceFunnelAddress + $te_control_offset]
+	set tracectl [word $addr]
+	mww $addr [expr $tracectl | 0x7]
+    }
+
+    return 0
+}
+
+proc disable_trace_lite {} {
+    global te_control_offset
+    global traceBaseAddresses
+    global traceFunnelAddress
+
+    foreach baseAddress $traceBaseAddresses {
+	set addr [expr $baseAddress + $te_control_offset]
+	set tracectl [word $addr]
+	mww $addr [expr $tracectl & ~0x6]
+    }
+
+    if {$traceFunnelAddress != 0} {
+	set addr [expr $traceFunnelAddress + $te_control_offset]
+	set tracectl [word $addr]
+	mww $addr [expr $tracectl & ~0x6]
+    }
+
+    return 0
+}
+
+
 proc setAllTeControls {offset val} {
   global traceBaseAddresses
 
