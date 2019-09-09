@@ -368,7 +368,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (version_flag) {
-		printf("%s: version %s\n",argv[0],"0.3");
+		printf("%s: version %s\n",argv[0],"0.4");
 		return 0;
 	}
 
