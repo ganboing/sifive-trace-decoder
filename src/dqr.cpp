@@ -1315,6 +1315,8 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, bool ismulticore, 
 	multicore = ismulticore;
 	srcbits = srcBits;
 
+	firstMsg = true;
+
 	numTraceMsgs   = 0;
 	numSyncMsgs    = 0;
 	msgSlices      = 0;
@@ -1339,11 +1341,11 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, bool ismulticore, 
 		status = dqr::DQERR_OK;
 	}
 
-#ifdef foo
+#if	0
 	// read entire slice file, create multiple quese base on src field
 
 	readAllTraceMsgs();
-#endif // foo
+#endif
 }
 
 void SliceFileParser::dump()
@@ -2301,6 +2303,9 @@ dqr::DQErr SliceFileParser::parseVarField(uint64_t *val)
 
 dqr::DQErr SliceFileParser::readBinaryMsg()
 {
+	// start by stripping off end of message or end of var bytes. These would be here in the case
+	// of a wrapped buffer, or some kind of corruption
+
 	do {
 		tf.read((char*)&msg[0],sizeof msg[0]);
 		if (!tf) {
@@ -2319,7 +2324,7 @@ dqr::DQErr SliceFileParser::readBinaryMsg()
 
 			return status;
 		}
-	} while ((msg[0] & 0x3) == dqr::MSEO_END);
+	} while ((msg[0] & 0x3) != dqr::MSEO_NORMAL);
 
 	// make sure this is start of nexus message
 
@@ -2535,9 +2540,10 @@ dqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm)	// generator to r
 
 //	int i = 1;
 //	do {
-//		printf("trce msg %d\n",i);
+//		printf("trace msg %d\n",i);
 //		i += 1;
 //		rc = readBinaryMsg();
+//		printf("rc: %d\n",rc);
 //		dump();
 //	} while (rc == dqr::DQERR_OK); // foo
 
@@ -2652,6 +2658,16 @@ dqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm)	// generator to r
 		std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << tcode << std::dec << std::endl;
 		status = dqr::DQERR_ERR;
 	}
+
+	if ((status != dqr::DQERR_OK) && (firstMsg == true)) {
+		std::cout << "Error possibly due to corrupted first message in trace - skipping message" << std::endl;
+
+		firstMsg = false;
+
+		return readNextTraceMsg(nm);
+	}
+
+	firstMsg = false;
 
 	return status;
 }

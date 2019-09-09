@@ -366,6 +366,7 @@ public:
 
 private:
   dqr::DQErr status;
+  int		 firstMsg;
   int        numTraceMsgs;
   int        numSyncMsgs;
 
