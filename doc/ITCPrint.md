@@ -42,7 +42,7 @@ stdout-path="/soc/trace-encoder-0@20007000:115200";
 };
 ```
 
-If the stdout-path is set to anything else, stdout is not redirected to the ITC 0 stimulus registers. It is not sufficient to just change the stdout-path entry to the trace-encoder; the entire BSP must be rebuilt.
+If the stdout-path is set to anything else, or the chosen record is not present, stdout is not redirected to the ITC 0 stimulus registers. It is not sufficient to just change the stdout-path entry to the trace-encoder; the entire BSP must be rebuilt.
 
 ### Building a BSP with redirected stdout
 
@@ -166,6 +166,8 @@ stdout-path="/soc/trace-encoder-0@20007000:115200";
 ```
 
 The address after the ```@``` is the base address for the device, and should match that for the trace-encoder found elsewhere in the file. The number after the ```:``` is the baud rate. It is not needed for the trace-encoder device, but is needed for the design.dts file to be parsed correctly.
+
+If your dts file does not have a chosen record, go ahead and build the bsp using the update-targets.sh script as directed below. This will amoung other things, create a chosen record that you can edit. After building the bsp, go back and edit the chosen recored and rebuild the bsp. Your dts file will not have a chosen record if it has never been used to build a bsp, such as when they are distributed with a mcs or bit file.
 
 After editing the file, execute the commands:
 
