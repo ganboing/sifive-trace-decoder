@@ -169,6 +169,8 @@ The address after the ```@``` is the base address for the device, and should mat
 
 If your dts file does not have a chosen record, go ahead and build the bsp using the update-targets.sh script as directed below. This will amoung other things, create a chosen record that you can edit. After building the bsp, go back and edit the chosen recored and rebuild the bsp. Your dts file will not have a chosen record if it has never been used to build a bsp, such as when they are distributed with a mcs or bit file.
 
+If the dts file does not have a trace-encoder record, it does not support redirection of stdout to the ITC, and redirection cannot be done.
+
 After editing the file, execute the commands:
 
 ```
