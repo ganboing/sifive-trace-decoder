@@ -38,7 +38,7 @@ static void usage(char *name)
 {
 	printf("Usage: dqr -t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src] [-nosrc]\n");
 	printf("           [-file] [-nofile] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path] [-v] [-h]\n");
-	printf("           [-multicore] [-nomulticore] [-unicore] [-32] [-64] [-32+] [-addrsep] [-noaddrsep]\n");
+	printf("           [-32] [-64] [-32+] [-addrsep] [-noaddrsep]\n");
 	printf("\n");
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
@@ -82,15 +82,12 @@ static void usage(char *name)
 	printf("-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'\n");
 	printf("-noaddrsep:   Do not add a separator for addresses greater than 32 bit between the upper bits and the lower 32 bits\n");
 	printf("              (default).\n");
-//	printf("-multicore:   Decode a multicore trace file; up to 8 cores. Trace, instruction, source lines, and file info is all\n");
-//	printf("              prefixed with a core number in square brackes.  i.e. [2] would be core 2. Single core trace files will\n");
-//	printf("              give errors with processed with the -multicore flag because the trace formats are different.\n");
-//	printf("-nomulticore: Decode a single core trace file. Output data is not prefixed with the core number. Multicore trace\n");
-//	printf("              files cannot be processed if the -nomulticore flag is given because the trace formats are different for\n");
-//	printf("              single core and multi-core traces.\n");
-//	printf("-unicore:     Same as the -nomulticore flag\n");
 	printf("-srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables\n");
 	printf("              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.\n");
+	printf("-analytics:   Compute and display detail level 1 trace analytics.\n");
+	printf("-analytics=n: Specify the detail level for trace analytics dispaly. N sets the level to either 0 (no analytics display)\n");
+	printf("              1 (sort system totals), or 2 (display analytics by core).\n");
+	printf("-noanaylitics: Do not compute and display trace analytics (default). Same as -analytics=0.");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -159,9 +156,9 @@ int main(int argc, char *argv[])
 	bool itcprint_flag = false;
 	int  numAddrBits = 0;
 	uint32_t addrDispFlags = 0;
-	bool multicore_flag = false;
 	bool itcbuffer_flag = true;
 	int srcbits = 0;
+	int analytics_detail = 0;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -337,16 +334,6 @@ int main(int argc, char *argv[])
 		else if (strcmp("-noaddrsep", argv[i]) == 0) {
 			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_SEP;
 		}
-//		else if (strcmp("-multicore", argv[i]) == 0) {
-//			multicore_flag = true;
-//			srcbits = 1;
-//		}
-//		else if (strcmp("-nomulticore", argv[i]) == 0) {
-//			multicore_flag = false;
-//		}
-//		else if (strcmp("-unicore", argv[i]) == 0) {
-///			multicore_flag = false;
-//		}
 		else if (strncmp("-srcbits=",argv[i],strlen("-srcbits=")) == 0) {
 			srcbits = atoi(argv[i]+strlen("-srcbits="));
 
@@ -355,6 +342,21 @@ int main(int argc, char *argv[])
 				usage(argv[0]);
 				return 1;
 			}
+		}
+		else if (strcmp("-analytics",argv[i]) == 0) {
+			analytics_detail = 1;
+		}
+		else if (strncmp("-analytics=",argv[i],strlen("-analytics=")) == 0) {
+			analytics_detail = atoi(argv[i]+strlen("-analytics="));
+
+			if (analytics_detail < 0) {
+				printf("Error: option -analytics=n, n must be a valid number >= 0\n");
+				usage(argv[0]);
+				return 1;
+			}
+		}
+		else if (strcmp("-noanalytics",argv[i]) == 0) {
+			analytics_detail = 0;
 		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
@@ -370,13 +372,6 @@ int main(int argc, char *argv[])
 	if (version_flag) {
 		printf("%s: version %s\n",argv[0],"0.4");
 		return 0;
-	}
-
-	if (srcbits > 0) {
-		multicore_flag = true;
-	}
-	else {
-		multicore_flag = false;
 	}
 
 	if (tf_name == nullptr) {
@@ -405,7 +400,7 @@ int main(int argc, char *argv[])
 
 	// might want to include some path info!
 
-	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags,numAddrBits,addrDispFlags,multicore_flag,srcbits);
+	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags,numAddrBits,addrDispFlags,srcbits);
 
 	assert(trace != nullptr);
 
@@ -481,7 +476,7 @@ int main(int argc, char *argv[])
 
 							sfp = stripPath(strip_flag,srcInfo->sourceFile);
 
-							if (multicore_flag) {
+							if (srcbits > 0) {
 								printf("[%d] File: %s:%d\n",srcInfo->coreId,sfp,srcInfo->sourceLineNum);
 							}
 							else {
@@ -494,7 +489,7 @@ int main(int argc, char *argv[])
 
 					if (src_flag) {
 						if (srcInfo->sourceLine != nullptr) {
-							if (multicore_flag) {
+							if (srcbits > 0) {
 								printf("[%d] Source: %s\n",srcInfo->coreId,srcInfo->sourceLine);
 							}
 							else {
@@ -513,7 +508,7 @@ int main(int argc, char *argv[])
 				instInfo->addressToText(dst,sizeof dst,0);
 
 				if (func_flag) {
-					if (multicore_flag) {
+					if (srcbits > 0) {
 						printf("[%d] ",instInfo->coreId);
 					}
 
@@ -531,7 +526,7 @@ int main(int argc, char *argv[])
 					lastInstSize = instInfo->instSize;
 				}
 
-				if (multicore_flag) {
+				if (srcbits > 0) {
 					printf("[%d] ", instInfo->coreId);
 				}
 
@@ -562,7 +557,7 @@ int main(int argc, char *argv[])
 						printf("\n");
 					}
 
-					if (multicore_flag) {
+					if (srcbits > 0) {
 						printf("[%d] ",msgInfo->src);
 					}
 
@@ -578,7 +573,7 @@ int main(int argc, char *argv[])
 						printf("\n");
 					}
 
-					if (multicore_flag) {
+					if (srcbits > 0) {
 						printf("[%d] ",msgInfo->src);
 					}
 
@@ -589,6 +584,8 @@ int main(int argc, char *argv[])
 			}
 		}
 	} while (ec == dqr::DQERR_OK);
+
+	trace->displayAnalytics(analytics_detail);
 
 	delete trace;
 

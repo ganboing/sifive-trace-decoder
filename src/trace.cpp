@@ -45,7 +45,7 @@ int Trace::decodeInstruction(uint32_t instruction,int &inst_size,Disassembler::i
 	return disassembler->decodeInstruction(instruction,inst_size,inst_type,immeadiate,is_branch);
 }
 
-Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags, bool ismulticore, int srcBits)
+Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags, int srcBits)
 {
   sfp          = nullptr;
   elfReader    = nullptr;
@@ -54,13 +54,13 @@ Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, 
 
   assert(tf_name != nullptr);
 
-  multicore = ismulticore;
-
   srcbits = srcBits;
+
+  analytics.setSrcBits(srcBits);
 
   bufferItc = true;
 
-  sfp = new (std::nothrow) SliceFileParser(tf_name,binaryFlag,multicore,srcbits);
+  sfp = new (std::nothrow) SliceFileParser(tf_name,binaryFlag,srcbits);
 
   assert(sfp != nullptr);
 
@@ -380,7 +380,7 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 
 		if (readNewTraceMessage != false) {
 //			rc = linkedNexusMessage::nextTraceMessage(nm);
-			rc = sfp->readNextTraceMsg(nm);
+			rc = sfp->readNextTraceMsg(nm,analytics);
 
 			if (rc != dqr::DQERR_OK) {
 				// have an error. either eof, or error
@@ -1103,6 +1103,12 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = dqr::DQERR_ERR;
+				return status;
+			}
+
+			status = analytics.updateInstructionInfo(currentCore,inst,inst_size);
+			if (status != dqr::DQERR_OK) {
+				state[currentCore] = TRACE_STATE_ERROR;
 				return status;
 			}
 

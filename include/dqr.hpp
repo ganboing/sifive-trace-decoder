@@ -357,8 +357,8 @@ public:
 // class SliceFileParser: Class to parse binary or ascii nexus messages into a NexusMessage object
 class SliceFileParser {
 public:
-             SliceFileParser(char *filename, bool binary, bool ismulticore, int srcBits);
-  dqr::DQErr readNextTraceMsg(NexusMessage &nm);
+             SliceFileParser(char *filename, bool binary, int srcBits);
+  dqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics);
 
 // foo  dqr::DQErr readAllTraceMsgs();
   dqr::DQErr getErr() { return status; };
@@ -366,14 +366,11 @@ public:
 
 private:
   dqr::DQErr status;
-  int		 firstMsg;
-  int        numTraceMsgs;
-  int        numSyncMsgs;
+  bool		 firstMsg;
 
   // add other counts for each message type
 
   bool          binary;
-  bool          multicore;
   int           srcbits;
   std::ifstream tf;
   int           bitIndex;
@@ -387,18 +384,18 @@ private:
   dqr::DQErr readBinaryMsg();
   dqr::DQErr readNextByte(uint8_t *byte);
   dqr::DQErr readAscMsg();
-  dqr::DQErr parseVarField(uint64_t *val);
+  dqr::DQErr parseVarField(uint64_t *val,int *width);
   dqr::DQErr parseFixedField(int width, uint64_t *val);
-  dqr::DQErr parseDirectBranch(NexusMessage &nm);
-  dqr::DQErr parseIndirectBranch(NexusMessage &nm);
-  dqr::DQErr parseDirectBranchWS(NexusMessage &nm);
-  dqr::DQErr parseIndirectBranchWS(NexusMessage &nm);
-  dqr::DQErr parseSync(NexusMessage &nm);
-  dqr::DQErr parseCorrelation(NexusMessage &nm);
-  dqr::DQErr parseAuxAccessWrite(NexusMessage &nm);
-  dqr::DQErr parseDataAcquisition(NexusMessage &nm);
-  dqr::DQErr parseOwnershipTrace(NexusMessage &nm);
-  dqr::DQErr parseError(NexusMessage &nm);
+  dqr::DQErr parseDirectBranch(NexusMessage &nm,Analytics &analytics);
+  dqr::DQErr parseIndirectBranch(NexusMessage &nm,Analytics &analytics);
+  dqr::DQErr parseDirectBranchWS(NexusMessage &nm,Analytics &analytics);
+  dqr::DQErr parseIndirectBranchWS(NexusMessage &nm,Analytics &analytics);
+  dqr::DQErr parseSync(NexusMessage &nm,Analytics &analytics);
+  dqr::DQErr parseCorrelation(NexusMessage &nm,Analytics &analytics);
+  dqr::DQErr parseAuxAccessWrite(NexusMessage &nm,Analytics &analytics);
+  dqr::DQErr parseDataAcquisition(NexusMessage &nm,Analytics &analytics);
+  dqr::DQErr parseOwnershipTrace(NexusMessage &nm,Analytics &analytics);
+  dqr::DQErr parseError(NexusMessage &nm,Analytics &analytics);
 };
 
 // class Disassembler: class to help in the dissasemblhy of instrucitons
@@ -491,6 +488,82 @@ struct NexusMessageSync {
 	NexusMessage msgs[512];
 };
 
+class Analytics {
+public:
+	Analytics();
+	dqr::DQErr updateTraceInfo(uint32_t core_id,dqr::TCode tcode,uint32_t bits,uint32_t meso_bits,uint32_t ts_bits,uint32_t addr_bits);
+	dqr::DQErr updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize);
+	int currentTraceMsgNum() { return num_trace_msgs_all_cores; }
+	void setSrcBits(int sbits) { srcBits = sbits; }
+	dqr::DQErr display(int detail);
+
+private:
+	dqr::DQErr status;
+	uint32_t cores;
+
+	int srcBits;
+
+	uint32_t num_trace_msgs_all_cores;
+	uint32_t num_trace_mseo_bits_all_cores;
+	uint32_t num_trace_bits_all_cores;
+	uint32_t num_trace_bits_all_cores_max;
+	uint32_t num_trace_bits_all_cores_min;
+
+	uint32_t num_inst_all_cores;
+	uint32_t num_inst16_all_cores;
+	uint32_t num_inst32_all_cores;
+
+	struct {
+		uint32_t num_inst;
+		uint32_t num_inst16;
+		uint32_t num_inst32;
+
+		uint32_t num_trace_msgs;
+		uint32_t num_trace_syncs;
+		uint32_t num_trace_dbranch;
+		uint32_t num_trace_ibranch;
+		uint32_t num_trace_dataacq;
+		uint32_t num_trace_dbranchws;
+		uint32_t num_trace_ibranchws;
+		uint32_t num_trace_correlation;
+		uint32_t num_trace_auxaccesswrite;
+		uint32_t num_trace_ownership;
+		uint32_t num_trace_error;
+
+		uint32_t trace_bits;
+		uint32_t trace_bits_max;
+		uint32_t trace_bits_min;
+		uint32_t trace_bits_mseo;
+
+		uint32_t trace_bits_sync;
+		uint32_t trace_bits_dbranch;
+		uint32_t trace_bits_ibranch;
+		uint32_t trace_bits_dataacq;
+		uint32_t trace_bits_dbranchws;
+		uint32_t trace_bits_ibranchws;
+		uint32_t trace_bits_correlation;
+		uint32_t trace_bits_auxaccesswrite;
+		uint32_t trace_bits_ownership;
+		uint32_t trace_bits_error;
+
+		uint32_t num_trace_ts;
+		uint32_t num_trace_uaddr;
+		uint32_t num_trace_faddr;
+
+		uint32_t trace_bits_ts;
+		uint32_t trace_bits_ts_max;
+		uint32_t trace_bits_ts_min;
+
+		uint32_t trace_bits_uaddr;
+		uint32_t trace_bits_uaddr_max;
+		uint32_t trace_bits_uaddr_min;
+
+		uint32_t trace_bits_faddr;
+		uint32_t trace_bits_faddr_max;
+		uint32_t trace_bits_faddr_min;
+	} core[DQR_MAXCORES];
+};
+
 // class Trace: high level class that performs the raw trace data to dissasemble and decorated instruction trace
 
 class Trace {
@@ -499,7 +572,7 @@ public:
 		SYMFLAGS_NONE = 0,
 		SYMFLAGS_xx   = 1 << 0,
 	};
-	           Trace(char *tf_name,bool binaryFlag,char *ef_name,SymFlags sym_flags,int numAddrBits,uint32_t addrDispFlags,bool multicore,int srcBits);
+	           Trace(char *tf_name,bool binaryFlag,char *ef_name,SymFlags sym_flags,int numAddrBits,uint32_t addrDispFlags,int srcBits);
 	          ~Trace();
 	dqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
 
@@ -519,6 +592,7 @@ public:
 	int         getArchSize();
 	int         getAddressSize();
 	void        setITCBuffering(bool itcbuffer_flag);
+	dqr::DQErr displayAnalytics(int detail) { return analytics.display(detail); }
 
 private:
 	enum state {
@@ -545,12 +619,13 @@ private:
 	enum state       state[DQR_MAXCORES];
 	bool             readNewTraceMessage;
 	int              currentCore;
-	bool             multicore;
 	int              srcbits;
 	bool             bufferItc;
 
 	int              startMessageNum;
 	int              endMessageNum;
+
+	Analytics        analytics;
 
 //	need current message number and list of messages??
 
