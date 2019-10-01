@@ -949,7 +949,7 @@ dqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,dqr::TCode tcode,uint32_t
 		num_trace_bits_all_cores_max = bits;
 	}
 
-	if ((num_trace_bits_all_cores_min == 0) || (ts_bits < num_trace_bits_all_cores_min)) {
+	if ((num_trace_bits_all_cores_min == 0) || (bits < num_trace_bits_all_cores_min)) {
 		num_trace_bits_all_cores_min = bits;
 	}
 
@@ -960,7 +960,7 @@ dqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,dqr::TCode tcode,uint32_t
 		core[core_id].trace_bits_max = bits;
 	}
 
-	if ((core[core_id].trace_bits_min == 0) || (ts_bits < core[core_id].trace_bits_min)) {
+	if ((core[core_id].trace_bits_min == 0) || (bits < core[core_id].trace_bits_min)) {
 		core[core_id].trace_bits_min = bits;
 	}
 
