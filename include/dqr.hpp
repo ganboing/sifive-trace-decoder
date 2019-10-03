@@ -513,6 +513,8 @@ private:
 	uint32_t num_inst16_all_cores;
 	uint32_t num_inst32_all_cores;
 
+	uint32_t num_branches_all_cores;
+
 	struct {
 		uint32_t num_inst;
 		uint32_t num_inst16;

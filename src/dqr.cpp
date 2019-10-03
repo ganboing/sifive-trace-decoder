@@ -885,6 +885,8 @@ Analytics::Analytics()
 	num_inst16_all_cores = 0;
 	num_inst32_all_cores = 0;
 
+	num_branches_all_cores = 0;
+
 	for (int i = 0; i < DQR_MAXCORES; i++) {
 		core[i].num_inst16 = 0;
 		core[i].num_inst32 = 0;
@@ -987,10 +989,12 @@ dqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,dqr::TCode tcode,uint32_t
 	case dqr::TCODE_DIRECT_BRANCH:
 		core[core_id].num_trace_dbranch += 1;
 		core[core_id].trace_bits_dbranch += bits;
+		num_branches_all_cores += 1;
 		break;
 	case dqr::TCODE_INDIRECT_BRANCH:
 		core[core_id].num_trace_ibranch += 1;
 		core[core_id].trace_bits_ibranch += bits;
+		num_branches_all_cores += 1;
 
 		have_uaddr = true;
 		break;
@@ -1011,12 +1015,14 @@ dqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,dqr::TCode tcode,uint32_t
 	case dqr::TCODE_DIRECT_BRANCH_WS:
 		core[core_id].num_trace_dbranchws += 1;
 		core[core_id].trace_bits_dbranchws += bits;
+		num_branches_all_cores += 1;
 
 		have_faddr = true;
 		break;
 	case dqr::TCODE_INDIRECT_BRANCH_WS:
 		core[core_id].num_trace_ibranchws += 1;
 		core[core_id].trace_bits_ibranchws += bits;
+		num_branches_all_cores += 1;
 
 		have_faddr = true;
 		break;
@@ -1153,6 +1159,7 @@ dqr::DQErr Analytics::display(int detail)
 
 		printf("Trace bits per instruction:     %5.2f\n",((float)num_trace_bits_all_cores)/num_inst_all_cores);
 		printf("Instructions per trace message: %5.2f\n",((float)num_inst_all_cores)/num_trace_msgs_all_cores);
+		printf("Instructions per taken branch:  %5.2f\n",((float)num_inst_all_cores)/num_branches_all_cores);
 
 		if (srcBits > 0) {
 			printf("Src bits %% of message:          %5.2f%%\n",((float)srcBits*num_trace_msgs_all_cores)/num_trace_bits_all_cores*100.0);
@@ -1542,6 +1549,26 @@ dqr::DQErr Analytics::display(int detail)
 				while (position < tabs[ts]) { position += printf(" "); }
 				position += printf("%13.2f",((float)core[i].num_inst)/core[i].num_trace_msgs);
 				t1 += core[i].num_trace_msgs;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += printf(" "); }
+			printf("%13.2f",((float)t2)/t1);
+		}
+
+		printf("\n");
+		position = printf("Inst/Taken Branch");
+
+		ts = 0;
+		t1 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += printf(" "); }
+				position += printf("%13.2f",((float)core[i].num_inst)/(core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws));
+				t1 += core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws;
 				ts += 1;
 			}
 		}
