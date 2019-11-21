@@ -4,8 +4,8 @@
 
 # riscv set_prefer_sba on
 
-set traceBaseAddresses {0x20007000 0x20008000}
-set traceFunnelAddress 0x20009000
+# set traceBaseAddresses {0x20007000 0x20008000}
+# set traceFunnelAddress 0x20009000
 # set traceBaseAddresses 0x20007000
 # set traceFunnelAddress 0x00000000
 
