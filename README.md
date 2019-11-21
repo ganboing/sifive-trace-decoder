@@ -1,7 +1,7 @@
 # trace-decoder
 SiFive implementation of the Nexus trace decoder
 
-The trace-decoder is a stand-alone program that reads Nexus 2001 traces for the Risc-V architecture as implemented by SiFive and reconstructs the instruction stream that generated the trace. Instruction traces can be used for debugging and performance analysis. Currently, Windows, Linux, and OS X are supported.
+The trace-decoder is a stand-alone program that reads Nexus 2001 traces for the RISC-V architecture as implemented by SiFive and reconstructs the instruction stream that generated the trace. Instruction traces can be used for debugging and performance analysis. Currently, Windows, Linux, and OS X are supported.
 
 The process to create/capture a trace file is not covered here; only how to build and use the trace-decoder tool to reconstruct the program execution that generated the trace. Usage of the trace-decoder assumes you already have or know how to create trace files.
 
@@ -36,7 +36,7 @@ In addition, the trace-decoder is statically linked with various licensed librar
 
 The GNU GPL V3 license is in the file COPYING; the GNU LGPL V2.1 license is in the file COPYING.LIB; the zlib/libpng License is in the file zlib source file zlib.h, and does not require distribution with the library binary.
 
-These libraries, along with much more, have been ported to Risc-V by SiFive, and are available at the link:
+These libraries, along with much more, have been ported to RISC-V by SiFive, and are available at the link:
 
 https://github.com/sifive/riscv-binutils-gdb
 
