@@ -1640,7 +1640,7 @@ proc wordscollected {} {
     }
 }
 
-proc is_itc_implmented {} {
+proc is_itc_implmented {core} {
     # Caller is responsible for enabling trace before calling this
     # proc, otherwise behavior is undefined
 
@@ -1650,16 +1650,16 @@ proc is_itc_implmented {} {
     # We'll write a non-zero value to itc_traceenable, verify a
     # non-zero readback, and restore the original value
  
-    set originalval [word [expr $traceBaseAddrArray(0) + $itc_traceenable_offset]]
-    mww [expr $traceBaseAddrArray(0) + $itc_traceenable_offset] 0xFFFFFFFF
-    set readback [word [expr $traceBaseAddrArray(0) + $itc_traceenable_offset]]
+    set originalval [word [expr $traceBaseAddrArray($core) + $itc_traceenable_offset]]
+    mww [expr $traceBaseAddrArray($core) + $itc_traceenable_offset] 0xFFFFFFFF
+    set readback [word [expr $traceBaseAddrArray($core) + $itc_traceenable_offset]]
     set result [expr $readback != 0]
-    mww [expr $traceBaseAddrArray(0) + $itc_traceenable_offset] $originalval
+    mww [expr $traceBaseAddrArray($core) + $itc_traceenable_offset] $originalval
 
     return $result
 }
 
-proc get_num_external_trigger_outputs {} {
+proc get_num_external_trigger_outputs {core} {
     global xto_control_offset
     global traceBaseAddrArray
 
@@ -1670,10 +1670,10 @@ proc get_num_external_trigger_outputs {} {
     # trigger output exists in the nibble slot, regardless of whether other
     # optional trace features are present
 
-    set originalval [word [expr $traceBaseAddrArray(0)] + $xto_control_offset]
-    mww [expr $traceBaseAddrArray(0) + $xto_control_offset] 0x11111111
-    set readback [word [expr $traceBaseAddrArray(0) + $xto_control_offset]]
-    mww [expr $traceBaseAddrArray(0) + $xto_control_offset] $originalval
+    set originalval [word [expr $traceBaseAddrArray($core)] + $xto_control_offset]
+    mww [expr $traceBaseAddrArray($core) + $xto_control_offset] 0x11111111
+    set readback [word [expr $traceBaseAddrArray($core) + $xto_control_offset]]
+    mww [expr $traceBaseAddrArray($core) + $xto_control_offset] $originalval
 
     set result 0
     for {set i 0} {$i < 8} {incr i} {
@@ -1685,7 +1685,7 @@ proc get_num_external_trigger_outputs {} {
     return $result
 }
 
-proc get_num_external_trigger_inputs {} {
+proc get_num_external_trigger_inputs {core} {
     global xti_control_offset
     global traceBaseAddrArray
 
@@ -1696,10 +1696,10 @@ proc get_num_external_trigger_inputs {} {
     # trigger input exists in the nibble slot, regardless of whether other
     # optional trace features are present
 
-    set originalval [word [expr $traceBaseAddrArray(0) + $xti_control_offset]]
-    mww [expr $traceBaseAddrArray(0) + $xti_control_offset] 0x22222222
-    set readback [word [expr $traceBaseAddrArray(0) + $xti_control_offset]]
-    mww [expr $traceBaseAddrArray(0) + $xti_control_offset] $originalval
+    set originalval [word [expr $traceBaseAddrArray($core) + $xti_control_offset]]
+    mww [expr $traceBaseAddrArray($core) + $xti_control_offset] 0x22222222
+    set readback [word [expr $traceBaseAddrArray($core) + $xti_control_offset]]
+    mww [expr $traceBaseAddrArray($core) + $xti_control_offset] $originalval
 
     set result 0
     for {set i 0} {$i < 8} {incr i} {
