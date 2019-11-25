@@ -207,8 +207,17 @@ proc disableTrace {core} {
   global te_control_offset
 
   set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-  set t [expr $t & ~0x00000007]
+  set t [expr $t & ~0x00000006]
+  set t [expr $t | 0x00000001]
   mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+}
+
+proc resetTrace {core} {
+  global traceBaseAddrArray
+  global te_control_offset
+
+  mww [expr $traceBaseAddrArray($core) + $te_control_offset] 0
+  mww [expr $traceBaseAddrArray($core) + $te_control_offset] 1
 }
 
 proc isTsEnabled {core} {
@@ -295,11 +304,11 @@ proc getTsClockSrc {core} {
   set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
   set t [expr ($t >> 4) & 0x7]
   switch $t {
-  0 { return "none"     }
-  1 { return "external" }
-  2 { return "bus"      }
-  3 { return "core"     }
-  4 { return "slave"    }
+  0       { return "none"     }
+  1       { return "external" }
+  2       { return "bus"      }
+  3       { return "core"     }
+  4       { return "slave"    }
   default { return "reserved" }
   }
 }
@@ -380,7 +389,7 @@ proc setTsBranch {core branch} {
   "indirect+exception" { set br 1 }
   "indirect"           { set br 1 }
   "all"                { set br 3 }
-  default { set br 0 }
+  default              { set br 0 }
   }
 
   set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
@@ -394,8 +403,8 @@ proc setTsITC {core itc} {
   global ts_control_offset
 
   switch $itc {
-  "on"                 { set f 1 }
-  "off"                { set f 0 }
+  "on"    { set f 1 }
+  "off"   { set f 0 }
   default { set f 0 }
   }
 
@@ -423,8 +432,8 @@ proc setTsOwner {core owner} {
   global ts_control_offset
 
   switch $owner {
-  "on"                 { set f 1 }
-  "off"                { set f 0 }
+  "on"    { set f 1 }
+  "off"   { set f 0 }
   default { set f 0 }
   }
 
@@ -452,8 +461,8 @@ proc setTeStopOnWrap {core wrap} {
   global te_control_offset
 
   switch $wrap {
-  "on"                 { set sow 1 }
-  "off"                { set sow 0 }
+  "on"    { set sow 1 }
+  "off"   { set sow 0 }
   default { set sow 0 }
   }
 
@@ -481,10 +490,10 @@ proc setTraceMode {core mode} {
   global te_control_offset
 
   switch $mode {
-  "none" { set tm 0 }
-  "sync" { set tm 1 }
-  "all"  { set tm 3 }
-  default { set sow 0 }
+  "none"  { set tm 0 }
+  "sync"  { set tm 1 }
+  "all"   { set tm 3 }
+  default { set tm 0 }
   }
 
   set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
@@ -1542,7 +1551,7 @@ proc trace {{cores "all"} {opt ""}} {
     }
 
     if {$coreList == "error"} {
-      echo {Error: Usage: trace [corelist] [on | off | settings | help]}
+      echo {Error: Usage: trace [corelist] [on | off | reset | settings | help]}
       return "error"
     }
   }
@@ -1572,10 +1581,11 @@ proc trace {{cores "all"} {opt ""}} {
 
   if {$opt == "help"} {
     echo "trace: set or display the maximum number of BTMs between Sync messages"
-    echo {Usage: trace [corelist] [on | off | settings | help]}
+    echo {Usage: trace [corelist] [on | off | reset | settings | help]}
     echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
     echo "  on:       Enable tracing"
     echo "  off:      Disable tracing"
+    echo "  reset:    Reset trace encoder"
     echo "  settings: Display current trace related settings"
     echo "  help:     Display this message"
     echo ""
@@ -1588,6 +1598,10 @@ proc trace {{cores "all"} {opt ""}} {
   } elseif {$opt == "off"} {
     foreach core $coreList {
       disableTrace $core
+    }
+  } elseif {$opt == "reset"} {
+    foreach core $coreList {
+      resetTrace $core
     }
   } elseif {$opt == "settings"} {
     # build a cores option without funnel
@@ -1623,7 +1637,7 @@ proc trace {{cores "all"} {opt ""}} {
       echo "maxbtm: [maxbtm $cores2]"
     }
   } else {
-    echo {Error: Usage: trace [corelist] [on | off | settings | help]}
+    echo {Error: Usage: trace [corelist] [on | off | reset | settings | help]}
   }
 }
 
@@ -1851,10 +1865,10 @@ proc xti_action {cores {idx ""} {val ""}} {
 
     foreach core $coreList {
       switch [xti_action_read $core $idx] {
-      0 { set action "none"   }
-      2 { set action "start"  }
-      3 { set action "stop"   }
-      4 { set action "record" }
+      0       { set action "none"   }
+      2       { set action "start"  }
+      3       { set action "stop"   }
+      4       { set action "record" }
       default { set action "reserved" }
       }
 
@@ -1967,7 +1981,7 @@ proc qte {{cores "all"}} {
   global te_control_offset
   global traceBaseAddrArray
 
-  set coreList [parseCoreList $cores]
+  set coreList [parseCoreFunnelList $cores]
 
   if {$coreList == "error"} {
      echo "Error: Usage: qte [<cores>]"
