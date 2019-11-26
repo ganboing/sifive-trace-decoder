@@ -1684,7 +1684,7 @@ proc get_num_external_trigger_outputs {core} {
     # trigger output exists in the nibble slot, regardless of whether other
     # optional trace features are present
 
-    set originalval [word [expr $traceBaseAddrArray($core)] + $xto_control_offset]
+    set originalval [word [expr $traceBaseAddrArray($core) + $xto_control_offset]]
     mww [expr $traceBaseAddrArray($core) + $xto_control_offset] 0x11111111
     set readback [word [expr $traceBaseAddrArray($core) + $xto_control_offset]]
     mww [expr $traceBaseAddrArray($core) + $xto_control_offset] $originalval
@@ -1834,6 +1834,21 @@ proc xti_action_write {core idx val} {
   set ored [expr ($zeroed | (($val & 0xF) << ($idx*4)))]
   mww [expr $traceBaseAddrArray($core) + $xti_control_offset] $ored
 }
+
+proc xto_event_read { core idx } {
+    global xto_control_offset
+    global traceBaseAddrArray
+    return [expr ([word [expr $traceBaseAddrArray($core) + $xto_control_offset]] >> ($idx*4)) & 0xF]
+}
+
+proc xto_event_write { core idx val } {
+    global xto_control_offset
+    global traceBaseAddrArray
+    set zeroed [expr ([word [expr $traceBaseAddrArray($core) + $xto_control_offset]] & ~(0xF << ($idx*4)))]
+    set ored [expr ($zeroed | (($val & 0xF) << ($idx*4)))]
+    mww [expr $traceBaseAddrArray($core) + $xto_control_offset] $ored
+}
+
 
 proc xti_action {cores {idx ""} {val ""}} {
   if {$idx == ""} {
