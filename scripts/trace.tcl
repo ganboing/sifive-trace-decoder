@@ -485,6 +485,37 @@ proc getTeStopOnWrap {core} {
   }
 }
 
+
+proc setTeStallEnable {core enable} {
+  global traceBaseAddrArray
+  global te_control_offset
+
+  switch $enable {
+  "on"    { set en 1 }
+  "off"   { set en 0 }
+  default { set en 0 }
+  }
+
+  set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+  set t [expr $t & ~(1 << 13)]
+  set t [expr $t | ($en << 13)]
+  mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+}
+
+proc getTeStallEnable {core} {
+  global traceBaseAddrArray
+  global te_control_offset
+
+  set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+  set t [expr ($t >> 13) & 0x1]
+
+  switch $t {
+  0 { return "off"  }
+  1 { return "on"  }
+  }
+}
+
+
 proc setTraceMode {core mode} {
   global traceBaseAddrArray
   global te_control_offset
