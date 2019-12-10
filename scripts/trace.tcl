@@ -4,10 +4,10 @@
 
 # riscv set_prefer_sba on
 
-# set traceBaseAddresses {0x20007000 0x20008000}
-# set traceFunnelAddress 0x20009000
-# set traceBaseAddresses 0x20007000
-# set traceFunnelAddress 0x00000000
+#set traceBaseAddresses {0x20007000 0x20008000}
+#set traceFunnelAddress 0x20009000
+#set traceBaseAddresses 0x10000000
+#set traceFunnelAddress 0x00000000
 
 set te_control_offset      0x00
 set te_impl_offset         0x04
@@ -31,6 +31,9 @@ set itc_trigenable_offset  0x64
 
 set num_cores  0
 set has_funnel 0
+set trace_buffer_width 0
+
+set traceBufferAddr 0x00000000
 
 # local helper functions not intented to be called directly
 
@@ -102,6 +105,7 @@ proc getAllCoreList {} {
 
 proc parseCoreFunnelList {cores} {
   global num_cores
+  global has_funnel
 
   # parse core and build list of cores
 
@@ -114,8 +118,8 @@ proc parseCoreFunnelList {cores} {
   foreach core $t {
     if {$core == "funnel"} {
       # only accept "funnel" if one is present
-	    #
-      if {has_funnel == 0} {
+
+      if {$has_funnel == 0} {
         return "error"
       }
     } elseif {$core < 0 || $core > $num_cores} {
@@ -180,6 +184,55 @@ proc ite {} {
     return 0
 }
 
+proc setTraceBufferWidth {} {
+    global traceBaseAddrArray
+    global te_impl_offset
+    global te_sinkbase_offset
+    global has_funnel
+    global trace_buffer_width
+
+    if {$has_funnel != 0} {
+      set impl [word [expr $traceBaseAddrArray("funnel") + $te_impl_offset]]
+      if {($impl & (1 << 7))} {
+        set t [word [expr $traceBaseAddrArray("funnel") + $te_sinkbase_offset]]
+        mww [expr $traceBAseAddrArray("funnel") + $te_sinkbase_offset] 0xffffffff
+        set w [word [expr $traceBaseAddrArray("funnel") + $te_sinkbase_offset]]
+        mww [expr $traceBAseAddrArray("funnel") + $te_sinkbase_offset] $t
+
+        if {$w == 0} {
+	  set trace_buffer_width 0
+          return 0
+        }
+
+        for {set i 0} {(w & (1 << $i)) == 0} {incr i} { }
+
+	set trace_buffer_width [expr 1 << $i]
+        return $trace_buffer_width
+      }
+    }
+
+    set impl [word [expr $traceBaseAddrArray(0) + $te_impl_offset]]
+    if {($impl & (1 << 7))} {
+	set t [word [expr $traceBaseAddrArray(0) + $te_sinkbase_offset]]
+	mww [expr $traceBaseAddrArray(0) + $te_sinkbase_offset] 0xffffffff
+	set w [word [expr $traceBaseAddrArray(0) + $te_sinkbase_offset]]
+	mww [expr $traceBaseAddrArray(0) + $te_sinkbase_offset] $t
+
+	if {$w == 0} {
+	  set trace_buffer_width 0
+          return 0
+        }
+
+	for {set i 0} {($w & (1 << $i)) == 0} {incr i} { }
+
+	set trace_buffer_width [expr 1 << $i]
+	return $trace_buffer_width
+    }
+
+    set trace_buffer_width 0
+    return 0
+}
+
 proc getTraceEnable {core} {
   global traceBaseAddrArray
   global te_control_offset
@@ -218,6 +271,28 @@ proc resetTrace {core} {
 
   mww [expr $traceBaseAddrArray($core) + $te_control_offset] 0
   mww [expr $traceBaseAddrArray($core) + $te_control_offset] 1
+}
+
+proc getSinkError {core} {
+  global traceBaseAddrArray
+  global te_control_offset
+
+  set tracectl [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+
+  if {(($tracectl >> 27) & 1) != 0} {
+    return "Error"
+  }
+
+  return "Ok"
+}
+
+proc clearSinkError {core} {
+  global traceBaseAddrArray
+  global te_control_offset
+
+  set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+  set t [expr $t | (1 << 27)]
+  mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
 }
 
 proc isTsEnabled {core} {
@@ -1383,125 +1458,176 @@ proc maxbtm {{cores "all"} {opt ""}} {
   }
 }
 
-proc setreadptr {ptr} {
-    global traceFunnelAddress
-    global traceBaseAddresses
+proc setreadptr {core ptr} {
+    global traceBaseAddrArray
     global te_sinkrp_offset
-    global has_funnel
 
-    if {$has_funnel != 0} {
-	mww [expr $traceFunnelAddress + $te_sinkrp_offset] $ptr
-    } else {
-        mww [expr [lindex $traceBaseAddresses 0] + $te_sinkrp_offset] $ptr
-    }
+    mww [expr $traceBaseAddrArray($core) + $te_sinkrp_offset] $ptr
 }
 
-proc readtracedata {} {
-    global traceFunnelAddress
-    global traceBaseAddresses
+proc readSRAMData {core} {
+    global traceBaseAddrArray
     global te_sinkdata_offset
-    global te_sinkrp_offset
-    global has_funnel
 
-    if {$has_funnel != 0} {
-	return [word [expr $traceFunnelAddress + $te_sinkdata_offset]]
-    } else {
-        return [word [expr [lindex $traceBaseAddresses 0] + $te_sinkdata_offset]]
-    }
+    return [word [expr $traceBaseAddrArray($core) + $te_sinkdata_offset]]
 }
 
-proc wt {{file "trace.txt"}} {
-  global tracebuffersize
-  global te_sinkrp
-  global te_sinkwp
-  global te_sinkdata
-  set fp [open "$file" w]
-  set tracewp [word $te_sinkwp]
-  if {($tracewp & 1) == 0 } {	;# buffer has not wrapped
-    set tracebegin 0
-    set traceend $tracewp
-    puts $fp "Trace from $tracebegin to $traceend, nowrap, [expr $traceend - $tracebegin] bytes"
-    mww $te_sinkrp 0
-    for {set i 0} {$i < $traceend} {incr i 4} {
-      puts $fp "[format {%4d: 0x%08x} $i [word $te_sinkdata]]"
-    }
-  } else {
-    puts $fp "Trace wrapped"
-    set tracebegin [expr $tracewp & 0xfffffffe]
-    set traceend $tracebuffersize
-    puts $fp "Trace from $tracebegin to $traceend, [expr $traceend - $tracebegin] bytes"
-    mww $te_sinkrp $tracebegin
-    for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-      puts $fp "[format {%4d: 0x%08x} $i [word $te_sinkdata]]"
-    }
-    set tracebegin 0
-    set traceend [expr $tracewp & 0xfffffffe]
-    puts $fp "Trace from $tracebegin to $traceend, [expr $traceend - $tracebegin] bytes"
-    mww $te_sinkrp 0
-    for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-      puts $fp "[format {%4d: 0x%08x} $i [word $te_sinkdata]]"
-    }
-  }
-  close $fp
-}
-
-proc wtb {{file "trace.rtd"}} {
-  riscv set_prefer_sba on
-  global tracebuffersize
-  global te_sinkrp_offset
-  global te_sinkwp_offset
-  global te_sinkdata_offset
-
+proc writeSRAM {core file} {
   set fp [open "$file" wb]
 
-  set tracewp [eval gettracewp]
+  set tracewp [gettracewp $core]
 
   if {($tracewp & 1) == 0 } { ;# buffer has not wrapped
     set tracebegin 0
     set traceend $tracewp
-    echo "Trace from $tracebegin to $traceend, nowrap, [expr $traceend - $tracebegin] bytes"
 
-    setreadptr 0
+    echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
+
+    setreadptr $core 0
+
     for {set i 0} {$i < $traceend} {incr i 4} {
-      pack w [eval readtracedata] -intle 32
+      pack w [eval readSRAMData $core] -intle 32
       puts -nonewline $fp $w
     }
   } else {
     echo "Trace wrapped"
     set tracebegin [expr $tracewp & 0xfffffffe]
-    set traceend $tracebuffersize
-    echo "Trace from $tracebegin to $traceend, [expr $traceend - $tracebegin] bytes"
+    set traceend [getTraceBufferSize $core]
 
-    setreadptr $tracebegin
+    echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
+
+    setreadptr $core $tracebegin
 
     for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-      pack w [eval readtracedata] -intle 32
+      pack w [eval readSRAMData $core] -intle 32
       puts -nonewline $fp $w
     }
 
     set tracebegin 0
     set traceend [expr $tracewp & 0xfffffffe]
 
-    echo "Trace from $tracebegin to $traceend, [expr $traceend - $tracebegin] bytes"
+    echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
 
-    setreadptr 0
+    setreadptr $core 0
 
     for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-      pack w [eval readtracedata] -intle 32
+      pack w [eval readSRAMData $core] -intle 32
       puts -nonewline $fp $w
     }
   }
+
   close $fp
   riscv set_prefer_sba off
+}
+
+proc writeSBA {core file} {
+  global traceBaseAddrArray
+  global tracedBufferSizeArray
+  global te_sinkbase_offset
+  global te_sinklimit_offset
+
+  if sink is not a buffer, return
+
+  set fp [open "$file" wb]
+
+  set tracewp [gettracewp $core]
+
+  if {($tracewp & 1) == 0 } { ;# buffer has not wrapped
+    set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+    set traceend $tracewp
+
+    echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
+
+    for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+      pack w [word $i] -intle 32
+      puts -nonewline $fp $w
+    }
+  } else {
+    echo "Trace wrapped"
+
+    set tracebegin [expr $tracewp & 0xfffffffe]
+    set traceend [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+
+    echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+
+    for {set i $tracebegin} {$i <= $traceend} {incr i 4} {
+      pack w [word $i] -intle 32
+      puts -nonewline $fp $w
+    }
+
+    set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+    set traceend [expr $tracewp & 0xfffffffe]
+
+    echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+
+    for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+      pack w [word $i] -intle 32
+      puts -nonewline $fp $w
+    }
+  }
+
+  close $fp
+  riscv set_prefer_sba off
+}
+
+proc wtb {{file "trace.rtd"}} {
+  riscv set_prefer_sba on
+  global has_funnel
+  global num_cores
+
+  if {$has_funnel} {
+    set s [getSink "funnel"]
+    switch [string toupper $s] {
+      "SRAM" { writeSRAM "funnel" $file }
+      "SBA" { writeSBA "funnel" $file }
+    }
+
+    set coreList [parseCoreList "all"]
+
+    foreach core $coreList {
+      set fn $file.$core
+
+      set s [getSink "funnel"]
+      switch [string toupper $s] {
+        "SRAM" { writeSRAM $core $fn }
+        "SBA" { writeSBA $core $fn }
+      }
+    }
+  } else {
+    set coreList [parseCoreList "all"]
+
+    foreach core $coreList {
+      set s [getSink $core]
+
+      if {$num_cores > 1} {
+        set fn $file.$core
+      } else {
+        set fn $file
+      }
+      
+      switch [string toupper $s] {
+      "SRAM" { writeSRAM $core $fn}
+      "SBA" { writeSBA $core $fn }
+      }
+    }
+  }
 }
 
 proc clearTraceBuffer {core} {
     global traceBaseAddrArray
     global te_sinkrp_offset
     global te_sinkwp_offset
+    global te_sinkbase_offset
 
-    mww [expr $traceBaseAddrArray($core) + $te_sinkrp_offset] 0
-    mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0
+    set s [getSink $core]
+    switch [string toupper $s] {
+      "SRAM" { mww [expr $traceBaseAddrArray($core) + $te_sinkrp_offset] 0
+               mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0
+             }
+      "SBA" { set t [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+              mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
+            }
+    }
 }
 
 proc cleartrace {{cores "all"}} {
@@ -1524,19 +1650,436 @@ proc readts {} {
     echo "[wordhex [expr $traceBaseAddrArray(0) + $ts_control_offset]]"
 }
 
-proc gettracewp {} {
-    global traceBaseAddresses
-    global traceFunnelAddress
+proc gettracewp {core} {
     global te_sinkwp_offset
-    global has_funnel
+    global traceBaseAddrArray
 
-    if {$has_funnel != 0} {
-        set tracewp [word [expr $traceFunnelAddress + $te_sinkwp_offset]]
-    } else {
-        set tracewp [word [expr [lindex $traceBaseAddresses 0] + $te_sinkwp_offset]]
-    }
+    set tracewp [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
 
     return $tracewp
+}
+
+proc getSink {core} {
+    global traceBaseAddrArray
+    global te_control_offset
+    global te_impl_offset
+
+    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+    set t [expr ($t >> 28) & 0x0f]
+
+    switch $t {
+    0 { set t [word [expr $traceBaseAddrArray($core) + $te_impl_offset]]
+	set t [expr ($t >> 4) & 0x1f]
+	switch $t {
+	0x01    { return "SRAM" }
+	0x02    { return "ATB"  }
+	0x04    { return "PIB"  }
+	0x08    { return "SBA"  }
+	0x10    { return "Funnel" }
+	default { return "Reserved" }
+	}
+      }
+    4 { return "SRAM"   }
+    5 { return "ATB"    }
+    6 { return "PIB"    }
+    7 { return "SBA"    }
+    8 { return "Funnel" }
+    default { return "Reserved" }
+    }
+}
+
+proc getTraceBufferSize {core} {
+    global traceBaseAddrArray
+    global te_sinkwp_offset
+    global te_sinkbase_offset
+    global te_sinklimit_offset
+
+    switch [string toupper [getSink $core]] {
+    "SRAM" { set t [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
+             mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0xfffffffc
+             set size [expr [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]] + 4]
+             mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
+	     return $size
+	   }
+    "SBA"  { set start [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+             set end [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+	     set size [expr $end - $start + 4]
+	     return $size
+           }
+    }
+
+    return 0
+}
+
+proc setSink {core type {base ""} {size ""}} {
+    global traceBaseAddrArray
+    global te_control_offset
+    global te_impl_offset
+    global te_sinkbase_offset
+    global te_sinkbasehigh_offset
+    global te_sinklimit_offset
+    global trace_buffer_width
+
+    switch [string toupper $type] {
+    "SRAM"   { set b 4 }
+    "ATB"    { set b 5 }
+    "PIB"    { set b 6 }
+    "SBA"    { set b 7 }
+    "FUNNEL" { set b 8 }
+    default  { return "Error: setSink(): Invalid sync" }
+    }
+
+    set t [word [expr $traceBaseAddrArray($core) + $te_impl_offset]]
+
+    set t [expr $t & (1 << $b)]
+
+    if {$t == 0} {
+      return "Error: setSink(): sink type $type not supported on core $core"
+    }
+
+    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+
+    set t [expr $t & ~(0xf << 28)]
+    set t [expr $t | ($b << 28)]
+
+    mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+
+    if {[string compare -nocase $type "sba"] = 0} {
+      set limit [expr $base + $size - $trace_buffer_width];
+
+      if {($limit >> 32) != ($base >> 32)} {
+	      return "Error: setSink(): buffer cann't span a 2^32 address boundry"
+      } else {
+        mww [expr $traceBaseAddrArray($core) + $te_sinkbase_offset] [expr $base & 0xffffffff]
+        set b [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+        if {$b != [expr $base & 0xffffffff]} {
+          return "Error: setSink(): invalid buffer address for SBA"
+	}
+
+        mww [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset] [expr $base >> 32]
+        set b [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
+        if {$b != [expr $base >> 32]} {
+          return "Error: setSink(): invalid buffer address for SBA"
+	}
+
+        mww [expr $traceBaseAddrArray($core) + $te_sinklimit_offset] [expr $limit & 0xffffffff]
+        set b [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+        if {$b != [expr $limit & 0xffffffff]} {
+          return "Error: setSink(): invalid buffer size for SBA"
+	}
+      }
+    }
+
+    return ""
+}
+
+proc sinkstatus {{cores "all"} {action ""}} {
+  set coreList [parseCoreFunnelList $cores]
+
+  if {$coreList == "error"} {
+    if {$action == ""} {
+      set action $cores
+      set cores "all"
+
+      set coreList [parseCoreFunnelList $cores]
+    }
+
+    if {$coreList == "error"} {
+      echo {Error: Usage: sinkstatus [corelist] [reset | help]}
+      return "error"
+    }
+  }
+
+  if {$action == ""} {
+    # display current status of teSinkError
+    set rv ""
+
+    foreach core $coreList {
+      if {$core == "funnel"} {
+        set te "$core: "
+      } else {
+        set te "core $core: "
+      }
+
+      lappend te [getSinkError $core]
+
+      if {$rv != ""} {
+  	append rv "; "
+      }
+
+      append rv $te
+    }
+
+    return $rv
+  }
+
+  if {$action == "help"} {
+      echo "sinkstatus: display or clear status of teSinkError bit in the teControl register"
+      echo {Usage: sinkstatus [corelist] [clear | help]}
+      echo "  clear:    Clear the teSinkError bit"
+      echo "  help:     Display this message"
+      echo ""
+      echo "sinkstatus with no arguments will display the status of the teSinkError bit for"
+      echo "all cores and the funnel (if present)"
+      echo ""
+  } elseif {$action == "clear"} {
+    foreach core $coreList {
+      clearSinkError $core
+    }
+  }
+}
+
+proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
+    global traceBaseAddrArray
+    global te_control_offset
+    global te_impl_offset
+    global te_sinkbase_offset
+    global te_sinkbasehigh_offset
+    global te_sinklimit_offset
+    global has_funnel
+    global te_sinkwp_offset
+    global te_sinkrp_offset
+    global trace_buffer_width
+
+    switch [string toupper $cores] {
+    ""       { set cores "all" }
+    "SBA"    { set size $addr
+	       set addr $dst
+	       set dst "sba"
+               set cores "all" }
+    "SRAM"   { set dst "sram"
+               set cores "all" }
+    "ATB"    { set dst "atb"
+               set cores "all" }
+    "PIB"    { set dst "pib"
+               set cores "all" }
+    "HELP"   { set dst "help"
+               set cores "all" }
+    "FUNNEL" { switch [string toupper $dst] {
+	       ""     {}
+               "SBA"  {}
+               "SRAM" {}
+	       "ATB"  {}
+	       "PIB"  {}
+	       "HELP" {}
+	       "FUNNEL" {}
+	       default { set size $addr
+                         set addr $dst
+		         set dst $cores
+		         set cores "all"
+		       }
+               }
+             }
+    default  {}
+    }
+
+    set coreFunnelList [parseCoreFunnelList $cores]
+    set coreList [parseCoreList $cores]
+
+    if {$dst == ""} {
+       set teSink {}
+       foreach core $coreFunnelList {
+	 set sink [getSink $core]
+
+	 if {$teSink != ""} {
+             set teSink $teSink "; "
+	 }
+
+	 set teSink "$teSink core: $core $sink"
+
+	 switch [string toupper $sink] {
+	 "SRAM"  { # get size of SRAM
+
+		   set t [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
+		   mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0xfffffffc
+		   set size [expr [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]] + $trace_buffer_width]
+		   mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
+
+		   set teSink "$teSink , size: $size bytes" }
+	 "SBA"   { set sinkBase [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+		   set sinkLimit [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+		   set sinkBaseHigh [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
+
+                   set sinkBase [expr ($sinkBaseHigh << 32) + $sinkBase]
+                   set sinkLimit [expr ($sinkBaseHigh << 32) + $sinkLimit]
+
+		   set teSink "$teSink ,base: [format 0x%08x $sinkBase], size: [expr $sinkLimit - $sinkBase + $trace_buffer_width] bytes"
+                 }
+	 }
+       }
+
+       return $teSink
+    } elseif {[string compare -nocase $dst "help"] == 0} {
+      echo "tracedst: set or display trace sink for cores and funnel"
+      echo {Usage: tracedst [corelist] [sram | atb | pib | funnel | sba base size | help]}
+      echo "  corelist: Comma separated list of core numbers, funnel, or 'all'. Not specifying is equivalent to all"
+      echo "  sram:     Set the trace sink to on-chip sram"
+      echo "  atb:      Set the trace sink to the ATB"
+      echo "  pib:      Set the trace sink to the PIB"
+      echo "  funnel:   set the trtace sink to the funnel"
+      echo "  sba:      Set the trace sink to the system memory at the specified base and limit"
+      echo "  base:     The address to begin the sba trace buffer in system memory at"
+      echo "  size:     Size of the sba buffer in bytes. Must be a multiple of 4"
+      echo "  help:     Display this message"
+      echo ""
+      echo "tracedst with no arguments will display the trace sink for all cores and the funnel (if present)"
+      echo ""
+      echo "If no cores are specified and there is no trace funnel, all cores will be programed with the"
+      echo "sink specified. If no cores are specified and there is a trace funnel, all cores will be"
+      echo "programmed to sink to the funnel and the funnel will be programmed to use the sink specified"
+      echo ""
+    } elseif {[string compare -nocase $dst "atb"] == 0} {
+        if {$cores == "all"} {
+          if {$has_funnel != 0} {
+            foreach core $coreList {
+              set rc [setSink $core "funnel"]
+	      if {$rc != ""} {
+                return $rc
+              }
+            }
+
+            set rc [setSink "funnel" "atb"]
+            if {$rc != ""} {
+              return $rc
+            }
+          } else {
+            foreach core $coreList {
+              set rc [setSink $core "atb"]
+              if {$rc != ""} {
+                return $rc
+              }
+	    }
+	  }
+        } else {
+          foreach core $coreFunnelList {
+            set rc [setSink $core "atb"]
+            if {$rc != ""} {
+              return $rc
+            }
+          }
+        }
+    } elseif {[string compare -nocase $dst "pib"] == 0} {
+        if {$cores == "all"} {
+          if {$has_funnel != 0} {
+            foreach core $coreList {
+              set rc [setSink $core "funnel"]
+	      if {$rc != ""} {
+                return $rc
+              }
+            }
+
+            set rc [setSink "funnel" "pib"]
+            if {$rc != ""} {
+              return $rc
+            }
+          } else {
+            foreach core $coreList {
+              set rc [setSink $core "pib"]
+              if {$rc != ""} {
+                return $rc
+              }
+	    }
+	  }
+        } else {
+          foreach core $coreFunnelList {
+            set rc [setSink $core "pib"]
+            if {$rc != ""} {
+              return $rc
+            }
+          }
+        }
+    } elseif {[string compare -nocase $dst "sram"] == 0} {
+        if {$cores == "all"} {
+          if {$has_funnel != 0} {
+            foreach core $coreList {
+              set rc [setSink $core "funnel"]
+	      if {$rc != ""} {
+                return $rc
+              }
+              cleartrace $core
+            }
+
+            set rc [setSink "funnel" "sram"]
+            if {$rc != ""} {
+              return $rc
+            }
+            cleartrace "funnel"
+          } else {
+            foreach core $coreList {
+              set rc [setSink $core "sram"]
+              if {$rc != ""} {
+                return $rc
+              }
+              cleartrace $core
+            }
+          }
+        } else {
+          foreach core $coreFunnelList {
+            set rc [setSink $core "sram"]
+            if {$rc != ""} {
+              return $rc
+            }
+            cleartrace $core
+          }
+        }
+    } elseif {[string compare -nocase $dst "sba"] == 0} {
+        # set sink to system ram at address and size specified
+
+        if {$cores == "all"} {
+          if {($addr == "") || ($size == "")} {
+            return {Error: Usage: tracedst [sram | atb | pib | sba base size | help]}
+          }
+
+          if {$has_funnel != 0} {
+            foreach core $coreList {
+              set rc [setSink $core "funnel"]
+              if {$rc != ""} {
+                return $rc
+              }
+              cleartrace $core
+            }
+
+            set rc [setSink "funnel" "sba" $addr $size]
+            if {$rc != ""} {
+              return $rc
+            }
+            cleartrace "funnel"
+          } else {
+            foreach core $coreList {
+              set rc [setSink $core "sba" $addr $size]
+              if {$rc != ""} {
+                return $rc
+              }
+              cleartrace $core
+            }
+          }
+        } else {
+          foreach core $coreFunnelList {
+            set rc [setSink $core "sba" $addr $size]
+            if {$rc != ""} {
+              return $rc
+            }
+            cleartrace $core
+          }
+        }
+    } elseif {[string compare -nocase $dst "funnel"] == 0} {
+      if {$has_funnel == 0} {
+        return "Error: funnel not present"
+      }
+
+      foreach $core $coreList {
+        set rc [setSink $core "funnel"]
+        if {$rc != ""} {
+          echo $rc
+          return $rc
+        }
+	cleartrace $core
+      }
+    } else {
+      echo {Error: Usage: tracedst [sram | atb | pib | sba base size | help]}
+    }
+
+    return ""
 }
 
 proc trace {{cores "all"} {opt ""}} {
@@ -1641,17 +2184,34 @@ proc trace {{cores "all"} {opt ""}} {
   }
 }
 
-proc wordscollected {} {
-    global tracebuffersize
+proc wordscollected {core} {
     global te_sinkwp
+    global traceBaseAddrArray
+    global te_sinkbase_offset
 
-    set tracewp [eval gettracewp]
+    set tracewp [gettracewp $core]
 
-    if {$tracewp & 1} {
-	      return "[expr $tracebuffersize / 4] trace words collected"
-    } else {
-        return "[expr $tracewp / 4] trace words collected"
+    switch [string toupper [getSink $core]] {
+    "SRAM" { if {$tracewp & 1} {
+	       set size [getTraceBufferSize $core]
+               return "[expr $size / 4] trace words collected"
+             }
+
+             return "[expr $tracewp / 4] trace words collected"
+           }
+    "SBA"  { if {$tracewp & 1} {
+	       set size [getTraceBufferSize $core]
+               return "[expr $size / 4] trace words collected"
+             }
+	    
+             set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+             set traceend $tracewp
+
+             return "[expr ($traceend - $tracebegin) / 4] trace words collected"
+           }
     }
+
+    return "unknown trace words collected"
 }
 
 proc is_itc_implmented {core} {
@@ -1835,20 +2395,20 @@ proc xti_action_write {core idx val} {
   mww [expr $traceBaseAddrArray($core) + $xti_control_offset] $ored
 }
 
-proc xto_event_read { core idx } {
+proc xto_event_read {core idx} {
     global xto_control_offset
     global traceBaseAddrArray
     return [expr ([word [expr $traceBaseAddrArray($core) + $xto_control_offset]] >> ($idx*4)) & 0xF]
 }
 
-proc xto_event_write { core idx val } {
+proc xto_even_write {core idx val} {
     global xto_control_offset
     global traceBaseAddrArray
+
     set zeroed [expr ([word [expr $traceBaseAddrArray($core) + $xto_control_offset]] & ~(0xF << ($idx*4)))]
     set ored [expr ($zeroed | (($val & 0xF) << ($idx*4)))]
     mww [expr $traceBaseAddrArray($core) + $xto_control_offset] $ored
 }
-
 
 proc xti_action {cores {idx ""} {val ""}} {
   if {$idx == ""} {
@@ -1922,7 +2482,6 @@ proc init {} {
     global te_sinkwp_offset
     global traceBaseAddresses
     global traceFunnelAddress
-    global tracebuffersize
     global traceBaseAddrArray
     global num_cores
     global has_funnel
@@ -1942,6 +2501,7 @@ proc init {} {
 
     foreach addr $traceBaseAddresses {
       set traceBaseAddrArray($core) $addr
+      setSink $core "SRAM"
       incr core
     }
 
@@ -1949,12 +2509,12 @@ proc init {} {
 
     if {($traceFunnelAddress != 0x00000000) && ($traceFunnelAddress != "")} {
       set has_funnel 1
-      set traceBaseAddrArray(funnel) $traceFunnelAddress
-      set tracebuffersize [expr [word [expr $traceFunnelAddress + $te_sinkrp_offset]] + 4]
+      setSink "funnel" "SRAM"
     } else {
       set has_funnel 0
-      set tracebuffersize [expr [word [expr [lindex $traceBaseAddresses 0] + $te_sinkrp_offset]] + 4]
     }
+
+    setTraceBufferWidth
 
     echo -n ""
 }
@@ -2010,6 +2570,93 @@ proc qte {{cores "all"}} {
     set tse "core $core: "
 
     lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_control_offset]]
+
+    if {$rv != ""} {
+      append rv "; $tse"
+    } else {
+      set rv $tse
+    }
+  }
+
+  return $rv
+}
+
+proc qtw {{cores "all"}} {
+  global te_sinkwp_offset
+  global traceBaseAddrArray
+
+  set coreList [parseCoreFunnelList $cores]
+
+  if {$coreList == "error"} {
+     echo "Error: Usage: qtw [<cores>]"
+     return "error"
+  }
+
+  # display current status of ts enable
+  set rv ""
+
+  foreach core $coreList {
+    set tse "core $core: "
+
+    lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
+
+    if {$rv != ""} {
+      append rv "; $tse"
+    } else {
+      set rv $tse
+    }
+  }
+
+  return $rv
+}
+
+proc qtb {{cores "all"}} {
+  global te_sinkbase_offset
+  global traceBaseAddrArray
+
+  set coreList [parseCoreFunnelList $cores]
+
+  if {$coreList == "error"} {
+     echo "Error: Usage: qtb [<cores>]"
+     return "error"
+  }
+
+  # display current status of ts enable
+  set rv ""
+
+  foreach core $coreList {
+    set tse "core $core: "
+
+    lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+
+    if {$rv != ""} {
+      append rv "; $tse"
+    } else {
+      set rv $tse
+    }
+  }
+
+  return $rv
+}
+
+proc qtl {{cores "all"}} {
+  global te_sinklimit_offset
+  global traceBaseAddrArray
+
+  set coreList [parseCoreFunnelList $cores]
+
+  if {$coreList == "error"} {
+     echo "Error: Usage: qte [<cores>]"
+     return "error"
+  }
+
+  # display current status of ts enable
+  set rv ""
+
+  foreach core $coreList {
+    set tse "core $core: "
+
+    lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
 
     if {$rv != ""} {
       append rv "; $tse"
@@ -2081,6 +2728,6 @@ proc qitctriggerenable {{cores "all"}} {
 
 init
 
-echo $tracebuffersize
+tracedst
 
 echo -n ""
