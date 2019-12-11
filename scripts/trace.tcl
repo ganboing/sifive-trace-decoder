@@ -560,7 +560,6 @@ proc getTeStopOnWrap {core} {
   }
 }
 
-
 proc setTeStallEnable {core enable} {
   global traceBaseAddrArray
   global te_control_offset
@@ -589,7 +588,6 @@ proc getTeStallEnable {core} {
   1 { return "on"  }
   }
 }
-
 
 proc setTraceMode {core mode} {
   global traceBaseAddrArray
@@ -1775,29 +1773,31 @@ proc setSink {core type {base ""} {size ""}} {
 
     mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
 
-    if {[string compare -nocase $type "sba"] = 0} {
-      set limit [expr $base + $size - $trace_buffer_width];
+    if {[string compare -nocase $type "sba"] == 0} {
+      if {$base != ""} {
+        set limit [expr $base + $size - $trace_buffer_width];
 
-      if {($limit >> 32) != ($base >> 32)} {
-	      return "Error: setSink(): buffer cann't span a 2^32 address boundry"
-      } else {
-        mww [expr $traceBaseAddrArray($core) + $te_sinkbase_offset] [expr $base & 0xffffffff]
-        set b [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-        if {$b != [expr $base & 0xffffffff]} {
-          return "Error: setSink(): invalid buffer address for SBA"
-	}
+        if {($limit >> 32) != ($base >> 32)} {
+          return "Error: setSink(): buffer cann't span a 2^32 address boundry"
+        } else {
+          mww [expr $traceBaseAddrArray($core) + $te_sinkbase_offset] [expr $base & 0xffffffff]
+          set b [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+          if {$b != [expr $base & 0xffffffff]} {
+            return "Error: setSink(): invalid buffer address for SBA"
+	  }
 
-        mww [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset] [expr $base >> 32]
-        set b [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
-        if {$b != [expr $base >> 32]} {
-          return "Error: setSink(): invalid buffer address for SBA"
-	}
+          mww [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset] [expr $base >> 32]
+          set b [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
+          if {$b != [expr $base >> 32]} {
+            return "Error: setSink(): invalid buffer address for SBA"
+          }
 
-        mww [expr $traceBaseAddrArray($core) + $te_sinklimit_offset] [expr $limit & 0xffffffff]
-        set b [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
-        if {$b != [expr $limit & 0xffffffff]} {
-          return "Error: setSink(): invalid buffer size for SBA"
-	}
+          mww [expr $traceBaseAddrArray($core) + $te_sinklimit_offset] [expr $limit & 0xffffffff]
+          set b [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+          if {$b != [expr $limit & 0xffffffff]} {
+            return "Error: setSink(): invalid buffer size for SBA"
+          }
+        }
       }
     }
 
@@ -1942,13 +1942,14 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
        return $teSink
     } elseif {[string compare -nocase $dst "help"] == 0} {
       echo "tracedst: set or display trace sink for cores and funnel"
-      echo {Usage: tracedst [corelist] [sram | atb | pib | funnel | sba base size | help]}
+      echo {Usage: tracedst [corelist] [sram | atb | pib | funnel | sba [base size] | help]}
       echo "  corelist: Comma separated list of core numbers, funnel, or 'all'. Not specifying is equivalent to all"
       echo "  sram:     Set the trace sink to on-chip sram"
       echo "  atb:      Set the trace sink to the ATB"
       echo "  pib:      Set the trace sink to the PIB"
       echo "  funnel:   set the trtace sink to the funnel"
-      echo "  sba:      Set the trace sink to the system memory at the specified base and limit"
+      echo "  sba:      Set the trace sink to the system memory at the specified base and limit. If no specified"
+      echo "            they are left as previously programmed"
       echo "  base:     The address to begin the sba trace buffer in system memory at"
       echo "  size:     Size of the sba buffer in bytes. Must be a multiple of 4"
       echo "  help:     Display this message"
@@ -2054,13 +2055,9 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
           }
         }
     } elseif {[string compare -nocase $dst "sba"] == 0} {
-        # set sink to system ram at address and size specified
+        # set sink to system ram at address and size specified (if specified)
 
         if {$cores == "all"} {
-          if {($addr == "") || ($size == "")} {
-            return {Error: Usage: tracedst [sram | atb | pib | sba base size | help]}
-          }
-
           if {$has_funnel != 0} {
             foreach core $coreList {
               set rc [setSink $core "funnel"]
@@ -2107,7 +2104,7 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
 	cleartrace $core
       }
     } else {
-      echo {Error: Usage: tracedst [sram | atb | pib | sba base size | help]}
+      echo {Error: Usage: tracedst [sram | atb | pib | sba [base size] | help]}
     }
 
     return ""
