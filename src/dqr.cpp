@@ -31,6 +31,11 @@
 #include <cassert>
 
 #include "dqr.hpp"
+#include "trace.hpp"
+
+//#define DQR_MAXCORES	8
+
+const char * const DQR_VERSION = "0.6";
 
 // static C type helper functions
 
@@ -276,6 +281,21 @@ int      Instruction::addrSize;
 uint32_t Instruction::addrDispFlags;
 int      Instruction::addrPrintWidth;
 
+std::string Instruction::addressToString(int labelLevel)
+{
+	char dst[128];
+
+	addressToText(dst,sizeof dst,labelLevel);
+
+	std::string s = "";
+
+	for (int i = 0; dst[i] != 0; i++) {
+		s += dst[i];
+	}
+
+	return s;
+}
+
 void Instruction::addressToText(char *dst,size_t len,int labelLevel)
 {
 	assert(dst != nullptr);
@@ -307,6 +327,21 @@ void Instruction::addressToText(char *dst,size_t len,int labelLevel)
 	}
 }
 
+std::string Instruction::instructionToString(int labelLevel)
+{
+	char dst[128];
+
+	instructionToText(dst,sizeof dst,labelLevel);
+
+	std::string s = "";
+
+	for (int i = 0; dst[i] != 0; i++) {
+		s += dst[i];
+	}
+
+	return s;
+}
+
 void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 {
 	assert(dst != nullptr);
@@ -336,6 +371,108 @@ void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 			}
 		}
 	}
+}
+
+std::string Source::sourceFileToString()
+{
+	std::string s = "";
+
+	if (sourceFile != nullptr) {
+	  for (int i = 0; sourceFile[i] != 0; i++) {
+		s += sourceFile[i];
+	  }
+	}
+
+	return s;
+}
+
+const char *Source::stripPath(const char *path)
+{
+	if (path == nullptr) {
+		return sourceFile;
+	}
+
+	const char *s = sourceFile;
+
+	if (s == nullptr) {
+		return nullptr;
+	}
+
+	for (;;) {
+		if (*path == 0) {
+			return s;
+		}
+
+		if (tolower(*path) == tolower(*s)) {
+			path += 1;
+			s += 1;
+		}
+		else if (*path == '/') {
+			if (*s != '\\') {
+				return sourceFile;
+			}
+			path += 1;
+			s += 1;
+		}
+		else if (*path == '\\') {
+			if (*s != '/') {
+				return sourceFile;
+			}
+			path += 1;
+			s += 1;
+		}
+		else {
+			return sourceFile;
+		}
+	}
+
+	return nullptr;
+}
+
+std::string Source::sourceFileToString(std::string path)
+{
+	std::string s = "";
+
+	if (sourceFile != nullptr) {
+	  const char *sf = stripPath(path.c_str());
+
+	  for (int i = 0; sf[i] != 0; i++) {
+		s += sf[i];
+	  }
+	}
+
+	return s;
+}
+
+std::string Source::sourceLineToString()
+{
+//	printf("sourceFile: %08x\n",sourceFile);
+//	if (sourceFile != nullptr) {
+//		printf("source file: %s\n",sourceFile);
+//	}
+
+	std::string s = "";
+
+	if (sourceLine != nullptr) {
+	  for (int i = 0; sourceLine[i] != 0; i++) {
+		s += sourceLine[i];
+	  }
+	}
+
+	return s;
+}
+
+std::string Source::sourceFunctionToString()
+{
+	std::string s = "";
+
+	if (sourceFunction != nullptr) {
+	  for (int i = 0; sourceFunction[i] != 0; i++) {
+		s += sourceFunction[i];
+	  }
+	}
+
+	return s;
 }
 
 fileReader::fileReader(/*paths*/)
@@ -1956,11 +2093,46 @@ NexusMessage::NexusMessage()
 {
 	msgNum         = 0;
 	tcode          = dqr::TCODE_UNDEFINED;
-	src            = 0;
+	coreId         = 0;
 	haveTimestamp  = false;
 	timestamp      = 0;
 	currentAddress = 0;
 	time           = 0;
+
+	itcprint = nullptr;
+}
+
+std::string NexusMessage::itcprintToString()
+{
+	std::string s = "";
+
+	for (int i = 0; itcprint[i] != 0; i++) {
+		s += itcprint[i];
+	}
+
+	return s;
+}
+
+std::string NexusMessage::messageToString(int level,int *flags)
+{
+	char dst[512];
+
+	dst[0] = 0;
+	itcprint = nullptr;
+
+	messageToText(dst,sizeof dst,&itcprint,level);
+
+	std::string s = "";
+
+	for (int i = 0; dst[i] != 0; i++) {
+		s += dst[i];
+	}
+
+	if (itcprint != nullptr) {
+		*flags = dqr::TRACE_HAVE_ITCPRINT;
+	}
+
+	return s;
 }
 
 void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
@@ -2244,7 +2416,7 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 		}
 
 		if (pdst != nullptr) {
-			*pdst = itcPrint::print(src,dataAcquisition.idTag,dataAcquisition.data);
+			*pdst = itcPrint::print(coreId,dataAcquisition.idTag,dataAcquisition.data);
 		}
 		break;
 	case dqr::TCODE_AUXACCESS_WRITE:
@@ -2266,7 +2438,7 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 		}
 
 		if (pdst != nullptr) {
-			*pdst = itcPrint::print(src,auxAccessWrite.addr,auxAccessWrite.data);
+			*pdst = itcPrint::print(coreId,auxAccessWrite.addr,auxAccessWrite.data);
 		}
 		break;
 	case dqr::TCODE_AUXACCESS_READNEXT:
@@ -2465,10 +2637,10 @@ dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &analyt
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the variable length the i-cnt
@@ -2511,7 +2683,7 @@ dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &analyt
 		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_DIRECT_BRANCH,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,dqr::TCODE_DIRECT_BRANCH,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -2541,10 +2713,10 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm,Analytics &anal
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the fixed length sync reason field
@@ -2612,7 +2784,7 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm,Analytics &anal
 		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_DIRECT_BRANCH_WS,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm.coreId,dqr::TCODE_DIRECT_BRANCH_WS,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -2642,10 +2814,10 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics &anal
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the fixed lenght b-type
@@ -2713,7 +2885,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics &anal
 		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_INDIRECT_BRANCH,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm.coreId,dqr::TCODE_INDIRECT_BRANCH,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -2743,10 +2915,10 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &an
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the fixed length sync field
@@ -2827,7 +2999,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &an
 		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_INDIRECT_BRANCH_WS,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm.coreId,dqr::TCODE_INDIRECT_BRANCH_WS,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -2857,10 +3029,10 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics)
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the variable length the sync
@@ -2926,7 +3098,7 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics)
 		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_SYNC,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm.coreId,dqr::TCODE_SYNC,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -2955,10 +3127,10 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &analyti
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the 4-bit evcode field
@@ -3035,7 +3207,7 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &analyti
 		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_CORRELATION,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,dqr::TCODE_CORRELATION,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -3064,10 +3236,10 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm,Analytics &analytics)
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the 4 bit ETYPE field
@@ -3121,7 +3293,7 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm,Analytics &analytics)
 		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_ERROR,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,dqr::TCODE_ERROR,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -3150,10 +3322,10 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm,Analytics &anal
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the variable length process ID field
@@ -3196,7 +3368,7 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm,Analytics &anal
 		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_OWNERSHIP_TRACE,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,dqr::TCODE_OWNERSHIP_TRACE,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -3225,10 +3397,10 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm,Analytics &anal
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the ADDR field
@@ -3284,7 +3456,7 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm,Analytics &anal
 		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_AUXACCESS_WRITE,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,dqr::TCODE_AUXACCESS_WRITE,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -3313,10 +3485,10 @@ dqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm,Analytics &ana
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the idTag field
@@ -3372,7 +3544,7 @@ dqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm,Analytics &ana
 		nm.timestamp = (dqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_DATA_ACQUISITION,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,dqr::TCODE_DATA_ACQUISITION,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -4412,7 +4584,7 @@ int Disassembler::decodeInstructionSize(uint32_t inst, int &inst_size)
 
 #define MOVE_BIT(bits,s,d)	((bits&(1<<s))?(1<<d):0)
 
-int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,dqr::instType &inst_type,int32_t &immeadiate,bool &is_branch)
 {
 	// no branch or jump instruction in quadrant 0
 
@@ -4424,12 +4596,12 @@ int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,in
 		return 1;
 	}
 
-	inst_type = UNKNOWN;
+	inst_type = dqr::INST_UNKNOWN;
 
 	return 0;
 }
 
-int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,dqr::instType &inst_type,int32_t &immeadiate,bool &is_branch)
 {
 	// Q1 compressed instruction
 
@@ -4439,7 +4611,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 
 	switch (instruction >> 13) {
 	case 0x1:
-		inst_type = C_JAL;
+		inst_type = dqr::INST_C_JAL;
 		is_branch = true;
 
 		t = MOVE_BIT(instruction,3,1);
@@ -4461,7 +4633,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 		immeadiate = t;
 		break;
 	case 0x5:
-		inst_type = C_J;
+		inst_type = dqr::INST_C_J;
 		is_branch = true;
 
 		t = MOVE_BIT(instruction,3,1);
@@ -4483,7 +4655,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 		immeadiate = t;
 		break;
 	case 0x6:
-		inst_type = C_BEQZ;
+		inst_type = dqr::INST_C_BEQZ;
 		is_branch = true;
 
 		t = MOVE_BIT(instruction,3,1);
@@ -4502,7 +4674,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 		immeadiate = t;
 		break;
 	case 0x7:
-		inst_type = C_BNEZ;
+		inst_type = dqr::INST_C_BNEZ;
 		is_branch = true;
 
 		t = MOVE_BIT(instruction,3,1);
@@ -4521,7 +4693,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 		immeadiate = t;
 		break;
 	default:
-		inst_type = UNKNOWN;
+		inst_type = dqr::INST_UNKNOWN;
 		is_branch = 0;
 		break;
 	}
@@ -4529,13 +4701,13 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 	return 0;
 }
 
-int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,dqr::instType &inst_type,int32_t &immeadiate,bool &is_branch)
 {
 	// Q1 compressed instruction
 
 	inst_size = 16;
 
-	inst_type = UNKNOWN;
+	inst_type = dqr::INST_UNKNOWN;
 	is_branch = false;
 
 	switch (instruction >> 13) {
@@ -4543,7 +4715,7 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,in
 		if (instruction & (1<<12)) {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
-					inst_type = C_JALR;
+					inst_type = dqr::INST_C_JALR;
 					is_branch = true;
 					immeadiate = 0;
 				}
@@ -4552,7 +4724,7 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,in
 		else {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
-					inst_type = C_JR;
+					inst_type = dqr::INST_C_JR;
 					is_branch = true;
 					immeadiate = 0;
 				}
@@ -4566,7 +4738,7 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,in
 	return 0;
 }
 
-int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,dqr::instType &inst_type,int32_t &immeadiate,bool &is_branch)
 {
 	if ((instruction & 0x1f) == 0x1f) {
 		fprintf(stderr,"Error: decodeBranch(): cann't decode instructions longer than 32 bits\n");
@@ -4579,7 +4751,7 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,inst
 
 	switch (instruction & 0x7f) {
 	case 0x6f:
-		inst_type = JAL;
+		inst_type = dqr::INST_JAL;
 		is_branch = true;
 
 		t = MOVE_BIT(instruction,21,1);
@@ -4611,7 +4783,7 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,inst
 		break;
 	case 0x67:
 		if ((instruction & 0x7000) == 0x000) {
-			inst_type = JALR;
+			inst_type = dqr::INST_JALR;
 			is_branch = true;
 
 			t = instruction >> 20;
@@ -4623,32 +4795,32 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,inst
 			immeadiate = t;
 		}
 		else {
-			inst_type = UNKNOWN;
+			inst_type = dqr::INST_UNKNOWN;
 			is_branch = false;
 		}
 		break;
 	case 0x63:
 		switch ((instruction >> 12) & 0x7) {
 		case 0x0:
-			inst_type = BEQ;
+			inst_type = dqr::INST_BEQ;
 			break;
 		case 0x1:
-			inst_type = BNE;
+			inst_type = dqr::INST_BNE;
 			break;
 		case 0x4:
-			inst_type = BLT;
+			inst_type = dqr::INST_BLT;
 			break;
 		case 0x5:
-			inst_type = BGE;
+			inst_type = dqr::INST_BGE;
 			break;
 		case 0x6:
-			inst_type = BLTU;
+			inst_type = dqr::INST_BLTU;
 			break;
 		case 0x7:
-			inst_type = BGEU;
+			inst_type = dqr::INST_BGEU;
 			break;
 		default:
-			inst_type = UNKNOWN;
+			inst_type = dqr::INST_UNKNOWN;
 			is_branch = false;
 			return 0;
 		}
@@ -4679,7 +4851,7 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,inst
 	return 0;
 }
 
-int Disassembler::decodeInstruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeInstruction(uint32_t instruction,int &inst_size,dqr::instType &inst_type,int32_t &immeadiate,bool &is_branch)
 {
 	int rc;
 

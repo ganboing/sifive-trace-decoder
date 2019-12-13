@@ -32,6 +32,7 @@
 #include <cassert>
 
 #include "dqr.hpp"
+#include "trace.hpp"
 
 // class trace methods
 
@@ -40,12 +41,12 @@ int Trace::decodeInstructionSize(uint32_t inst, int &inst_size)
   return disassembler->decodeInstructionSize(inst,inst_size);
 }
 
-int Trace::decodeInstruction(uint32_t instruction,int &inst_size,Disassembler::instType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Trace::decodeInstruction(uint32_t instruction,int &inst_size,dqr::instType &inst_type,int32_t &immeadiate,bool &is_branch)
 {
 	return disassembler->decodeInstruction(instruction,inst_size,inst_type,immeadiate,is_branch);
 }
 
-Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, int numAddrBits, uint32_t addrDispFlags, int srcBits)
+Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, int numAddrBits, uint32_t addrDispFlags, int srcBits)
 {
   sfp          = nullptr;
   elfReader    = nullptr;
@@ -124,8 +125,6 @@ Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, SymFlags sym_flags, 
 
 		return;
 	}
-
-	symflags = sym_flags;
 
     // get symbol table
 
@@ -344,6 +343,72 @@ int Trace::Disassemble(dqr::ADDRESS addr)
 	return rc;
 }
 
+const char *Trace::getSymbolByAddress(dqr::ADDRESS addr)
+{
+	return symtab->getSymbolByAddress(addr);
+}
+
+const char *Trace::getNextSymbolByAddress()
+{
+	return symtab->getNextSymbolByAddress();
+}
+
+dqr::DQErr Trace::NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags)
+{
+	dqr::DQErr ec;
+
+	Instruction  *instInfop = nullptr;
+	NexusMessage *msgInfop  = nullptr;
+	Source       *srcInfop  = nullptr;
+
+	Instruction  **instInfopp = nullptr;
+	NexusMessage **msgInfopp  = nullptr;
+	Source       **srcInfopp  = nullptr;
+
+//	printf("%08x %08x %08x\n",instInfo,msgInfo,srcInfo);
+
+	if (instInfo != nullptr) {
+		instInfopp = &instInfop;
+	}
+
+	if (msgInfo != nullptr) {
+		msgInfopp = &msgInfop;
+	}
+
+	if (srcInfo != nullptr) {
+		srcInfopp = &srcInfop;
+	}
+
+	ec = NextInstruction(instInfopp, msgInfopp, srcInfopp);
+
+	*flags = 0;
+
+	if (ec == dqr::DQERR_OK) {
+		if (instInfo != nullptr) {
+			if (instInfop != nullptr) {
+				*instInfo = *instInfop;
+				*flags |= dqr::TRACE_HAVE_INSTINFO;
+			}
+		}
+
+		if (msgInfo != nullptr) {
+			if (msgInfop != nullptr) {
+				*msgInfo = *msgInfop;
+				*flags |= dqr::TRACE_HAVE_MSGINFO;
+			}
+		}
+
+		if (srcInfo != nullptr) {
+			if (srcInfop != nullptr) {
+				*srcInfo = *srcInfop;
+				*flags |= dqr::TRACE_HAVE_SRCINFO;
+			}
+		}
+	}
+
+	return ec;
+}
+
 //NextInstruction() want to return address, instruction, trace message if any, label+offset for instruction, target of instruciton
 //		source code for instruction (file, function, line)
 //
@@ -360,6 +425,8 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 	assert(sfp != nullptr);
 
 	dqr::DQErr rc;
+
+//	printf("Instinfo: %08llx, MsgInfo: %08x, srcInfo: %08x\n",instInfo,msgInfo,srcInfo);
 
 	if (instInfo != nullptr) {
 		*instInfo = nullptr;
@@ -400,7 +467,7 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 			}
 
 			readNewTraceMessage = false;
-			currentCore = nm.src;
+			currentCore = nm.coreId;
 		}
 
 		switch (state[currentCore]) {
@@ -598,17 +665,17 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 					}
 
 					switch (inst_type) {
-					case Disassembler::JAL:
-					case Disassembler::BEQ:
-					case Disassembler::BNE:
-					case Disassembler::BLT:
-					case Disassembler::BGE:
-					case Disassembler::BLTU:
-					case Disassembler::BGEU:
-					case Disassembler::C_J:
-					case Disassembler::C_JAL:
-					case Disassembler::C_BEQZ:
-					case Disassembler::C_BNEZ:
+					case dqr::INST_JAL:
+					case dqr::INST_BEQ:
+					case dqr::INST_BNE:
+					case dqr::INST_BLT:
+					case dqr::INST_BGE:
+					case dqr::INST_BLTU:
+					case dqr::INST_BGEU:
+					case dqr::INST_C_J:
+					case dqr::INST_C_JAL:
+					case dqr::INST_C_BEQZ:
+					case dqr::INST_C_BNEZ:
 						currentAddress[currentCore] = addr + immeadiate;
 						break;
 					default:
@@ -903,17 +970,17 @@ dqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo
 				}
 
 				switch (inst_type) {
-				case Disassembler::JAL:
-				case Disassembler::BEQ:
-				case Disassembler::BNE:
-				case Disassembler::BLT:
-				case Disassembler::BGE:
-				case Disassembler::BLTU:
-				case Disassembler::BGEU:
-				case Disassembler::C_J:
-				case Disassembler::C_JAL:
-				case Disassembler::C_BEQZ:
-				case Disassembler::C_BNEZ:
+				case dqr::INST_JAL:
+				case dqr::INST_BEQ:
+				case dqr::INST_BNE:
+				case dqr::INST_BLT:
+				case dqr::INST_BGE:
+				case dqr::INST_BLTU:
+				case dqr::INST_BGEU:
+				case dqr::INST_C_J:
+				case dqr::INST_C_JAL:
+				case dqr::INST_C_BEQZ:
+				case dqr::INST_C_BNEZ:
 					currentAddress[currentCore] = currentAddress[currentCore] + immeadiate;
 
 					if (msgInfo != nullptr) {

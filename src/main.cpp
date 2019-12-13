@@ -370,7 +370,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (version_flag) {
-		printf("%s: version %s\n",argv[0],"0.4");
+		printf("%s: version %s\n",argv[0],DQR_VERSION);
 		return 0;
 	}
 
@@ -396,11 +396,9 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	Trace::SymFlags symFlags = Trace::SYMFLAGS_NONE;
-
 	// might want to include some path info!
 
-	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags,numAddrBits,addrDispFlags,srcbits);
+	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,numAddrBits,addrDispFlags,srcbits);
 
 	assert(trace != nullptr);
 
@@ -558,7 +556,7 @@ int main(int argc, char *argv[])
 					}
 
 					if (srcbits > 0) {
-						printf("[%d] ",msgInfo->src);
+						printf("[%d] ",msgInfo->coreId);
 					}
 
 					printf("Trace: %s",dst);
@@ -574,7 +572,7 @@ int main(int argc, char *argv[])
 					}
 
 					if (srcbits > 0) {
-						printf("[%d] ",msgInfo->src);
+						printf("[%d] ",msgInfo->coreId);
 					}
 
 					puts(itcprint);

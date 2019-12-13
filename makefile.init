@@ -1,11 +1,16 @@
-%.o: ../src/%.cpp
+OBJS += ./dqr.o ./main.o ./trace.o
+INCLUDES += ../include/dqr.hpp ../include/trace.hpp
+SWIGLIBOBJS += ./dqr_wrap.o ./dqr.o ./trace.o
+SWIGINCLUDES += ../include/dqr.i
+SWIGCPP += ./dqr_wrap.cpp
+SWIGOBJ += ./dqr_wrap.o
+
+%.o: ../src/%.cpp $(INCLUDES)
 	@echo 'Building file: $<'
 	@echo 'Invoking: GCC C++ Compiler'
 	$(CROSSPREFIX)g++ -I"../include" $(CFLAGS) -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -o "$@" "$<"
 	@echo 'Finished building: $<'
 	@echo ' '
-
-OBJS += ./dqr.o ./main.o ./trace.o
 
 ifeq ($(OS),Windows_NT)
     CFLAGS += -D WINDOWS -std=c++11
@@ -13,6 +18,8 @@ ifeq ($(OS),Windows_NT)
     LNFLAGS = -static
     LIBS := -lbfd -lopcodes -lintl -liberty -lz
     EXECUTABLE := dqr.exe
+    SWIGLIB := dqr.dll
+    JNIINCLUDEPATHS := -I"C:\Program Files\AdoptOpenJDK\jdk-11.0.4.11-openj9\include" -I"C:\Program Files\AdoptOpenJDK\jdk-11.0.4.11-openj9\include\win32"
 else
     UNAME_S := $(shell uname -s)
     ifeq ($(UNAME_S),Linux)
