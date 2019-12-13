@@ -45,7 +45,7 @@ $(SWIGCPP): $(INCLUDES) $(SWIGINCLUDES)
 
 # Other Targets
 clean:
-	-$(RM) *.d $(OBJS) $(EXECUTABLE) $(SWIGCPP) $(SWIGOBJ) $(SWIGLIB) *.java
+	-$(RM) *.d $(OBJS) $(EXECUTABLE) $(SWIGCPP) $(SWIGOBJ) $(SWIGLIB) *.java *.class
 	-@echo ' '
 
 .PHONY: all clean dependents

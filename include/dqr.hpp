@@ -295,7 +295,9 @@ public:
 	dqr::DQErr updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize);
 	int currentTraceMsgNum() { return num_trace_msgs_all_cores; }
 	void setSrcBits(int sbits) { srcBits = sbits; }
-	dqr::DQErr display(int detail);
+//	dqr::DQErr display(int detail);
+	void toText(char *dst,int dst_len,int detailLevel);
+	std::string toString(int detailLevel);
 
 private:
 	dqr::DQErr status;
@@ -391,7 +393,9 @@ public:
 	int         getArchSize();
 	int         getAddressSize();
 	void        setITCBuffering(bool itcbuffer_flag);
-	dqr::DQErr displayAnalytics(int detail) { return analytics.display(detail); }
+//	dqr::DQErr displayAnalytics(int detailLevel) { return analytics.display(detailLevel); }
+	void        analyticsToText(char *dst,int dst_len,int detailLevel) { analytics.toText(dst,dst_len,detailLevel); }
+	std::string analyticsToString(int detailLevel) { return analytics.toString(detailLevel); }
 
 private:
 	enum state {

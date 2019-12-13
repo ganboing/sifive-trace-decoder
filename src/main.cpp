@@ -444,7 +444,7 @@ int main(int argc, char *argv[])
 	Instruction *instInfo;
 	NexusMessage *msgInfo;
 	Source *srcInfo;
-	char dst[1024];
+	char dst[4096];
 	int instlevel = 1;
 	int msgLevel = 2;
 	const char *lastSrcFile = nullptr;
@@ -583,7 +583,10 @@ int main(int argc, char *argv[])
 		}
 	} while (ec == dqr::DQERR_OK);
 
-	trace->displayAnalytics(analytics_detail);
+	if (analytics_detail > 0) {
+        trace->analyticsToText(dst,sizeof dst,analytics_detail);
+        printf("\n%s",dst);
+	}
 
 	delete trace;
 

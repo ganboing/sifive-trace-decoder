@@ -188,6 +188,6 @@ public class jdqr {
       }
     }
 
-    t.displayAnalytics(1);
+    t.analyticsToString(1);
   }
 }

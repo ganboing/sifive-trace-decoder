@@ -1246,10 +1246,29 @@ dqr::DQErr Analytics::updateInstructionInfo(uint32_t core_id,uint32_t inst,int i
 	return status;
 }
 
-dqr::DQErr Analytics::display(int detail)
+static void updateDst(int n,char *&dst,int &dst_len)
 {
-	if (detail <= 0) {
-		return status;
+	if (n >= dst_len) {
+		dst += dst_len;
+		dst_len = 0;
+	}
+	else {
+		dst += n;
+		dst_len -= n;
+	}
+}
+
+void Analytics::toText(char *dst,int dst_len,int detailLevel)
+{
+	char tmp_dst[512];
+	int n;
+
+	assert(dst != nullptr);
+
+	dst[0] = 0;
+
+	if (detailLevel <= 0) {
+		return;
 	}
 
 	uint32_t have_ts = 0;
@@ -1262,44 +1281,62 @@ dqr::DQErr Analytics::display(int detail)
 		}
 	}
 
-	printf("\n");
-
 	if (srcBits == 0) {
-		printf("Trace Analytics: Single core");
-
+		n = snprintf(dst,dst_len,"Trace Analytics: Single core");
+		updateDst(n,dst,dst_len);
 	}
 	else {
-		printf("Trace Analytics: Multi core (src field %d bits)",srcBits);
+		n = snprintf(dst,dst_len,"Trace Analytics: Multi core (src field %d bits)",srcBits);
+		updateDst(n,dst,dst_len);
 	}
 
 	if (have_ts == 0) {
-		printf("; Trace messages do not have timestamps\n");
+		n = snprintf(dst,dst_len,"; Trace messages do not have timestamps\n");
+		updateDst(n,dst,dst_len);
 	}
 	else if (have_ts == cores) {
-		printf("; Trace messages have timestamps\n");
+		n = snprintf(dst,dst_len,"; Trace messages have timestamps\n");
+		updateDst(n,dst,dst_len);
 	}
 	else {
-		printf("; Some trace messages have timestamps\n");
+		n = snprintf(dst,dst_len,"; Some trace messages have timestamps\n");
+		updateDst(n,dst,dst_len);
 	}
 
-	if (detail == 1) {
-		printf("\n");
+	if (detailLevel == 1) {
+		n = snprintf(dst,dst_len,"\n");
+		updateDst(n,dst,dst_len);
 
-		printf("Instructions             Compressed                   RV32\n");
-		printf("  %10u    %10u (%0.2f%%)    %10u (%0.2f%%)\n",num_inst_all_cores,num_inst16_all_cores,((float)num_inst16_all_cores)/num_inst_all_cores*100.0,num_inst32_all_cores,((float)num_inst32_all_cores)/num_inst_all_cores*100.0);
-		printf("\n");
+		n = snprintf(dst,dst_len,"Instructions             Compressed                   RV32\n");
+		updateDst(n,dst,dst_len);
 
-		printf("Number of Trace Msgs      Avg Length    Min Length    Max Length    Total Length\n");
-		printf("          %10u          %6.2f    %10u    %10u      %10u\n",num_trace_msgs_all_cores,((float)num_trace_bits_all_cores)/num_trace_msgs_all_cores,num_trace_bits_all_cores_min,num_trace_bits_all_cores_max,num_trace_bits_all_cores);
+		n = snprintf(dst,dst_len,"  %10u    %10u (%0.2f%%)    %10u (%0.2f%%)\n",num_inst_all_cores,num_inst16_all_cores,((float)num_inst16_all_cores)/num_inst_all_cores*100.0,num_inst32_all_cores,((float)num_inst32_all_cores)/num_inst_all_cores*100.0);
+		updateDst(n,dst,dst_len);
 
-		printf("\n");
+		n = snprintf(dst,dst_len,"\n");
+		updateDst(n,dst,dst_len);
 
-		printf("Trace bits per instruction:     %5.2f\n",((float)num_trace_bits_all_cores)/num_inst_all_cores);
-		printf("Instructions per trace message: %5.2f\n",((float)num_inst_all_cores)/num_trace_msgs_all_cores);
-		printf("Instructions per taken branch:  %5.2f\n",((float)num_inst_all_cores)/num_branches_all_cores);
+		n = snprintf(dst,dst_len,"Number of Trace Msgs      Avg Length    Min Length    Max Length    Total Length\n");
+		updateDst(n,dst,dst_len);
+
+		n = snprintf(dst,dst_len,"          %10u          %6.2f    %10u    %10u      %10u\n",num_trace_msgs_all_cores,((float)num_trace_bits_all_cores)/num_trace_msgs_all_cores,num_trace_bits_all_cores_min,num_trace_bits_all_cores_max,num_trace_bits_all_cores);
+		updateDst(n,dst,dst_len);
+
+		n = snprintf(dst,dst_len,"\n");
+		updateDst(n,dst,dst_len);
+
+		n = snprintf(dst,dst_len,"Trace bits per instruction:     %5.2f\n",((float)num_trace_bits_all_cores)/num_inst_all_cores);
+		updateDst(n,dst,dst_len);
+
+		n = snprintf(dst,dst_len,"Instructions per trace message: %5.2f\n",((float)num_inst_all_cores)/num_trace_msgs_all_cores);
+		updateDst(n,dst,dst_len);
+
+		n = snprintf(dst,dst_len,"Instructions per taken branch:  %5.2f\n",((float)num_inst_all_cores)/num_branches_all_cores);
+		updateDst(n,dst,dst_len);
 
 		if (srcBits > 0) {
-			printf("Src bits %% of message:          %5.2f%%\n",((float)srcBits*num_trace_msgs_all_cores)/num_trace_bits_all_cores*100.0);
+			n = snprintf(dst,dst_len,"Src bits %% of message:          %5.2f%%\n",((float)srcBits*num_trace_msgs_all_cores)/num_trace_bits_all_cores*100.0);
+			updateDst(n,dst,dst_len);
 		}
 
 		if (have_ts != 0 || 1) {
@@ -1310,99 +1347,109 @@ dqr::DQErr Analytics::display(int detail)
 					bits_ts += core[i].trace_bits_ts;
 				}
 			}
-			printf("Timestamp bits %% of message:    %5.2f%%\n",((float)bits_ts)/num_trace_bits_all_cores*100.0);
+			n = snprintf(dst,dst_len,"Timestamp bits %% of message:    %5.2f%%\n",((float)bits_ts)/num_trace_bits_all_cores*100.0);
+			updateDst(n,dst,dst_len);
 		}
-
-//		printf("MSEO bits %10u (%0.2f%%)\n",num_trace_mseo_bits_all_cores,((float)num_trace_mseo_bits_all_cores)/num_trace_bits_all_cores*100.0);
-	} else if (detail > 1) {
+	}
+	else if (detailLevel > 1) {
 		int position;
 		int tabs[] = {19+21*0,19+21*1,19+21*2,19+21*3,19+21*4,19+21*5,19+21*6,19+21*7,19+21*8};
 		uint32_t t1, t2;
 		int ts;
 
-		printf("\n");
-		printf("                 ");
+		n = sprintf(tmp_dst,"\n");
+		n += sprintf(tmp_dst+n,"                 ");
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				printf("          Core %d",i);
+				n += sprintf(tmp_dst+n,"          Core %d",i);
 			}
 		}
 
 		if (srcBits > 0) {
-			printf("               Total");
+			n += sprintf(tmp_dst+n,"               Total");
 		}
 
-		printf("\n");
-		position = printf("Instructions");
+		n += sprintf(tmp_dst+n,"\n");
+
+		n = snprintf(dst,dst_len,"%s",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Instructions");
 
 		t1 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].num_inst);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_inst);
 				t1 += core[i].num_inst;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  Compressed");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Compressed");
 
 		t2 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_inst16,((float)core[i].num_inst16)/core[i].num_inst*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_inst16,((float)core[i].num_inst16)/core[i].num_inst*100.0);
 				t2 += core[i].num_inst16;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  RV32");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  RV32");
 
 		t2 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_inst32,((float)core[i].num_inst32)/core[i].num_inst*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_inst32,((float)core[i].num_inst32)/core[i].num_inst*100.0);
 				t2 += core[i].num_inst32;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("Trace Msgs");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Trace Msgs");
 
 		t1 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].num_trace_msgs);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_trace_msgs);
 				t1 += core[i].num_trace_msgs;
 				ts += 1;
 			}
@@ -1410,227 +1457,249 @@ dqr::DQErr Analytics::display(int detail)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  Sync");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Sync");
 
 		t2 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_syncs,((float)core[i].num_trace_syncs)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_syncs,((float)core[i].num_trace_syncs)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_syncs;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  DBranch");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  DBranch");
 
 		t2 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_dbranch,((float)core[i].num_trace_dbranch)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dbranch,((float)core[i].num_trace_dbranch)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_dbranch;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  IBranch");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  IBranch");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_ibranch,((float)core[i].num_trace_ibranch)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ibranch,((float)core[i].num_trace_ibranch)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_ibranch;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  DBranch WS");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  DBranch WS");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_dbranchws,((float)core[i].num_trace_dbranchws)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dbranchws,((float)core[i].num_trace_dbranchws)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_dbranchws;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  IBranch WS");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  IBranch WS");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_ibranchws,((float)core[i].num_trace_ibranchws)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ibranchws,((float)core[i].num_trace_ibranchws)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_ibranchws;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  Data Acq");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Data Acq");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_dataacq,((float)core[i].num_trace_dataacq)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dataacq,((float)core[i].num_trace_dataacq)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_dataacq;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  Correlation");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Correlation");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_correlation,((float)core[i].num_trace_correlation)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_correlation,((float)core[i].num_trace_correlation)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_correlation;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  Aux Acc Write");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Aux Acc Write");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_auxaccesswrite,((float)core[i].num_trace_auxaccesswrite)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_auxaccesswrite,((float)core[i].num_trace_auxaccesswrite)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_auxaccesswrite;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  Ownership");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Ownership");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_ownership,((float)core[i].num_trace_ownership)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ownership,((float)core[i].num_trace_ownership)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_ownership;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  Error");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Error");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_error,((float)core[i].num_trace_error)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_error,((float)core[i].num_trace_error)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_error;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("Trace Bits Total");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Trace Bits Total");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits);
 				t1 += core[i].trace_bits;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
 //		printf("\n");
@@ -1653,8 +1722,10 @@ dqr::DQErr Analytics::display(int detail)
 //			printf("%10u",t1);
 //		}
 
-		printf("\n");
-		position = printf("Trace Bits/Inst");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Trace Bits/Inst");
 
 		ts = 0;
 		t1 = 0;
@@ -1662,8 +1733,8 @@ dqr::DQErr Analytics::display(int detail)
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%13.2f",((float)core[i].trace_bits)/core[i].num_inst);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits)/core[i].num_inst);
 				t1 += core[i].trace_bits;
 				t2 += core[i].num_inst;
 				ts += 1;
@@ -1671,52 +1742,58 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%13.2f",((float)t1)/t2);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%13.2f",((float)t1)/t2);
 		}
 
-		printf("\n");
-		position = printf("Inst/Trace Msg");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Inst/Trace Msg");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%13.2f",((float)core[i].num_inst)/core[i].num_trace_msgs);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/core[i].num_trace_msgs);
 				t1 += core[i].num_trace_msgs;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%13.2f",((float)t2)/t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
 		}
 
-		printf("\n");
-		position = printf("Inst/Taken Branch");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Inst/Taken Branch");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%13.2f",((float)core[i].num_inst)/(core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws));
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/(core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws));
 				t1 += core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%13.2f",((float)t2)/t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
 		}
 
-		printf("\n");
-		position = printf("Avg Msg Length");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Avg Msg Length");
 
 		ts = 0;
 		t1 = 0;
@@ -1724,8 +1801,8 @@ dqr::DQErr Analytics::display(int detail)
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%13.2f",((float)core[i].trace_bits)/core[i].num_trace_msgs);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits)/core[i].num_trace_msgs);
 				t1 += core[i].trace_bits;
 				t2 += core[i].num_trace_msgs;
 				ts += 1;
@@ -1733,20 +1810,22 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%13.2f",((float)t1)/t2);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%13.2f",((float)t1)/t2);
 		}
 
-		printf("\n");
-		position = printf("Min Msg Length");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Min Msg Length");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_min);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_min);
 				if ((t1 == 0) || (core[i].trace_bits_min < t1)) {
 					t1 = core[i].trace_bits_min;
 				}
@@ -1755,20 +1834,22 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("Max Msg Length");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Max Msg Length");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_max);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_max);
 				if (core[i].trace_bits_max > t1) {
 					t1 = core[i].trace_bits_max;
 				}
@@ -1777,70 +1858,76 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("Timestamp Counts");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Timestamp Counts");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].num_trace_ts);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_trace_ts);
 				t1 += core[i].num_trace_ts;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  TStamp Size Avg");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  TStamp Size Avg");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 				if (core[i].num_trace_ts > 0) {
-					position += printf("%13.2f",core[i].trace_bits_ts/core[i].num_trace_ts);
+					position += sprintf(tmp_dst+position,"%13.2f",core[i].trace_bits_ts/core[i].num_trace_ts);
 					t2 += core[i].trace_bits_ts;
 				}
 				else {
-					position += printf("         0");
+					position += sprintf(tmp_dst+position,"         0");
 				}
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 			if (t1 > 0) {
-				printf("%13.2f",((float)t2)/t1);
+				position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
 			}
 			else {
-				printf("         0");
+				position += sprintf(tmp_dst+position,"         0");
 			}
 		}
 
-		printf("\n");
-		position = printf("  TStamp Size Min");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  TStamp Size Min");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_ts_min);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_ts_min);
 				if ((t1 == 0) || (t1 > core[i].trace_bits_ts_min)) {
 					t1 = core[i].trace_bits_ts_min;
 				}
@@ -1849,20 +1936,22 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  TStamp Size Max");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  TStamp Size Max");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_ts_max);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_ts_max);
 				if (core[i].trace_bits_ts_max > t1) {
 					t1 = core[i].trace_bits_ts_max;
 				}
@@ -1871,90 +1960,98 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("Timestamp %% of Msg");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Timestamp %% of Msg");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%13.2f%%",((float)core[i].trace_bits_ts)/core[i].trace_bits*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%13.2f%%",((float)core[i].trace_bits_ts)/core[i].trace_bits*100.0);
 				t1 += core[i].trace_bits;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%13.2f%%",((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%13.2f%%",((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("UADDR Counts");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"UADDR Counts");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].num_trace_uaddr);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_trace_uaddr);
 				t1 += core[i].num_trace_uaddr;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  UADDR Size Avg");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  UADDR Size Avg");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 				if (core[i].num_trace_uaddr > 0) {
-					position += printf("%13.2f",((float)core[i].trace_bits_uaddr)/core[i].num_trace_uaddr);
+					position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits_uaddr)/core[i].num_trace_uaddr);
 					t2 += core[i].trace_bits_uaddr;
 				}
 				else {
-					position += printf("        0");
+					position += sprintf(tmp_dst+position,"        0");
 				}
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 			if (t1 > 0) {
-				printf("%13.2f",((float)t2)/t1);
+				position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
 			}
 			else {
-				printf("        0");
+				position += sprintf(tmp_dst+position,"        0");
 			}
 		}
 
-		printf("\n");
-		position = printf("  UADDR Size Min");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  UADDR Size Min");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_uaddr_min);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_uaddr_min);
 				if ((t1 == 0) || (core[i].trace_bits_uaddr_min < t1)) {
 					t1 = core[i].trace_bits_uaddr_min;
 				}
@@ -1963,20 +2060,22 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  UADDR Size Max");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  UADDR Size Max");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_uaddr_max);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_uaddr_max);
 				if (t1 < core[i].trace_bits_uaddr_max) {
 					t1 = core[i].trace_bits_uaddr_max;
 				}
@@ -1985,70 +2084,76 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("FADDR Counts");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"FADDR Counts");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].num_trace_faddr);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_trace_faddr);
 				t1 += core[i].num_trace_faddr;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  FADDR Size Avg");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  FADDR Size Avg");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 				if (core[i].num_trace_faddr > 0) {
-					position += printf("%13.2f",((float)core[i].trace_bits_faddr)/core[i].num_trace_faddr);
+					position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits_faddr)/core[i].num_trace_faddr);
 					t2 = core[i].trace_bits_faddr;
 				}
 				else {
-					position += printf("        0");
+					position += sprintf(tmp_dst+position,"        0");
 				}
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 			if (t1 > 0) {
-				printf("%13.2f",((float)t2)/t1);
+				position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
 			}
 			else {
-				printf("        0");
+				position += sprintf(tmp_dst+position,"        0");
 			}
 		}
 
-		printf("\n");
-		position = printf("  FADDR Size Min");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  FADDR Size Min");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_faddr_min);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_faddr_min);
 				if ((t2 == 0) || (core[i].trace_bits_faddr_min < t2)) {
 					t2 = core[i].trace_bits_faddr_min;
 				}
@@ -2057,20 +2162,22 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t2);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t2);
 		}
 
-		printf("\n");
-		position = printf("  FADDR Size Max");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  FADDR Size Max");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_faddr_max);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_faddr_max);
 				if (core[i].trace_bits_faddr_max > t2) {
 					t2 = core[i].trace_bits_faddr_max;
 				}
@@ -2079,14 +2186,30 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t2);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t2);
 		}
 
-		printf("\n");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+	}
+}
+
+std::string Analytics::toString(int detailLevel)
+{
+	char dst[4096];
+
+	dst[0] = 0;
+
+	toText(dst,sizeof dst,detailLevel);
+
+	std::string s = "";
+
+	for (int i = 0; dst[i] != 0; i++) {
+		s += dst[i];
 	}
 
-	return status;
+	return s;
 }
 
 NexusMessage::NexusMessage()
