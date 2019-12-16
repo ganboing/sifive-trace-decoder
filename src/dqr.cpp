@@ -2236,14 +2236,14 @@ std::string NexusMessage::itcprintToString()
 	return s;
 }
 
-std::string NexusMessage::messageToString(int level,int *flags)
+std::string NexusMessage::messageToString(int level,int *flags,uint32_t freq)
 {
 	char dst[512];
 
 	dst[0] = 0;
 	itcprint = nullptr;
 
-	messageToText(dst,sizeof dst,&itcprint,level);
+	messageToText(dst,sizeof dst,&itcprint,level,freq);
 
 	std::string s = "";
 
