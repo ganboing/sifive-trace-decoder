@@ -2258,7 +2258,7 @@ std::string NexusMessage::messageToString(int level,int *flags)
 	return s;
 }
 
-void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
+void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level,uint32_t freq)
 {
 	assert(dst != nullptr);
 
@@ -2280,7 +2280,12 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 	}
 
 	if (haveTimestamp) {
-		n = snprintf(dst,dst_len,"Msg # %d, Tics: %lld, NxtAddr: %08llx, TCode: ",msgNum,time,currentAddress);
+		if (freq != 0) {
+			n = snprintf(dst,dst_len,"Msg # %d, Time: %0.8f, NxtAddr: %08llx, TCode: ",msgNum,(1.0*time)/freq,currentAddress);
+		}
+		else {
+			n = snprintf(dst,dst_len,"Msg # %d, Tics: %lld, NxtAddr: %08llx, TCode: ",msgNum,time,currentAddress);
+		}
 	}
 	else {
 		n = snprintf(dst,dst_len,"Msg # %d, NxtAddr: %08llx, TCode: ",msgNum,currentAddress);

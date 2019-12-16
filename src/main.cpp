@@ -88,6 +88,8 @@ static void usage(char *name)
 	printf("-analytics=n: Specify the detail level for trace analytics dispaly. N sets the level to either 0 (no analytics display)\n");
 	printf("              1 (sort system totals), or 2 (display analytics by core).\n");
 	printf("-noanaylitics: Do not compute and display trace analytics (default). Same as -analytics=0.");
+	printf("-freq nn      Specify the frequency in Hz for the timestamp tics clock. If specified, time instead\n");
+	printf("              of tics will be displayed.\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -152,6 +154,7 @@ int main(int argc, char *argv[])
 	bool dasm_flag = true;
 	bool trace_flag = false;
 	bool func_flag = false;
+	uint32_t freq = 0;
 	char *strip_flag = nullptr;
 	bool itcprint_flag = false;
 	int  numAddrBits = 0;
@@ -358,6 +361,20 @@ int main(int argc, char *argv[])
 		else if (strcmp("-noanalytics",argv[i]) == 0) {
 			analytics_detail = 0;
 		}
+		else if (strcmp("-freq",argv[i]) == 0) {
+			i += 1;
+			if (i >= argc) {
+				printf("Error: option -freq requires a clock frequency to be specified\n");
+				usage(argv[0]);
+				return 1;
+			}
+
+			freq = atoi(argv[i]);
+			if (start_msg_num < 0) {
+				printf("Error: colock frequency must be >= 0\n");
+				return 1;
+			}
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -548,7 +565,7 @@ int main(int argc, char *argv[])
 				// got the goods! Get to it!
 				char *itcprint = nullptr;
 
-				msgInfo->messageToText(dst,sizeof dst,&itcprint,msgLevel);
+				msgInfo->messageToText(dst,sizeof dst,&itcprint,msgLevel,freq);
 
 				if (trace_flag) {
 					if (firstPrint == false) {

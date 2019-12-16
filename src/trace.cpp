@@ -46,7 +46,7 @@ int Trace::decodeInstruction(uint32_t instruction,int &inst_size,dqr::instType &
 	return disassembler->decodeInstruction(instruction,inst_size,inst_type,immeadiate,is_branch);
 }
 
-Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, int numAddrBits, uint32_t addrDispFlags, int srcBits)
+Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits)
 {
   sfp          = nullptr;
   elfReader    = nullptr;

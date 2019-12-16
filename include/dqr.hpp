@@ -226,7 +226,7 @@ public:
 	NexusMessage();
 	std::string messageToString(int level,int *flags);
 	std::string itcprintToString();
-	void messageToText(char *dst,size_t dst_len,char **pdst,int level);
+	void messageToText(char *dst,size_t dst_len,char **pdst,int level,uint32_t freq = 0);
 	void dump();
 
 	int        	   msgNum;
