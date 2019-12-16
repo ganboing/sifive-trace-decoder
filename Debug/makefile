@@ -7,6 +7,7 @@
 RM := rm -rf
 
 CFLAGS += -O0 -g3 -Wall -Wformat=0
+SWIGCFLAGS += -O0 -g3 -Wall -Wformat=0
 
 # All Target
 all: $(EXECUTABLE) $(SWIGLIB)
@@ -32,7 +33,7 @@ $(SWIGLIB): $(SWIGLIBOBJS)
 $(SWIGOBJ): $(SWIGCPP)
 	@echo 'Building file $@'
 	@echo 'Invoking: GCC C++ Compiler'
-	$(CROSSPREFIX)g++ $(CFLAGS) -c $< -I"..\include" $(JNIINCLUDEPATHS)
+	$(CROSSPREFIX)g++ $(SWIGCFLAGS) -c $< -I"..\include" $(JNIINCLUDEPATHS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
