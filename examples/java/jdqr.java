@@ -6,13 +6,13 @@ public class jdqr {
   }
 
   public static void main(String argv[]) {
-    Trace t = new Trace("foo.rtd",true,"coremark.elf",32,dqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
+    Trace t = new Trace("foo.rtd",true,"coremark.elf",32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
     if (t == null) {
       System.out.println("t is null");
       System.exit(1);
     }
 
-    if (t.getStatus() != dqr.DQErr.DQERR_OK) {
+    if (t.getStatus() != TraceDqr.DQErr.DQERR_OK) {
       System.out.println("getSatus() is not OK\n");
       System.exit(1);
     }
@@ -26,7 +26,7 @@ public class jdqr {
     Source srcInfo = new Source();
 //    SWIGTYPE_p_p_Source srcInfo_p = new SWIGTYPE_p_p_Source();
 
-    dqr.DQErr ec = dqr.DQErr.DQERR_OK;
+    TraceDqr.DQErr ec = TraceDqr.DQErr.DQERR_OK;
 
 //    System.out.println("instInfo.cptr =" + String.format("%08x",Instruction.getCPtr(instInfo)));
 //    System.out.println("instInfo_p.cptr = " + Long.toHexString(SWIGTYPE_p_p_Instruction.getCPtr(instInfo_p)));
@@ -35,7 +35,7 @@ public class jdqr {
 //    SWIGTYPE_p_p_Instruction.SWIGTYPE_p_p_Instruction(Instruction.getCPtr(instInfo));
 //    System.out.printf("instInfo_p.cptr = %08x\n",SWIGTYPE_p_p_Instruction.getCPtr(instInfo_p));
 
-    SWIGTYPE_p_int flags = tracedecoder.new_intp();
+    SWIGTYPE_p_int flags = TraceDecoder.new_intp();
 
 //    byte b[] = new byte[128];
 
@@ -56,13 +56,13 @@ public class jdqr {
     boolean firstPrint = true;
     String stripPath = "foo";
 
-    while (ec == dqr.DQErr.DQERR_OK) {
-	tracedecoder.intp_assign(flags,0);
+    while (ec == TraceDqr.DQErr.DQERR_OK) {
+	TraceDecoder.intp_assign(flags,0);
 
       ec = t.NextInstruction(instInfo,msgInfo,srcInfo,flags);
 
-      if (ec == dqr.DQErr.DQERR_OK) {
-        if ((tracedecoder.intp_value(flags) & dqr.TRACE_HAVE_SRCINFO) != 0) {
+      if (ec == TraceDqr.DQErr.DQERR_OK) {
+        if ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_SRCINFO) != 0) {
           String sourceFile = srcInfo.sourceFileToString(stripPath);
 	  String sourceLine = srcInfo.sourceLineToString();
           int sourceLineNum = (int)srcInfo.getSourceLineNum();
@@ -103,7 +103,7 @@ public class jdqr {
           }
         }
 
-        if ((dasm_flag == true) && ((tracedecoder.intp_value(flags) & dqr.TRACE_HAVE_INSTINFO) != 0)) {
+        if ((dasm_flag == true) && ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_INSTINFO) != 0)) {
 
           long address = instInfo.getAddress().longValue();
 
@@ -148,8 +148,8 @@ public class jdqr {
           firstPrint = false;
         }
 
-	if ((trace_flag || itcPrint_flag) && ((tracedecoder.intp_value(flags) & dqr.TRACE_HAVE_MSGINFO) != 0)) {
-          SWIGTYPE_p_int msgFlags = tracedecoder.new_intp();
+	if ((trace_flag || itcPrint_flag) && ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_MSGINFO) != 0)) {
+          SWIGTYPE_p_int msgFlags = TraceDecoder.new_intp();
 
           String msgStr = msgInfo.messageToString(msgLevel,msgFlags);
 
@@ -169,7 +169,7 @@ public class jdqr {
             firstPrint = false;
           }
 
-          if (itcPrint_flag && ((tracedecoder.intp_value(msgFlags) & dqr.TRACE_HAVE_ITCPRINT) != 0)) {
+          if (itcPrint_flag && ((TraceDecoder.intp_value(msgFlags) & TraceDqr.TRACE_HAVE_ITCPRINT) != 0)) {
             if (firstPrint == false) {
               System.out.printf("%n");
             }

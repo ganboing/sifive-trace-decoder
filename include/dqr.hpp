@@ -295,7 +295,8 @@ public:
 	TraceDqr::DQErr updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize);
 	int currentTraceMsgNum() { return num_trace_msgs_all_cores; }
 	void setSrcBits(int sbits) { srcBits = sbits; }
-	TraceDqr::DQErr display(int detail);
+	void toText(char *dst,int dst_len,int detailLevel);
+	std::string toString(int detailLevel);
 
 private:
 	TraceDqr::DQErr status;
@@ -391,7 +392,8 @@ public:
 	int         getArchSize();
 	int         getAddressSize();
 	void        setITCBuffering(bool itcbuffer_flag);
-	TraceDqr::DQErr displayAnalytics(int detail) { return analytics.display(detail); }
+	void analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
+	std::string analyticsToString(int detailLevel) { return analytics.toString(detailLevel); }
 
 private:
 	enum state {

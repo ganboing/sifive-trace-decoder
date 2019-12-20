@@ -600,7 +600,10 @@ int main(int argc, char *argv[])
 		}
 	} while (ec == TraceDqr::DQERR_OK);
 
-	trace->displayAnalytics(analytics_detail);
+	if (analytics_detail > 0) {
+		trace->analyticsToText(dst,sizeof dst,analytics_detail);
+		printf("\n%s",dst);
+	}
 
 	delete trace;
 
