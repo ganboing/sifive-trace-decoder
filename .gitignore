@@ -30,3 +30,10 @@
 *.exe
 *.out
 *.app
+
+# Java related artifacts
+*.class
+TraceDecoder.jar
+*.java
+nul
+dqr_wrap.cpp

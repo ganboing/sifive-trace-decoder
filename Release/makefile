@@ -37,13 +37,15 @@ $(SWIGOBJ): $(SWIGCPP)
 $(SWIGCPP): $(INCLUDES) $(SWIGINCLUDES)
 	@echo 'Building file $@'
 	@echo 'Invoking: SWIG Compiler'
-	swig -java -c++ -o $@ -I../include ../include/dqr.i
+	swig -package com.sifive.trace -outdir com/sifive/trace -java -c++ -o dqr_wrap.cpp -I../include ../include/dqr.i
+	javac com/sifive/trace/*.java
+	jar cf TraceDecoder.jar com/sifive/trace/*
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) *.d $(OBJS) $(EXECUTABLE) $(SWIGCPP) $(SWIGOBJ) $(SWIGLIB) *.java *.class
+	-$(RM) *.d $(OBJS) $(EXECUTABLE) $(SWIGCPP) $(SWIGOBJ) $(SWIGLIB) com/sifive/trace/*.java com/sifive/trace/*.class  TraceDecoder.jar
 	-@echo ' '
 
 .PHONY: all clean dependents
