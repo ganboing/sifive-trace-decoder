@@ -1,4 +1,4 @@
-%module tracedecoder
+%module TraceDecoder
 //%include "typemaps.i"
 //%include "various.i"
 %include "cpointer.i"

@@ -295,15 +295,15 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp("-32",argv[i]) == 0) {
 			numAddrBits = 32;
-			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_WIDTHAUTO;
+			addrDispFlags = addrDispFlags & ~TraceDqr::ADDRDISP_WIDTHAUTO;
 		}
 		else if (strcmp("-64",argv[i]) == 0) {
 			numAddrBits = 64;
-			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_WIDTHAUTO;
+			addrDispFlags = addrDispFlags & ~TraceDqr::ADDRDISP_WIDTHAUTO;
 		}
 		else if (strcmp("-32+",argv[i]) == 0) {
 			numAddrBits = 32;
-			addrDispFlags = addrDispFlags | dqr::ADDRDISP_WIDTHAUTO;
+			addrDispFlags = addrDispFlags | TraceDqr::ADDRDISP_WIDTHAUTO;
 		}
 		else if (strncmp("-addrsize=",argv[i],strlen("-addrsize=")) == 0) {
 			int l;
@@ -313,11 +313,11 @@ int main(int argc, char *argv[])
 
 			if (endptr[0] == 0 ) {
 				numAddrBits = l;
-				addrDispFlags = addrDispFlags  & ~dqr::ADDRDISP_WIDTHAUTO;
+				addrDispFlags = addrDispFlags  & ~TraceDqr::ADDRDISP_WIDTHAUTO;
 			}
 			else if (endptr[0] == '+') {
 				numAddrBits = l;
-				addrDispFlags = addrDispFlags | dqr::ADDRDISP_WIDTHAUTO;
+				addrDispFlags = addrDispFlags | TraceDqr::ADDRDISP_WIDTHAUTO;
 			}
 			else {
 				printf("Error: option -addressize= requires a valid number <= 32, >= 64\n");
@@ -332,10 +332,10 @@ int main(int argc, char *argv[])
 			}
 		}
 		else if (strcmp("-addrsep", argv[i]) == 0) {
-			addrDispFlags = addrDispFlags | dqr::ADDRDISP_SEP;
+			addrDispFlags = addrDispFlags | TraceDqr::ADDRDISP_SEP;
 		}
 		else if (strcmp("-noaddrsep", argv[i]) == 0) {
-			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_SEP;
+			addrDispFlags = addrDispFlags & ~TraceDqr::ADDRDISP_SEP;
 		}
 		else if (strncmp("-srcbits=",argv[i],strlen("-srcbits=")) == 0) {
 			srcbits = atoi(argv[i]+strlen("-srcbits="));
@@ -370,8 +370,8 @@ int main(int argc, char *argv[])
 			}
 
 			freq = atoi(argv[i]);
-			if (start_msg_num < 0) {
-				printf("Error: colock frequency must be >= 0\n");
+			if (freq < 0) {
+				printf("Error: clock frequency must be >= 0\n");
 				return 1;
 			}
 		}
@@ -419,7 +419,7 @@ int main(int argc, char *argv[])
 
 	assert(trace != nullptr);
 
-	if (trace->getStatus() != dqr::DQERR_OK) {
+	if (trace->getStatus() != TraceDqr::DQERR_OK) {
 		delete trace;
 		trace = nullptr;
 
@@ -432,7 +432,7 @@ int main(int argc, char *argv[])
 
 	trace->setTraceRange(start_msg_num,stop_msg_num);
 
-	dqr::DQErr ec;
+	TraceDqr::DQErr ec;
 
 	// main loop
 
@@ -461,20 +461,20 @@ int main(int argc, char *argv[])
 	Instruction *instInfo;
 	NexusMessage *msgInfo;
 	Source *srcInfo;
-	char dst[4096];
+	char dst[1024];
 	int instlevel = 1;
 	int msgLevel = 2;
 	const char *lastSrcFile = nullptr;
 	const char *lastSrcLine = nullptr;
 	unsigned int lastSrcLineNum = 0;
-	dqr::ADDRESS lastAddress = 0;
+	TraceDqr::ADDRESS lastAddress = 0;
 	int lastInstSize = 0;
 	bool firstPrint = true;
 
 	do {
 		ec = trace->NextInstruction(&instInfo,&msgInfo,&srcInfo);
 
-		if (ec == dqr::DQERR_OK) {
+		if (ec == TraceDqr::DQERR_OK) {
 			if (srcInfo != nullptr) {
 				if ((lastSrcFile != srcInfo->sourceFile) || (lastSrcLine != srcInfo->sourceLine) || (lastSrcLineNum != srcInfo->sourceLineNum)) {
 					lastSrcFile = srcInfo->sourceFile;
@@ -598,12 +598,9 @@ int main(int argc, char *argv[])
 				}
 			}
 		}
-	} while (ec == dqr::DQERR_OK);
+	} while (ec == TraceDqr::DQERR_OK);
 
-	if (analytics_detail > 0) {
-        trace->analyticsToText(dst,sizeof dst,analytics_detail);
-        printf("\n%s",dst);
-	}
+	trace->displayAnalytics(analytics_detail);
 
 	delete trace;
 

@@ -48,12 +48,12 @@ class section {
 public:
 	section();
 	section *initSection(section **head,asection *newsp);
-	section *getSectionByAddress(dqr::ADDRESS addr);
+	section *getSectionByAddress(TraceDqr::ADDRESS addr);
 
 	section     *next;
 	bfd         *abfd;
-	dqr::ADDRESS startAddr;
-	dqr::ADDRESS endAddr;
+	TraceDqr::ADDRESS startAddr;
+	TraceDqr::ADDRESS endAddr;
 	int          size;
 	asection    *asecptr;
 	uint16_t    *code;
@@ -86,7 +86,7 @@ class Symtab {
 public:
 	             Symtab(bfd *abfd);
 	            ~Symtab();
-	const char  *getSymbolByAddress(dqr::ADDRESS addr);
+	const char  *getSymbolByAddress(TraceDqr::ADDRESS addr);
 	const char  *getNextSymbolByAddress();
 //	dqr::ADDRESS getSymbolByName();
 	asymbol    **getSymbolTable() { return symbol_table; }
@@ -97,7 +97,7 @@ private:
 	long      number_of_symbols;
     asymbol **symbol_table;
 
-    dqr::ADDRESS vma;
+    TraceDqr::ADDRESS vma;
     int          index;
 };
 
@@ -107,8 +107,8 @@ class ElfReader {
 public:
         	   ElfReader(char *elfname);
 	          ~ElfReader();
-	dqr::DQErr getStatus() { return status; }
-	dqr::DQErr getInstructionByAddress(dqr::ADDRESS addr, dqr::RV_INST &inst);
+	TraceDqr::DQErr getStatus() { return status; }
+	TraceDqr::DQErr getInstructionByAddress(TraceDqr::ADDRESS addr, TraceDqr::RV_INST &inst);
 	Symtab    *getSymtab();
 	bfd       *get_bfd() {return abfd;}
 	int        getArchSize() { return archSize; }
@@ -116,7 +116,7 @@ public:
 
 private:
 	static bool init;
-	dqr::DQErr  status;
+	TraceDqr::DQErr  status;
 	bfd        *abfd;
 	int         archSize;
 	int	        bitsPerWord;
@@ -163,14 +163,14 @@ public:
 class SliceFileParser {
 public:
              SliceFileParser(char *filename, bool binary, int srcBits);
-  dqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics);
+  TraceDqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics);
 
 // foo  dqr::DQErr readAllTraceMsgs();
-  dqr::DQErr getErr() { return status; };
+  TraceDqr::DQErr getErr() { return status; };
   void       dump();
 
 private:
-  dqr::DQErr status;
+  TraceDqr::DQErr status;
   bool		 firstMsg;
 
   // add other counts for each message type
@@ -183,24 +183,24 @@ private:
   uint8_t       msg[64];
   bool          eom = false;
 
-  dqr::ADDRESS	 currentAddress;
-  dqr::TIMESTAMP currentTime;
+  TraceDqr::ADDRESS	 currentAddress;
+  TraceDqr::TIMESTAMP currentTime;
 
-  dqr::DQErr readBinaryMsg();
-  dqr::DQErr readNextByte(uint8_t *byte);
-  dqr::DQErr readAscMsg();
-  dqr::DQErr parseVarField(uint64_t *val,int *width);
-  dqr::DQErr parseFixedField(int width, uint64_t *val);
-  dqr::DQErr parseDirectBranch(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseIndirectBranch(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseDirectBranchWS(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseIndirectBranchWS(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseSync(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseCorrelation(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseAuxAccessWrite(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseDataAcquisition(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseOwnershipTrace(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseError(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr readBinaryMsg();
+  TraceDqr::DQErr readNextByte(uint8_t *byte);
+  TraceDqr::DQErr readAscMsg();
+  TraceDqr::DQErr parseVarField(uint64_t *val,int *width);
+  TraceDqr::DQErr parseFixedField(int width, uint64_t *val);
+  TraceDqr::DQErr parseDirectBranch(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseIndirectBranch(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseDirectBranchWS(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseIndirectBranchWS(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseSync(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseCorrelation(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseAuxAccessWrite(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseDataAcquisition(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseOwnershipTrace(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseError(NexusMessage &nm,Analytics &analytics);
 };
 
 // class Disassembler: class to help in the dissasemblhy of instrucitons
@@ -208,19 +208,19 @@ private:
 class Disassembler {
 public:
 	      Disassembler(bfd *abfd);
-	int   Disassemble(dqr::ADDRESS addr);
+	int   Disassemble(TraceDqr::ADDRESS addr);
 
-	int   getSrcLines(dqr::ADDRESS addr, const char **filename, const char **functionname, unsigned int *linenumber, const char **line);
+	int   getSrcLines(TraceDqr::ADDRESS addr, const char **filename, const char **functionname, unsigned int *linenumber, const char **line);
 
 	int   decodeInstructionSize(uint32_t inst, int &inst_size);
-	int   decodeInstruction(uint32_t instruction,int &inst_size,dqr::instType &inst_type,int32_t &immeadiate,bool &is_branch);
+	int   decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
 
 	void  overridePrintAddress(bfd_vma addr, struct disassemble_info *info); // hmm.. don't need info - part of object!
 
 	Instruction getInstructionInfo() { return instruction; }
 	Source      getSourceInfo() { return source; }
 
-	dqr::DQErr getStatus() {return status;}
+	TraceDqr::DQErr getStatus() {return status;}
 
 private:
 	typedef struct {
@@ -231,7 +231,7 @@ private:
 
 	bfd               *abfd;
 	disassembler_ftype disassemble_func;
-	dqr::DQErr         status;
+	TraceDqr::DQErr         status;
 
 	bfd_vma           start_address;
 	long              number_of_syms;
@@ -261,10 +261,10 @@ private:
 	int lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size);
 //	int get_ins(bfd_vma vma,uint32_t *ins,int *ins_size);
 
-	int decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,dqr::instType &inst_type,int32_t &immeadiate,bool &is_branch);
-	int decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,dqr::instType &inst_type,int32_t &immeadiate,bool &is_branch);
-	int decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,dqr::instType &inst_type,int32_t &immeadiate,bool &is_branch);
-	int decodeRV32Instruction(uint32_t instruction,int &inst_size,dqr::instType &inst_type,int32_t &immeadiate,bool &is_branch);
+	int decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
+	int decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
+	int decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
+	int decodeRV32Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
 };
 
 struct NexusMessageSync {
