@@ -16,7 +16,7 @@ Debug: $(EXECUTABLE) $(SWIGLIB)
 
 # Tool invocations
 
-$(EXECUTABLE): $(OBJS) 
+$(EXECUTABLE): $(OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
 	$(CROSSPREFIX)g++ -L$(LIBPATH) $(LNFLAGS) -o $(EXECUTABLE) $(OBJS) $(USER_OBJS) $(LIBS)
@@ -40,7 +40,7 @@ $(SWIGOBJ): $(SWIGCPP)
 $(SWIGCPP): $(INCLUDES) $(SWIGINCLUDES)
 	@echo 'Building file $@'
 	@echo 'Invoking: SWIG Compiler'
-	swig -java -c++ -o dqr_wrap.cpp -I../include ../include/dqr.i
+	swig -java -c++ -o $@ -I../include ../include/dqr.i
 	@echo 'Finished building: $@'
 	@echo ' '
 
