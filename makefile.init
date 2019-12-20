@@ -20,6 +20,7 @@ ifeq ($(OS),Windows_NT)
         SWIGLIB := dqr.dll
     endif
     CFLAGS += -D WINDOWS -std=c++11
+    SWIGCFLAGS += -D WINDOWS -std=c++11
     LIBPATH = ../lib/windows
     LNFLAGS = -static
     LIBS := -lbfd -lopcodes -lintl -liberty -lz
@@ -37,6 +38,7 @@ else
         REDHAT_REL := $(wildcard /etc/redhat-release)
         ifneq ($(REDHAT_REL),)
             CFLAGS += -D LINUX -std=c++11
+            SWIGCFLAGS += -D LINUX -std=c++11
             LIBPATH = ../lib/linux
             LIBS := -lbfd -lopcodes -liberty -lz -ldl
             LNFLAGS =
@@ -44,12 +46,14 @@ else
         else
             ifeq ($(CROSSPREFIX),x86_64-w64-mingw32-)
                 CFLAGS += -D WINDOWS -std=c++11
+                SWIGCFLAGS += -D WINDOWS -std=c++11
                 LIBPATH = ../lib/windows
                 LNFLAGS = -static
                 LIBS := -lbfd -lopcodes -lintl -liberty -lz
                 EXECUTABLE := dqr.exe
             else
                 CFLAGS += -D LINUX -std=c++11
+                SWIGCFLAGS += -D LINUX -std=c++11
                 LIBPATH = ../lib/linux
                 LIBS := -lbfd -lopcodes -liberty -lz -ldl
                 LNFLAGS = -static
@@ -65,6 +69,7 @@ else
             SWIGLIB := libdqr.so
         endif
         CFLAGS += -D OSX -std=c++11
+        SWIGCFLAGS += -D OSX -std=c++11
         LIBPATH = ../lib/macos
         LIBS := -lbfd -lopcodes -liberty -lz -lintl -liconv
         LNFLAGS =
