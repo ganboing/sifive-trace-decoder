@@ -14,7 +14,6 @@ Release release all: $(EXECUTABLE) $(SWIGLIB)
 
 # Tool invocations
 $(EXECUTABLE): $(OBJS)
-	@echo 'swiglib: $(SWIGLIB)'
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
 	$(CROSSPREFIX)g++ -L$(LIBPATH) $(LNFLAGS) -o $(EXECUTABLE) $(OBJS) $(USER_OBJS) $(LIBS)
