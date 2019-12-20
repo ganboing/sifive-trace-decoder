@@ -87,7 +87,7 @@ static void usage(char *name)
 	printf("-analytics:   Compute and display detail level 1 trace analytics.\n");
 	printf("-analytics=n: Specify the detail level for trace analytics dispaly. N sets the level to either 0 (no analytics display)\n");
 	printf("              1 (sort system totals), or 2 (display analytics by core).\n");
-	printf("-noanaylitics: Do not compute and display trace analytics (default). Same as -analytics=0.");
+	printf("-noanaylitics: Do not compute and display trace analytics (default). Same as -analytics=0.\n");
 	printf("-freq nn      Specify the frequency in Hz for the timestamp tics clock. If specified, time instead\n");
 	printf("              of tics will be displayed.\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
