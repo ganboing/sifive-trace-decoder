@@ -592,6 +592,8 @@ int main(int argc, char *argv[])
 						printf("[%d] ",msgInfo->coreId);
 					}
 
+					printf("ITC Print: ");
+
 					puts(itcprint);
 
 					firstPrint = false;

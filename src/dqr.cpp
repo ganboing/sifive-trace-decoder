@@ -955,9 +955,9 @@ char *itcPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 		// it gets full
 
 		for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
-			if (eol[core] == true) {
-				pbi[core] += sprintf(pbuff[core]+pbi[core],"ITC Print: ");
-			}
+//			if (eol[core] == true) {
+//				pbi[core] += sprintf(pbuff[core]+pbi[core],"ITC Print: ");
+//			}
 
 			pbuff[core][pbi[core]++] = p[i];
 
@@ -993,7 +993,7 @@ char *itcPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 
 		char *p = (char *)&data;
 
-		pbi[core] += sprintf(pbuff[core]+pbi[core],"ITC Print: ");
+//		pbi[core] += sprintf(pbuff[core]+pbi[core],"ITC Print: ");
 
 		for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
 			pbuff[core][pbi[core]++] = p[i];
