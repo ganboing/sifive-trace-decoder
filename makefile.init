@@ -17,6 +17,9 @@ ifeq ($(OS),Windows_NT)
     ifeq ($(SWIG),)
         SWIGLIB := 
     else
+        ifndef JNIINCLUDE
+            $(error JNIINCLUDE must be defined to build to dqr library)
+        endif
         SWIGLIB := dqr.dll
     endif
     CFLAGS += -D WINDOWS -std=c++11
@@ -33,6 +36,9 @@ else
         ifeq ($(SWIG),)
             SWIGLIB := 
         else
+            ifndef JNIINCLUDE
+                $(error JNIINCLUDE must be defined to build to dqr library)
+            endif
             SWIGLIB := libdqr.so
         endif
         REDHAT_REL := $(wildcard /etc/redhat-release)
@@ -43,6 +49,7 @@ else
             LIBS := -lbfd -lopcodes -liberty -lz -ldl
             LNFLAGS =
             EXECUTABLE := dqr
+            JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)\linux"
         else
             ifeq ($(CROSSPREFIX),x86_64-w64-mingw32-)
                 CFLAGS += -D WINDOWS -std=c++11
@@ -59,6 +66,7 @@ else
                 LNFLAGS = -static
                 EXECUTABLE := dqr
             endif
+            JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)\linux"
         endif
     endif
     ifeq ($(UNAME_S),Darwin)
@@ -66,6 +74,9 @@ else
         ifeq ($(SWIG),)
             SWIGLIB := 
         else
+           ifndef JNIINCLUDE
+                $(error JNIINCLUDE must be defined to build to dqr library)
+            endif
             SWIGLIB := libdqr.so
         endif
         CFLAGS += -D OSX -std=c++11
@@ -74,6 +85,7 @@ else
         LIBS := -lbfd -lopcodes -liberty -lz -lintl -liconv
         LNFLAGS =
         EXECUTABLE := dqr
+        JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)\darwin"
     endif
     UNAME_P := $(shell uname -p)
 endif
