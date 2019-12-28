@@ -415,7 +415,7 @@ int main(int argc, char *argv[])
 
 	// might want to include some path info!
 
-	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,numAddrBits,addrDispFlags,srcbits);
+	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
 
 	assert(trace != nullptr);
 
@@ -563,9 +563,9 @@ int main(int argc, char *argv[])
 
 			if ((trace_flag || itcprint_flag) && (msgInfo != nullptr)) {
 				// got the goods! Get to it!
-				char *itcprint = nullptr;
+				const char *itcprint = nullptr;
 
-				msgInfo->messageToText(dst,sizeof dst,&itcprint,msgLevel,freq);
+				msgInfo->messageToText(dst,sizeof dst,&itcprint,msgLevel);
 
 				if (trace_flag) {
 					if (firstPrint == false) {

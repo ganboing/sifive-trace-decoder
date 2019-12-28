@@ -224,10 +224,14 @@ private:
 class NexusMessage {
 public:
 	NexusMessage();
-	std::string messageToString(int level,int *flags,uint32_t freq = 0);
+	std::string messageToString(int level);
 	std::string itcprintToString();
-	void messageToText(char *dst,size_t dst_len,char **pdst,int level,uint32_t freq = 0);
+	const char *processPrintData();
+	void messageToText(char *dst,size_t dst_len,const char **pdst,int level);
+
 	void dump();
+
+	static uint32_t targetFrequency;
 
 	int        	   msgNum;
 	TraceDqr::TCode     tcode;
@@ -284,8 +288,11 @@ public:
     	} ownership;
     };
 
+    bool processedPrintData;
+    bool haveITCPrint;
+
 private:
-    char *itcprint;
+    std::string itcprintstr;
 };
 
 class Analytics {
@@ -371,7 +378,7 @@ private:
 
 class Trace {
 public:
-	           Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits);
+	           Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
 	          ~Trace();
 	TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
 

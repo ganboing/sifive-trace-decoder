@@ -831,6 +831,12 @@ ElfReader::~ElfReader()
 		delete symtab;
 		symtab = nullptr;
 	}
+
+	if (abfd != nullptr) {
+		bfd_close(abfd);
+
+		abfd = nullptr;
+	}
 }
 
 TraceDqr::DQErr ElfReader::getInstructionByAddress(TraceDqr::ADDRESS addr,TraceDqr::RV_INST &inst)
@@ -2212,6 +2218,8 @@ std::string Analytics::toString(int detailLevel)
 	return s;
 }
 
+uint32_t NexusMessage::targetFrequency = 0;
+
 NexusMessage::NexusMessage()
 {
 	msgNum         = 0;
@@ -2222,43 +2230,70 @@ NexusMessage::NexusMessage()
 	currentAddress = 0;
 	time           = 0;
 
-	itcprint = nullptr;
+	processedPrintData = false;
+	haveITCPrint = false;
+	itcprintstr = "";
 }
 
 std::string NexusMessage::itcprintToString()
 {
-	std::string s = "";
-
-	for (int i = 0; itcprint[i] != 0; i++) {
-		s += itcprint[i];
-	}
-
-	return s;
+	return itcprintstr;
 }
 
-std::string NexusMessage::messageToString(int level,int *flags,uint32_t freq)
+std::string NexusMessage::messageToString(int level)
 {
 	char dst[512];
 
 	dst[0] = 0;
-	itcprint = nullptr;
 
-	messageToText(dst,sizeof dst,&itcprint,level,freq);
+	messageToText(dst,sizeof dst,nullptr,level);
 
-	std::string s = "";
-
-	for (int i = 0; dst[i] != 0; i++) {
-		s += dst[i];
-	}
-
-	if (itcprint != nullptr) {
-		*flags = TraceDqr::TRACE_HAVE_ITCPRINT;
-	}
+	std::string s(dst);
 
 	return s;
 }
 
-void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level,uint32_t freq)
+const char *NexusMessage::processPrintData()
+{
+	if (processedPrintData) {
+		if (haveITCPrint) {
+			return itcprintstr.c_str();
+		}
+
+		return nullptr;
+	}
+
+	processedPrintData = true;
+
+	char *itcpstr = nullptr;
+
+	// need to only do this once per message! Set a flag so we know we have done it.
+	// if flag set, return string (or null if none)
+
+	switch (tcode) {
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+		itcpstr = itcPrint::print(coreId,dataAcquisition.idTag,dataAcquisition.data);
+		break;
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+		itcpstr = itcPrint::print(coreId,auxAccessWrite.addr,auxAccessWrite.data);
+		break;
+	default:
+		break;
+	}
+
+	if (itcpstr == nullptr) {
+		haveITCPrint = false;
+		itcprintstr = "";
+	}
+	else {
+		haveITCPrint = true;
+	    itcprintstr = std::string(itcpstr);
+	}
+
+	return itcpstr;
+}
+
+void NexusMessage::messageToText(char *dst,size_t dst_len,const char **pdst,int level)
 {
 	assert(dst != nullptr);
 
@@ -2271,17 +2306,26 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level,
 	}
 
 	// level = 0, nothing
-	// level = 1, timestamp and target
-	// level = 2, message info + timestamp + target
+	// level = 1, timestamp + target + itcprint
+	// level = 2, message info + timestamp + target + itcprint
+
+// foodog	itcprintstr = ""; << only do this if print data has not yet been computed!!
 
 	if (level <= 0) {
 		dst[0] = 0;
 		return;
 	}
 
+	if (pdst != nullptr) {
+		*pdst = processPrintData();
+	}
+	else {
+		processPrintData();
+	}
+
 	if (haveTimestamp) {
-		if (freq != 0) {
-			n = snprintf(dst,dst_len,"Msg # %d, time: %0.8f, NxtAddr: %08llx, TCode: ",msgNum,(1.0*time)/freq,currentAddress);
+		if (NexusMessage::targetFrequency != 0) {
+			n = snprintf(dst,dst_len,"Msg # %d, time: %0.8f, NxtAddr: %08llx, TCode: ",msgNum,(1.0*time)/NexusMessage::targetFrequency,currentAddress);
 		}
 		else {
 			n = snprintf(dst,dst_len,"Msg # %d, Tics: %lld, NxtAddr: %08llx, TCode: ",msgNum,time,currentAddress);
@@ -2542,10 +2586,6 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level,
 				break;
 			}
 		}
-
-		if (pdst != nullptr) {
-			*pdst = itcPrint::print(coreId,dataAcquisition.idTag,dataAcquisition.data);
-		}
 		break;
 	case TraceDqr::TCODE_AUXACCESS_WRITE:
 		n += snprintf(dst+n,dst_len-n,"AUX ACCESS WRITE (%d)",tcode);
@@ -2563,10 +2603,6 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level,
 				snprintf(dst+n,dst_len-n," Addr: 0x%08x Data: 0x%02x",auxAccessWrite.addr,(uint8_t)auxAccessWrite.data);
 				break;
 			}
-		}
-
-		if (pdst != nullptr) {
-			*pdst = itcPrint::print(coreId,auxAccessWrite.addr,auxAccessWrite.data);
 		}
 		break;
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
@@ -2723,6 +2759,13 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 
 	readAllTraceMsgs();
 #endif
+}
+
+SliceFileParser::~SliceFileParser()
+{
+	if (tf.is_open()) {
+		tf.close();
+	}
 }
 
 void SliceFileParser::dump()

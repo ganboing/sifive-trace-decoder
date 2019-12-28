@@ -46,7 +46,7 @@ int Trace::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstT
 	return disassembler->decodeInstruction(instruction,inst_size,inst_type,immeadiate,is_branch);
 }
 
-Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, int numAddrBits, uint32_t addrDispFlags, int srcBits)
+Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq)
 {
   sfp          = nullptr;
   elfReader    = nullptr;
@@ -198,6 +198,8 @@ Trace::Trace(char *tf_name, bool binaryFlag, char *ef_name, int numAddrBits, uin
   sourceInfo.sourceFunction = nullptr;
   sourceInfo.sourceLineNum = 0;
   sourceInfo.sourceLine = nullptr;
+
+  NexusMessage::targetFrequency = freq;
 
   status = TraceDqr::DQERR_OK;
 }
@@ -353,7 +355,7 @@ const char *Trace::getNextSymbolByAddress()
 	return symtab->getNextSymbolByAddress();
 }
 
-TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags)
+TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgInfo,Source *srcInfo,int *flags)
 {
 	TraceDqr::DQErr ec;
 
@@ -364,8 +366,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo, NexusMessage *msgI
 	Instruction  **instInfopp = nullptr;
 	NexusMessage **msgInfopp  = nullptr;
 	Source       **srcInfopp  = nullptr;
-
-//	printf("%08x %08x %08x\n",instInfo,msgInfo,srcInfo);
 
 	if (instInfo != nullptr) {
 		instInfopp = &instInfop;
@@ -395,6 +395,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo, NexusMessage *msgI
 			if (msgInfop != nullptr) {
 				*msgInfo = *msgInfop;
 				*flags |= TraceDqr::TRACE_HAVE_MSGINFO;
+
+				if (msgInfo->processPrintData() != nullptr) {
+					*flags |= TraceDqr::TRACE_HAVE_ITCPRINT;
+				}
 			}
 		}
 
@@ -744,6 +748,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				messageInfo = messageSync[currentCore]->msgs[messageSync[currentCore]->index-1];
 				messageInfo.currentAddress = currentAddress[currentCore];
 				messageInfo.time = lastTime[currentCore];
+				messageInfo.processedPrintData = false;
+				messageInfo.haveITCPrint = false;
+
 				*msgInfo = &messageInfo;
 
 				status = TraceDqr::DQERR_OK;
@@ -821,6 +828,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				messageInfo = nm;
 				messageInfo.currentAddress = currentAddress[currentCore];
 				messageInfo.time = lastTime[currentCore];
+				messageInfo.processedPrintData = false;
+				messageInfo.haveITCPrint = false;
+
 				*msgInfo = &messageInfo;
 			}
 
@@ -886,6 +896,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
+					messageInfo.processedPrintData = false;
+					messageInfo.haveITCPrint = false;
 
 					*msgInfo = &messageInfo;
 				}
@@ -917,6 +929,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
+					messageInfo.processedPrintData = false;
+					messageInfo.haveITCPrint = false;
 
 					*msgInfo = &messageInfo;
 				}
@@ -935,6 +949,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
+					messageInfo.processedPrintData = false;
+					messageInfo.haveITCPrint = false;
 
 					*msgInfo = &messageInfo;
 				}
@@ -953,6 +969,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
+					messageInfo.processedPrintData = false;
+					messageInfo.haveITCPrint = false;
+
 					*msgInfo = &messageInfo;
 				}
 
@@ -987,6 +1006,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						messageInfo = nm;
 						messageInfo.time = lastTime[currentCore];
 						messageInfo.currentAddress = currentAddress[currentCore];
+						messageInfo.processedPrintData = false;
+						messageInfo.haveITCPrint = false;
 
 						*msgInfo = &messageInfo;
 					}
@@ -1018,6 +1039,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
+					messageInfo.processedPrintData = false;
+					messageInfo.haveITCPrint = false;
 
 					*msgInfo = &messageInfo;
 				}
@@ -1040,6 +1063,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 //					messageInfo.currentAddress = currentAddress;
 					messageInfo.currentAddress = lastFaddr[currentCore] + nm.correlation.i_cnt*2;
+					messageInfo.processedPrintData = false;
+					messageInfo.haveITCPrint = false;
 
 					*msgInfo = &messageInfo;
 				}
@@ -1118,6 +1143,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
+					messageInfo.processedPrintData = false;
+					messageInfo.haveITCPrint = false;
 
 					*msgInfo = &messageInfo;
 				}

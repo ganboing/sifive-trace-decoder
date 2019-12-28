@@ -163,6 +163,7 @@ public:
 class SliceFileParser {
 public:
              SliceFileParser(char *filename, bool binary, int srcBits);
+             ~SliceFileParser();
   TraceDqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics);
 
 // foo  dqr::DQErr readAllTraceMsgs();
