@@ -15,12 +15,16 @@ SWIGOBJ += ./dqr_wrap.o
 ifeq ($(OS),Windows_NT)
     SWIG = $(shell which swig 2> nul)
     ifeq ($(SWIG),)
+        $(info swig not found; skipping swig and dqr shared library build)
         SWIGLIB := 
     else
         ifndef JNIINCLUDE
-            $(error JNIINCLUDE must be defined to build to dqr library)
+            $(info JNIINCLUDE not defined; skipping swig and dqr shared library build)
+            SWIGLIB :=
+        else
+            SWIGLIB := dqr.dll
+            $(info building swig $(SWIGLIB))
         endif
-        SWIGLIB := dqr.dll
     endif
     CFLAGS += -D WINDOWS -std=c++11
     SWIGCFLAGS += -D WINDOWS -std=c++11
@@ -34,12 +38,15 @@ else
     ifeq ($(UNAME_S),Linux)
         SWIG = $(shell which swig 2> /dev/null)
         ifeq ($(SWIG),)
+	    $(info swig not found; skipping swig and dqr shared library build)
             SWIGLIB := 
         else
             ifndef JNIINCLUDE
-                $(error JNIINCLUDE must be defined to build to dqr library)
+	        $(info JNIINCLUDE not defined; skipping swig and dqr shared library build)
+                SWIGLIB := 
+            else
+                SWIGLIB := libdqr.so
             endif
-            SWIGLIB := libdqr.so
         endif
         REDHAT_REL := $(wildcard /etc/redhat-release)
         ifneq ($(REDHAT_REL),)
@@ -72,12 +79,15 @@ else
     ifeq ($(UNAME_S),Darwin)
         SWIG = $(shell which swig 2> /dev/null)
         ifeq ($(SWIG),)
+	    $(info swig not found; skipping swig and dqr shared library build)
             SWIGLIB := 
         else
            ifndef JNIINCLUDE
-                $(error JNIINCLUDE must be defined to build to dqr library)
+                $(info JNIINCLUDE not defined; skipping swig and dqr shared library build)
+                SWIGLIB :=
+            else
+                SWIGLIB := libdqr.so
             endif
-            SWIGLIB := libdqr.so
         endif
         CFLAGS += -D OSX -std=c++11
         SWIGCFLAGS += -D OSX -std=c++11
