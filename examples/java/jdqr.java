@@ -1,12 +1,20 @@
 // runme.java
 
+import com.sifive.trace.TraceDqr;
+import com.sifive.trace.Trace;
+import com.sifive.trace.Instruction;
+import com.sifive.trace.NexusMessage;
+import com.sifive.trace.Source;
+import com.sifive.trace.TraceDecoder;
+import com.sifive.trace.SWIGTYPE_p_int;
+
 public class jdqr {
   static {
     System.loadLibrary("dqr");
   }
 
   public static void main(String argv[]) {
-    Trace t = new Trace("foo.rtd",true,"coremark.elf",32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
+    Trace t = new Trace("trace.rtd",true,"brad_hello.elf",32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
     if (t == null) {
       System.out.println("t is null");
       System.exit(1);
@@ -64,7 +72,7 @@ public class jdqr {
       if (ec == TraceDqr.DQErr.DQERR_OK) {
         if ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_SRCINFO) != 0) {
           String sourceFile = srcInfo.sourceFileToString(stripPath);
-	  String sourceLine = srcInfo.sourceLineToString();
+          String sourceLine = srcInfo.sourceLineToString();
           int sourceLineNum = (int)srcInfo.getSourceLineNum();
 
           if ((lastSrcFile.compareTo(sourceFile) != 0) || (lastSrcLine.compareTo(sourceLine) != 0) || (lastSrcLineNum != sourceLineNum)) {
@@ -149,14 +157,12 @@ public class jdqr {
         }
 
 	if ((trace_flag || itcPrint_flag) && ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_MSGINFO) != 0)) {
-          SWIGTYPE_p_int msgFlags = TraceDecoder.new_intp();
-
-          String msgStr = msgInfo.messageToString(msgLevel,msgFlags);
+          String msgStr = msgInfo.messageToString(msgLevel);
 
           if (trace_flag) {
-	    if (!firstPrint) {
-	      System.out.printf("%n");
-	    }
+            if (!firstPrint) {
+              System.out.printf("%n");
+            }
 
             if (srcBits > 0) {
               System.out.printf("[%d] ",msgInfo.getCoreId());
@@ -169,7 +175,7 @@ public class jdqr {
             firstPrint = false;
           }
 
-          if (itcPrint_flag && ((TraceDecoder.intp_value(msgFlags) & TraceDqr.TRACE_HAVE_ITCPRINT) != 0)) {
+          if (itcPrint_flag && ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_ITCPRINT) != 0)) {
             if (firstPrint == false) {
               System.out.printf("%n");
             }
@@ -178,9 +184,13 @@ public class jdqr {
               System.out.printf("[%d] ",msgInfo.getCoreId());
             }
 
+	    System.out.printf("ITC Print: ");
+
 	    String itcprint = msgInfo.itcprintToString();
 
 	    System.out.println(itcprint);
+
+//	    System.out.println("stink");
 
 	    firstPrint = false;
           }
