@@ -5,6 +5,7 @@
 %include "std_string.i"
 
 %pointer_functions(int, intp);
+%pointer_functions(bool, boolp);
 
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;

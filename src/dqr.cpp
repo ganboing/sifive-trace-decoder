@@ -918,101 +918,206 @@ Symtab *ElfReader::getSymtab()
 
 bool itcPrint::inited = itcPrint::init();
 
-bool itcPrint::buffering;
-bool itcPrint::eol[DQR_MAXCORES];
-char itcPrint::pbuff[DQR_MAXCORES][1024];
-int itcPrint::pbi[DQR_MAXCORES];
+char itcPrint::pbuff[DQR_MAXCORES][4096];
+int  itcPrint::pbi[DQR_MAXCORES];
+int  itcPrint::numMsgs[DQR_MAXCORES];
+int  itcPrint::pbo[DQR_MAXCORES];
 
 bool itcPrint::init()
 {
-	buffering = true;
-
-	for (int i = 0; (size_t)i < (sizeof eol / sizeof eol[0]); i++) {
-		eol[i] = true;
-	}
-
-	for (int i = 0; (size_t)i < (sizeof pbuff / sizeof pbuff[0]); i++ ) {
+	for (int i = 0; i < DQR_MAXCORES; i++) {
 		pbuff[i][0] = 0;
-	}
-
-	for (int i = 0; (size_t)i < (sizeof pbi / sizeof pbi[0]); i++ ) {
 		pbi[i] = 0;
+		pbo[i] = 0;
+		numMsgs[i] = 0;
 	}
 
 	return 1;
 }
 
-char *itcPrint::print(uint8_t core, uint32_t addr, uint32_t data)
+int itcPrint::roomInITCPrintQ(int core)
+{
+	if (pbi[core] > pbo[core]) {
+		return sizeof pbuff[core] - pbi[core] + pbo[core] - 1;
+	}
+
+	if (pbi[core] < pbo[core]) {
+		return pbo[core] - pbi[core] - 1;
+	}
+
+	return sizeof pbuff[core]-1;
+}
+
+void itcPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 {
 	assert((core >= 0) && (core <= DQR_MAXCORES));
 
 	if (addr >= 4) {
 		// not an itc 0 print
-		pbuff[core][pbi[core]] = 0;
-
-		return nullptr;
+		return;
 	}
 
-	if (buffering) {
-		char *p = (char *)&data;
-		bool flush = false;
+	char *p = (char *)&data;
+	int room = roomInITCPrintQ(core);
 
-		// fill in buffer until eol is found (\n, \r, or \0). Need to dump buffer if
-		// it gets full
-
-		for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
-//			if (eol[core] == true) {
-//				pbi[core] += sprintf(pbuff[core]+pbi[core],"ITC Print: ");
-//			}
-
-			pbuff[core][pbi[core]++] = p[i];
+	for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
+		if (room >= 2) {
+			pbuff[core][pbi[core]] = p[i];
+			pbi[core] += 1;
+			if (pbi[core] >= (int)(sizeof pbuff[core])) {
+				pbi[core] = 0;
+			}
+			room -= 1;
 
 			switch (p[i]) {
 			case 0:
+				numMsgs[core] += 1;
+				break;
 			case '\n':
 			case '\r':
-				eol[core] = true;
-				flush = true;
+				pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
+				pbi[core] += 1;
+				if (pbi[core] >= (int)(sizeof pbuff[core])) {
+					pbi[core] = 0;
+				}
+				room -= 1;
+				numMsgs[core] += 1;
 				break;
 			default:
-				eol[core] = false;
+				break;
+			}
+		}
+	}
+
+	pbuff[core][pbi[core]] = 0; // make sure always null terminated
+}
+
+void itcPrint::haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES])
+{
+	if (numMsgs != nullptr) {
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			numMsgs[i] = itcPrint::numMsgs[i];
+		}
+	}
+
+	if (havePrintData != nullptr) {
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			havePrintData[i] = pbi[i] != pbo[i];
+		}
+	}
+}
+
+bool itcPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen)
+{
+	bool rc = false;
+
+	assert(core < DQR_MAXCORES);
+
+	assert((dst != nullptr) && (dstLen > 0));
+
+	if (numMsgs[core] > 0) {
+		rc = true;
+		numMsgs[core] -= 1;
+
+		while (pbuff[core][pbo[core]] && (dstLen > 1)) {
+			*dst++ = pbuff[core][pbo[core]];
+			dstLen -= 1;
+
+			pbo[core] += 1;
+			if (pbo[core] >= (int)(sizeof pbuff[core])) {
+				pbo[core] = 0;
 			}
 		}
 
-		if ((size_t)pbi[core] > (sizeof pbuff[core]) - 20) {
-			// flush if buffer is almost full
-			flush = true;
-		} else if (addr == 0x00000003) {
-			// all one byte writes flush
-			flush = true;
-		}
+		*dst = 0;
 
-		if (flush) {
-			pbuff[core][pbi[core]] = 0;
-			pbi[core] = 0;
+		// skip past null terminted end of message
 
-			return pbuff[core];
+		pbo[core] += 1;
+		if (pbo[core] >= (int)(sizeof pbuff[core])) {
+			pbo[core] = 0;
 		}
 	}
-	else {
-		// no buffering
 
-		char *p = (char *)&data;
+	return rc;
+}
 
-//		pbi[core] += sprintf(pbuff[core]+pbi[core],"ITC Print: ");
+bool itcPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen)
+{
+	assert(core < DQR_MAXCORES);
 
-		for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
-			pbuff[core][pbi[core]++] = p[i];
-		}
+	assert((dst != nullptr) && (dstLen > 0));
 
-		pbuff[core][pbi[core]] = 0;
-		pbi[core] = 0;
-		eol[core] = true;
-
-		return pbuff[core];
+	if (numMsgs[core] > 0) {
+		return getITCPrintMsg(core,dst,dstLen);
 	}
 
-	return nullptr;
+	if (pbo[core] != pbi[core]) {
+		while (pbuff[core][pbo[core]] && (dstLen > 1)) {
+			*dst++ = pbuff[core][pbo[core]];
+			dstLen -= 1;
+
+			pbo[core] += 1;
+			if (pbo[core] >= (int)(sizeof pbuff[core])) {
+				pbo[core] = 0;
+			}
+		}
+		return true;
+	}
+
+	return false;
+}
+
+bool itcPrint::getITCPrintStr(uint8_t core, std::string &s)
+{
+	assert(core < DQR_MAXCORES);
+
+	bool rc = false;
+
+	if (numMsgs[core] > 0) { // stuff in the Q
+		rc = true;
+		numMsgs[core] -= 1;
+
+		while (pbuff[core][pbo[core]]) {
+			s += pbuff[core][pbo[core]];
+
+			pbo[core] += 1;
+			if (pbo[core] >= (int)(sizeof pbuff[core])) {
+				pbo[core] = 0;
+			}
+		}
+
+		pbo[core] += 1;
+		if (pbo[core] >= (int)(sizeof pbuff[core])) {
+			pbo[core] = 0;
+		}
+	}
+
+	return rc;
+}
+
+bool itcPrint::flushITCPrintStr(uint8_t core, std::string &s)
+{
+	assert(core < DQR_MAXCORES);
+
+	if (numMsgs[core] > 0) {
+		return getITCPrintStr(core,s);
+	}
+
+	if (pbo[core] != pbi[core]) {
+		s = "";
+		while (pbuff[core][pbo[core]]) {
+			s += pbuff[core][pbo[core]];
+
+			pbo[core] += 1;
+			if (pbo[core] >= (int)(sizeof pbuff[core])) {
+				pbo[core] = 0;
+			}
+		}
+		return true;
+	}
+
+	return false;
 }
 
 Analytics::Analytics()
@@ -2229,71 +2334,37 @@ NexusMessage::NexusMessage()
 	timestamp      = 0;
 	currentAddress = 0;
 	time           = 0;
-
-	processedPrintData = false;
-	haveITCPrint = false;
-	itcprintstr = "";
 }
 
-std::string NexusMessage::itcprintToString()
+void NexusMessage::processITCPrintData()
 {
-	return itcprintstr;
+	// need to only do this once per message! Set a flag so we know we have done it.
+	// if flag set, return string (or null if none)
+
+	switch (tcode) {
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+		itcPrint::print(coreId,dataAcquisition.idTag,dataAcquisition.data);
+		break;
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+		itcPrint::print(coreId,auxAccessWrite.addr,auxAccessWrite.data);
+		break;
+	default:
+		break;
+	}
 }
 
-std::string NexusMessage::messageToString(int level)
+std::string NexusMessage::messageToString(int detailLevel)
 {
 	char dst[512];
 
-	dst[0] = 0;
-
-	messageToText(dst,sizeof dst,nullptr,level);
+	messageToText(dst,sizeof dst,detailLevel);
 
 	std::string s(dst);
 
 	return s;
 }
 
-const char *NexusMessage::processPrintData()
-{
-	if (processedPrintData) {
-		if (haveITCPrint) {
-			return itcprintstr.c_str();
-		}
-
-		return nullptr;
-	}
-
-	processedPrintData = true;
-
-	char *itcpstr = nullptr;
-
-	// need to only do this once per message! Set a flag so we know we have done it.
-	// if flag set, return string (or null if none)
-
-	switch (tcode) {
-	case TraceDqr::TCODE_DATA_ACQUISITION:
-		itcpstr = itcPrint::print(coreId,dataAcquisition.idTag,dataAcquisition.data);
-		break;
-	case TraceDqr::TCODE_AUXACCESS_WRITE:
-		itcpstr = itcPrint::print(coreId,auxAccessWrite.addr,auxAccessWrite.data);
-		break;
-	default:
-		break;
-	}
-
-	if (itcpstr == nullptr) {
-		haveITCPrint = false;
-		itcprintstr = "";
-	}
-	else {
-		haveITCPrint = true;
-	    itcprintstr = std::string(itcpstr);
-	}
-
-	return itcpstr;
-}
-
-void NexusMessage::messageToText(char *dst,size_t dst_len,const char **pdst,int level)
+void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 {
 	assert(dst != nullptr);
 
@@ -2301,26 +2372,15 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,const char **pdst,int 
 	const char *bt;
 	int n;
 
-	if (pdst != nullptr) {
-		*pdst = nullptr;
-	}
-
-	// level = 0, nothing
+	// level = 0, itcprint (always process itc print info
 	// level = 1, timestamp + target + itcprint
 	// level = 2, message info + timestamp + target + itcprint
 
-// foodog	itcprintstr = ""; << only do this if print data has not yet been computed!!
+//	processITCPrintData();
 
 	if (level <= 0) {
 		dst[0] = 0;
 		return;
-	}
-
-	if (pdst != nullptr) {
-		*pdst = processPrintData();
-	}
-	else {
-		processPrintData();
 	}
 
 	if (haveTimestamp) {

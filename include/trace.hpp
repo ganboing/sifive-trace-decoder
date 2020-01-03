@@ -129,13 +129,19 @@ class itcPrint {
 private:
 	static bool init();
 public:
-	static char *print(uint8_t core, uint32_t address, uint32_t data);
+	static void print(uint8_t core, uint32_t address, uint32_t data);
+	static void haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES]);
+	static bool getITCPrintMsg(uint8_t core, char *dst, int dstLen);
+	static bool flushITCPrintMsg(uint8_t core, char *dst, int dstLen);
+	static bool getITCPrintStr(uint8_t core, std::string &s);
+	static bool flushITCPrintStr(uint8_t core, std::string &s);
+	static int  roomInITCPrintQ(int core);
 
 	static bool inited;
-	static bool buffering;
-	static bool eol[DQR_MAXCORES];
-	static char pbuff[DQR_MAXCORES][1024];
+	static char pbuff[DQR_MAXCORES][4096];
 	static int pbi[DQR_MAXCORES];
+	static int pbo[DQR_MAXCORES];
+	static int numMsgs[DQR_MAXCORES];
 };
 
 #ifdef foo

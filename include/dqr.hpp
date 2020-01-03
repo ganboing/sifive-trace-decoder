@@ -57,7 +57,6 @@ public:
 	TRACE_HAVE_INSTINFO = 0x01,
 	TRACE_HAVE_SRCINFO  = 0x02,
 	TRACE_HAVE_MSGINFO  = 0x04,
-	TRACE_HAVE_ITCPRINT = 0x08
   };
 
   typedef enum {
@@ -224,10 +223,9 @@ private:
 class NexusMessage {
 public:
 	NexusMessage();
-	std::string messageToString(int level);
-	std::string itcprintToString();
-	const char *processPrintData();
-	void messageToText(char *dst,size_t dst_len,const char **pdst,int level);
+	void processITCPrintData();
+	void messageToText(char *dst,size_t dst_len,int level);
+	std::string messageToString(int detailLevel);
 
 	void dump();
 
@@ -288,11 +286,8 @@ public:
     	} ownership;
     };
 
-    bool processedPrintData;
-    bool haveITCPrint;
-
 private:
-    std::string itcprintstr;
+//    std::string itcprintstr;
 };
 
 class Analytics {
@@ -393,12 +388,17 @@ public:
 	TraceDqr::DQErr NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
 	TraceDqr::DQErr NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags);
 
+	void        haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES]);
+	bool        getITCPrintMsg(int core,char *dst, int dstLen);
+	bool        flushITCPrintMsg(int core,char *dst, int dstLen);
+	std::string getITCPrintStr(int core, bool &haveData);
+	std::string flushITCPrintStr(int core, bool &haveData);
+
 	const char *getSymbolByAddress(TraceDqr::ADDRESS addr);
 	const char *getNextSymbolByAddress();
 	int         Disassemble(TraceDqr::ADDRESS addr);
 	int         getArchSize();
 	int         getAddressSize();
-	void        setITCBuffering(bool itcbuffer_flag);
 	void analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
 	std::string analyticsToString(int detailLevel) { return analytics.toString(detailLevel); }
 

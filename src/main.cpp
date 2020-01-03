@@ -60,9 +60,6 @@ static void usage(char *name)
 	printf("              Path may be enclosed in quotes if it contains spaces.\n");
 	printf("-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatenated\n");
 	printf("              and displayed as a string until a terminating \\0 is found\n");
-	printf("-itcprintnobuffer:    Display ITC 0 data as a null terminated string without buffering multiple itc messages into a\n");
-	printf("              single message. Data from consecutive ITC 0's will not be concatenated. Potentially useful where the\n");
-	printf("              buffering of itc 0 print messages causes flushing issues.\n");
 	printf("-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair\n");
 	printf("-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and\n");
 	printf("              cause the address field to be jagged. Overrides value address size read from elf file.\n");
@@ -159,7 +156,6 @@ int main(int argc, char *argv[])
 	bool itcprint_flag = false;
 	int  numAddrBits = 0;
 	uint32_t addrDispFlags = 0;
-	bool itcbuffer_flag = true;
 	int srcbits = 0;
 	int analytics_detail = 0;
 
@@ -284,11 +280,6 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp("-itcprint",argv[i]) == 0) {
 			itcprint_flag = true;
-			itcbuffer_flag = true;
-		}
-		else if (strcmp("-itcprintnobuffer",argv[i]) == 0) {
-			itcprint_flag = true;
-			itcbuffer_flag = false;
 		}
 		else if (strcmp("-noitcprint",argv[i]) == 0) {
 			itcprint_flag = false;
@@ -428,8 +419,6 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	trace->setITCBuffering(itcbuffer_flag);
-
 	trace->setTraceRange(start_msg_num,stop_msg_num);
 
 	TraceDqr::DQErr ec;
@@ -457,7 +446,6 @@ int main(int argc, char *argv[])
 //
 //	should look at source code display!
 
-
 	Instruction *instInfo;
 	NexusMessage *msgInfo;
 	Source *srcInfo;
@@ -470,6 +458,7 @@ int main(int argc, char *argv[])
 	TraceDqr::ADDRESS lastAddress = 0;
 	int lastInstSize = 0;
 	bool firstPrint = true;
+	uint32_t core_mask = 0;
 
 	do {
 		ec = trace->NextInstruction(&instInfo,&msgInfo,&srcInfo);
@@ -563,9 +552,10 @@ int main(int argc, char *argv[])
 
 			if ((trace_flag || itcprint_flag) && (msgInfo != nullptr)) {
 				// got the goods! Get to it!
-				const char *itcprint = nullptr;
 
-				msgInfo->messageToText(dst,sizeof dst,&itcprint,msgLevel);
+				core_mask |= 1 << msgInfo->coreId;
+
+				msgInfo->messageToText(dst,sizeof dst,msgLevel);
 
 				if (trace_flag) {
 					if (firstPrint == false) {
@@ -583,28 +573,65 @@ int main(int argc, char *argv[])
 					firstPrint = false;
 				}
 
-				if (itcprint_flag && (itcprint != nullptr)) {
-					if (firstPrint == false) {
-						printf("\n");
+				if (itcprint_flag) {
+					std::string s;
+					bool haveStr;
+
+					s = trace->getITCPrintStr(msgInfo->coreId,haveStr);
+					while (haveStr != false) {
+						if (firstPrint == false) {
+							printf("\n");
+						}
+
+						if (srcbits > 0) {
+							printf("[%d] ",msgInfo->coreId);
+						}
+
+						std::cout << "ITC Print: " << s;
+
+						firstPrint = false;
+
+						s = trace->getITCPrintStr(msgInfo->coreId,haveStr);
 					}
-
-					if (srcbits > 0) {
-						printf("[%d] ",msgInfo->coreId);
-					}
-
-					printf("ITC Print: ");
-
-					puts(itcprint);
-
-					firstPrint = false;
 				}
 			}
 		}
 	} while (ec == TraceDqr::DQERR_OK);
 
+	if (itcprint_flag) {
+		std::string s = "";
+		bool haveStr;
+
+		for (int core = 0; core_mask != 0; core++) {
+			if (core_mask & 1) {
+				s = trace->flushITCPrintStr(core,haveStr);
+				while (haveStr != false) {
+					if (firstPrint == false) {
+						printf("\n");
+					}
+
+					if (srcbits > 0) {
+						printf("[%d] ",core);
+					}
+
+					std::cout << "ITC Print: " << s;
+
+					firstPrint = false;
+
+					s = trace->flushITCPrintStr(core,haveStr);
+				}
+			}
+			core_mask >>= 1;
+		}
+	}
+
 	if (analytics_detail > 0) {
 		trace->analyticsToText(dst,sizeof dst,analytics_detail);
-		printf("\n%s",dst);
+		if (firstPrint == false) {
+			printf("\n");
+		}
+		firstPrint = false;
+		printf("%s",dst);
 	}
 
 	delete trace;

@@ -7,6 +7,7 @@ import com.sifive.trace.NexusMessage;
 import com.sifive.trace.Source;
 import com.sifive.trace.TraceDecoder;
 import com.sifive.trace.SWIGTYPE_p_int;
+import com.sifive.trace.SWIGTYPE_p_bool;
 
 public class jdqr {
   static {
@@ -14,7 +15,7 @@ public class jdqr {
   }
 
   public static void main(String argv[]) {
-    Trace t = new Trace("trace.rtd",true,"brad_hello.elf",32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
+    Trace t = new Trace("brad_trace.rtd",true,"brad_hello.elf",32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
     if (t == null) {
       System.out.println("t is null");
       System.exit(1);
@@ -26,27 +27,15 @@ public class jdqr {
     }
 
     Instruction instInfo = new Instruction();
-//    SWIGTYPE_p_p_Instruction instInfo_p = new SWIGTYPE_p_p_Instruction();
 
     NexusMessage msgInfo = new NexusMessage();;
-//    SWIGTYPE_p_p_NexusMessage msgInfo_p = new SWIGTYPE_p_p_NexusMessage();
 
     Source srcInfo = new Source();
-//    SWIGTYPE_p_p_Source srcInfo_p = new SWIGTYPE_p_p_Source();
 
     TraceDqr.DQErr ec = TraceDqr.DQErr.DQERR_OK;
 
-//    System.out.println("instInfo.cptr =" + String.format("%08x",Instruction.getCPtr(instInfo)));
-//    System.out.println("instInfo_p.cptr = " + Long.toHexString(SWIGTYPE_p_p_Instruction.getCPtr(instInfo_p)));
-
-//    instInfo_p = new SWIGTYPE_p_p_Instruction(Instruction.getCPtr(instInfo),false);
-//    SWIGTYPE_p_p_Instruction.SWIGTYPE_p_p_Instruction(Instruction.getCPtr(instInfo));
-//    System.out.printf("instInfo_p.cptr = %08x\n",SWIGTYPE_p_p_Instruction.getCPtr(instInfo_p));
-
     SWIGTYPE_p_int flags = TraceDecoder.new_intp();
-
-//    byte b[] = new byte[128];
-
+    
     boolean func_flag = true;
     boolean file_flag = true;
     boolean dasm_flag = true;
@@ -63,6 +52,7 @@ public class jdqr {
     int msgLevel = 2;
     boolean firstPrint = true;
     String stripPath = "foo";
+    int coreMask = 0;
 
     while (ec == TraceDqr.DQErr.DQERR_OK) {
 	TraceDecoder.intp_assign(flags,0);
@@ -158,14 +148,17 @@ public class jdqr {
 
 	if ((trace_flag || itcPrint_flag) && ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_MSGINFO) != 0)) {
           String msgStr = msgInfo.messageToString(msgLevel);
+          int core = msgInfo.getCoreId();
 
+          coreMask |= 1 << core;
+          
           if (trace_flag) {
             if (!firstPrint) {
               System.out.printf("%n");
             }
 
             if (srcBits > 0) {
-              System.out.printf("[%d] ",msgInfo.getCoreId());
+              System.out.printf("[%d] ",core);
             }
 
             System.out.printf("Trace: %s",msgStr);
@@ -175,28 +168,60 @@ public class jdqr {
             firstPrint = false;
           }
 
-          if (itcPrint_flag && ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_ITCPRINT) != 0)) {
-            if (firstPrint == false) {
-              System.out.printf("%n");
-            }
+          if (itcPrint_flag) {
+			String printStr = "";
+		    SWIGTYPE_p_bool haveStr = TraceDecoder.new_boolp();
 
-            if (srcBits > 0) {
-              System.out.printf("[%d] ",msgInfo.getCoreId());
-            }
+			TraceDecoder.boolp_assign(haveStr,false);
+			
+			printStr = t.getITCPrintStr(core,haveStr);
+			while (TraceDecoder.boolp_value(haveStr) != false) {
+				if (firstPrint == false) {
+					System.out.printf("\n");
+				}
 
-	    System.out.printf("ITC Print: ");
+				if (srcBits > 0) {
+					System.out.printf("[%d] ",core);
+				}
 
-	    String itcprint = msgInfo.itcprintToString();
+				System.out.printf("ITC Print: %s",printStr);
+				firstPrint = false;
 
-	    System.out.println(itcprint);
-
-//	    System.out.println("stink");
-
-	    firstPrint = false;
+				printStr = t.getITCPrintStr(core,haveStr);
+			}
           }
         }
       }
     }
+
+	if (itcPrint_flag) {
+		String printStr = "";
+	    SWIGTYPE_p_bool haveStr = TraceDecoder.new_boolp();
+
+		TraceDecoder.boolp_assign(haveStr,false);
+		
+		for (int core = 0; coreMask != 0; core++) {
+			if ((coreMask & 1) != 0) {
+				printStr = t.flushITCPrintStr(core,haveStr);
+				while (TraceDecoder.boolp_value(haveStr) != false) {
+					if (firstPrint == false) {
+						System.out.printf("\n");
+					}
+
+					if (srcBits > 0) {
+						System.out.printf("[%d] ",core);
+					}
+
+					System.out.printf("ITC Print: %s",printStr);
+
+					firstPrint = false;
+
+					printStr = t.flushITCPrintStr(core,haveStr);
+				}
+			}
+			coreMask >>>= 1;
+		}
+	}
 
     t.analyticsToString(1);
   }

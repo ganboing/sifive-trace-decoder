@@ -59,8 +59,6 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 
   analytics.setSrcBits(srcBits);
 
-  bufferItc = true;
-
   sfp = new (std::nothrow) SliceFileParser(tf_name,binaryFlag,srcbits);
 
   assert(sfp != nullptr);
@@ -202,12 +200,6 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
   NexusMessage::targetFrequency = freq;
 
   status = TraceDqr::DQERR_OK;
-}
-
-void Trace::setITCBuffering(bool itcbuffer_flag)
-{
-	bufferItc = itcbuffer_flag;
-	itcPrint::buffering = itcbuffer_flag;
 }
 
 Trace::~Trace()
@@ -355,6 +347,39 @@ const char *Trace::getNextSymbolByAddress()
 	return symtab->getNextSymbolByAddress();
 }
 
+void Trace::haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES])
+{
+	return itcPrint::haveITCPrintData(numMsgs, havePrintData);
+}
+
+bool Trace::getITCPrintMsg(int core, char *dst, int dstLen)
+{
+	return itcPrint::getITCPrintMsg(core,dst,dstLen);
+}
+
+bool Trace::flushITCPrintMsg(int core, char *dst, int dstLen)
+{
+	return itcPrint::flushITCPrintMsg(core,dst,dstLen);
+}
+
+std::string Trace::getITCPrintStr(int core, bool &haveData)
+{
+	std::string s;
+
+	haveData = itcPrint::getITCPrintStr(core,s);
+
+	return s;
+}
+
+std::string Trace::flushITCPrintStr(int core, bool &haveData)
+{
+	std::string s = "";
+
+	haveData = itcPrint::flushITCPrintStr(core,s);
+
+	return s;
+}
+
 TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgInfo,Source *srcInfo,int *flags)
 {
 	TraceDqr::DQErr ec;
@@ -395,10 +420,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgIn
 			if (msgInfop != nullptr) {
 				*msgInfo = *msgInfop;
 				*flags |= TraceDqr::TRACE_HAVE_MSGINFO;
-
-				if (msgInfo->processPrintData() != nullptr) {
-					*flags |= TraceDqr::TRACE_HAVE_ITCPRINT;
-				}
 			}
 		}
 
@@ -748,8 +769,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				messageInfo = messageSync[currentCore]->msgs[messageSync[currentCore]->index-1];
 				messageInfo.currentAddress = currentAddress[currentCore];
 				messageInfo.time = lastTime[currentCore];
-				messageInfo.processedPrintData = false;
-				messageInfo.haveITCPrint = false;
+
+				messageInfo.processITCPrintData();
 
 				*msgInfo = &messageInfo;
 
@@ -828,8 +849,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				messageInfo = nm;
 				messageInfo.currentAddress = currentAddress[currentCore];
 				messageInfo.time = lastTime[currentCore];
-				messageInfo.processedPrintData = false;
-				messageInfo.haveITCPrint = false;
+
+				messageInfo.processITCPrintData();
 
 				*msgInfo = &messageInfo;
 			}
@@ -896,8 +917,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
-					messageInfo.processedPrintData = false;
-					messageInfo.haveITCPrint = false;
+
+					messageInfo.processITCPrintData();
 
 					*msgInfo = &messageInfo;
 				}
@@ -929,8 +950,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
-					messageInfo.processedPrintData = false;
-					messageInfo.haveITCPrint = false;
+
+					messageInfo.processITCPrintData();
 
 					*msgInfo = &messageInfo;
 				}
@@ -949,8 +970,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
-					messageInfo.processedPrintData = false;
-					messageInfo.haveITCPrint = false;
+
+					messageInfo.processITCPrintData();
 
 					*msgInfo = &messageInfo;
 				}
@@ -969,8 +990,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
-					messageInfo.processedPrintData = false;
-					messageInfo.haveITCPrint = false;
+
+					messageInfo.processITCPrintData();
 
 					*msgInfo = &messageInfo;
 				}
@@ -1006,8 +1027,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						messageInfo = nm;
 						messageInfo.time = lastTime[currentCore];
 						messageInfo.currentAddress = currentAddress[currentCore];
-						messageInfo.processedPrintData = false;
-						messageInfo.haveITCPrint = false;
+
+						messageInfo.processITCPrintData();
 
 						*msgInfo = &messageInfo;
 					}
@@ -1039,8 +1060,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
-					messageInfo.processedPrintData = false;
-					messageInfo.haveITCPrint = false;
+
+					messageInfo.processITCPrintData();
 
 					*msgInfo = &messageInfo;
 				}
@@ -1063,8 +1084,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 //					messageInfo.currentAddress = currentAddress;
 					messageInfo.currentAddress = lastFaddr[currentCore] + nm.correlation.i_cnt*2;
-					messageInfo.processedPrintData = false;
-					messageInfo.haveITCPrint = false;
+
+					messageInfo.processITCPrintData();
 
 					*msgInfo = &messageInfo;
 				}
@@ -1143,8 +1164,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
-					messageInfo.processedPrintData = false;
-					messageInfo.haveITCPrint = false;
+
+					messageInfo.processITCPrintData();
 
 					*msgInfo = &messageInfo;
 				}
