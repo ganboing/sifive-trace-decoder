@@ -3943,7 +3943,7 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 
 			return status;
 		}
-		if ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) {
+		if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && ((msg[0] & 0x3) != TraceDqr::MSEO_END)) {
 			printf("skipping: %02x\n",msg[0]);
 		}
 	} while ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL);
