@@ -63,11 +63,16 @@ public:
 
 class fileReader {
 public:
+	struct funcList {
+		funcList *next;
+		char *func;
+	};
 	struct fileList {
-		fileList *next;
-		char     *name;
-		int       lineCount;
-		char    **lines;
+		fileList     *next;
+		char         *name;
+		funcList     *funcs;
+		unsigned int  lineCount;
+		char        **lines;
 	};
 
 	fileReader(/*paths?*/);

@@ -373,19 +373,6 @@ void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 	}
 }
 
-std::string Source::sourceFileToString()
-{
-	std::string s = "";
-
-	if (sourceFile != nullptr) {
-	  for (int i = 0; sourceFile[i] != 0; i++) {
-		s += sourceFile[i];
-	  }
-	}
-
-	return s;
-}
-
 const char *Source::stripPath(const char *path)
 {
 	if (path == nullptr) {
@@ -444,13 +431,21 @@ std::string Source::sourceFileToString(std::string path)
 	return s;
 }
 
+std::string Source::sourceFileToString()
+{
+	std::string s = "";
+
+	if (sourceFile != nullptr) {
+	  for (int i = 0; sourceFile[i] != 0; i++) {
+		s += sourceFile[i];
+	  }
+	}
+
+	return s;
+}
+
 std::string Source::sourceLineToString()
 {
-//	printf("sourceFile: %08x\n",sourceFile);
-//	if (sourceFile != nullptr) {
-//		printf("source file: %s\n",sourceFile);
-//	}
-
 	std::string s = "";
 
 	if (sourceLine != nullptr) {
@@ -520,8 +515,26 @@ fileReader::fileList *fileReader::readFile(const char *file)
 	//    f.open(fn, ifsteam::binary);
 	//  }
 
+	fileList *fl = new fileList;
+
+	fl->next = files;
+	fl->funcs = nullptr;
+	files = fl;
+
+	int len = strlen(file)+1;
+	char *name = new char[len];
+	strcpy(name,file);
+
+	fl->name = name;
+
 	if (!f) {
-		return nullptr;
+		// always retrun a file list pointer, even if a file isn't found. If file not
+		// found, lines will be null
+
+		fl->lineCount = 0;
+		fl->lines = nullptr;
+
+		return fl;
 	}
 
 	// get length of file:
@@ -536,7 +549,7 @@ fileReader::fileList *fileReader::readFile(const char *file)
 
 	// read file into buffer
 
-	f.read (buffer,length);
+	f.read(buffer,length);
 
 	f.close();
 
@@ -581,29 +594,20 @@ fileReader::fileList *fileReader::readFile(const char *file)
 	}
 
 	if (l >= lc) {
+		delete [] lines;
+		delete [] buffer;
+
 		printf("Error: readFile(): Error computing line count for file\n");
+
 		return nullptr;
 	}
 
 	lines[l] = nullptr;
 
-	fileList *fl = new fileList;
-
-	fl->next = files;
-
-	int len = strlen(file)+1;
-	char *name = new char[len];
-	strcpy(name,file);
-
-	fl->name = name;
-
 	fl->lineCount = l;
 	fl->lines = lines;
 
-	files = fl;
-
 	return fl;
-
 }
 
 fileReader::fileList *fileReader::findFile(const char *file)
@@ -611,7 +615,6 @@ fileReader::fileList *fileReader::findFile(const char *file)
 	assert(file != nullptr);
 
 	// first check if file is same as last one uesed
-
 
 	if (lastFile != nullptr) {
 		if (strcmp(lastFile->name,file) == 0) {
@@ -759,6 +762,7 @@ ElfReader::ElfReader(char *elfname)
 
     bfd_error_type bfd_error = bfd_get_error();
     printf("Error: bfd_openr() returned null. Error: %d\n",bfd_error);
+    printf("Error: Can't open file %s\n",elfname);
 
     return;
   }
@@ -5106,9 +5110,9 @@ int Disassembler::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr
 
 int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, const char **functionname, unsigned int *linenumber, const char **lineptr)
 {
-	const char *file;
-	const char *function;
-	unsigned int line;
+	const char *file = nullptr;
+	const char *function = nullptr;
+	unsigned int line = 0;
 	unsigned int discrim;
 
 	// need to loop through all sections with code below and try to find one that succeeds
@@ -5134,21 +5138,49 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 		return 0;
 	}
 
-	struct fileReader::fileList *fl;
-
-	*filename = file;
-	*functionname = function;
 	*linenumber = line;
 
 	if (file == nullptr) {
 		return 0;
 	}
 
+	struct fileReader::fileList *fl;
+
 	fl = fileReader->findFile(file);
-	if (fl == nullptr) {
-		*lineptr = nullptr;
+	assert(fl != nullptr);
+
+	*filename = fl->name;
+
+	if (function != nullptr) {
+		// find the function name in fncList
+
+		struct fileReader::funcList *funcLst;
+
+		for (funcLst = fl->funcs; (funcLst != nullptr) && (strcmp(funcLst->func,function) != 0); funcLst = funcLst->next) {
+			// empty
+		}
+
+		if (funcLst == nullptr) {
+			// add function to the list
+
+			int len = strlen(function)+1;
+			char *fname = new char[len];
+			strcpy(fname,function);
+
+			funcLst = new fileReader::funcList;
+			funcLst->func = fname;
+			funcLst->next = fl->funcs;
+			fl->funcs = funcLst;
+		}
+
+		// at this point fl->funcs should point to this function (if it was just added or not)
+
+		*functionname = fl->funcs->func;
 	}
-	else {
+
+	// line numbers start at 1
+
+	if ((line >= 1) && (line <= fl->lineCount)) {
 		*lineptr = fl->lines[line-1];
 	}
 
