@@ -165,6 +165,11 @@ public:
 
 // class Instruction: work with an instruction
 
+#ifdef SWIG
+	%ignore Instruction::addressToText(char *dst,size_t len,int labelLevel);
+	%ignore Instruction::instructionToText(char *dst,size_t len,int labelLevel);
+#endif // SWIG
+
 class Instruction {
 public:
 	void addressToText(char *dst,size_t len,int labelLevel);
@@ -219,6 +224,10 @@ private:
 };
 
 // class NexusMessage: class to hold Nexus messages and convert them to text
+
+#ifdef SWIG
+	%ignore NexusMessage::messageToText(char *dst,size_t dst_len,int level);
+#endif // SWIG
 
 class NexusMessage {
 public:
@@ -285,10 +294,11 @@ public:
     		uint32_t process;
     	} ownership;
     };
-
-private:
-//    std::string itcprintstr;
 };
+
+#ifdef SWIG
+	%ignore Analytics::toText(char *dst,size_t dst_len,int level);
+#endif // SWIG
 
 class Analytics {
 public:
@@ -370,6 +380,13 @@ private:
 };
 
 // class Trace: high level class that performs the raw trace data to dissasemble and decorated instruction trace
+
+#ifdef SWIG
+	%ignore Trace::NextInstruction(Instruction **instInfo,NexusMessage **msgInfo,Source **srcInfo);
+	%ignore Trace::getITCPrintMsg(int core,char *dst,int dstLen);
+	%ignore Trace::flushITCPrintMsg(int core,char *dst,int dstLen);
+	%ignore Trace::analyticsToText(char *dst,int dst_len,int detailLevel);
+#endif // SWIG
 
 class Trace {
 public:
