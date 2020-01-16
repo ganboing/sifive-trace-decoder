@@ -130,23 +130,27 @@ private:
 	Symtab     *symtab;
 };
 
-class itcPrint {
-private:
-	static bool init();
+class ITCPrint {
 public:
-	static void print(uint8_t core, uint32_t address, uint32_t data);
-	static void haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES]);
-	static bool getITCPrintMsg(uint8_t core, char *dst, int dstLen);
-	static bool flushITCPrintMsg(uint8_t core, char *dst, int dstLen);
-	static bool getITCPrintStr(uint8_t core, std::string &s);
-	static bool flushITCPrintStr(uint8_t core, std::string &s);
-	static int  roomInITCPrintQ(int core);
+	ITCPrint(int numCores,int buffSize,int channel);
+	~ITCPrint();
+	void print(uint8_t core, uint32_t address, uint32_t data);
+	void haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES]);
+	bool getITCPrintMsg(uint8_t core, char *dst, int dstLen);
+	bool flushITCPrintMsg(uint8_t core, char *dst, int dstLen);
+	bool getITCPrintStr(uint8_t core, std::string &s);
+	bool flushITCPrintStr(uint8_t core, std::string &s);
 
-	static bool inited;
-	static char pbuff[DQR_MAXCORES][4096];
-	static int pbi[DQR_MAXCORES];
-	static int pbo[DQR_MAXCORES];
-	static int numMsgs[DQR_MAXCORES];
+private:
+	int  roomInITCPrintQ(uint8_t core);
+
+	int numCores;
+	int buffSize;
+	int printChannel;
+	char **pbuff;
+	int *pbi;
+	int *pbo;
+	int *numMsgs;
 };
 
 #ifdef foo

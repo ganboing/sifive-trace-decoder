@@ -421,6 +421,8 @@ int main(int argc, char *argv[])
 
 	trace->setTraceRange(start_msg_num,stop_msg_num);
 
+	trace->setITCPrintOptions(1 << srcbits,4096,0);
+
 	TraceDqr::DQErr ec;
 
 	// main loop

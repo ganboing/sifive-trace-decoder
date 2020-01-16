@@ -920,44 +920,95 @@ Symtab *ElfReader::getSymtab()
 	return symtab;
 }
 
-bool itcPrint::inited = itcPrint::init();
-
-char itcPrint::pbuff[DQR_MAXCORES][4096];
-int  itcPrint::pbi[DQR_MAXCORES];
-int  itcPrint::numMsgs[DQR_MAXCORES];
-int  itcPrint::pbo[DQR_MAXCORES];
-
-bool itcPrint::init()
+ITCPrint::ITCPrint(int numCores, int buffSize,int channel)
 {
-	for (int i = 0; i < DQR_MAXCORES; i++) {
-		pbuff[i][0] = 0;
-		pbi[i] = 0;
-		pbo[i] = 0;
+	assert((numCores > 0) && (buffSize > 0));
+
+	this->numCores = numCores;
+	this->buffSize = buffSize;
+	this->printChannel = channel;
+
+	pbuff = new char*[numCores];
+
+	for (int i = 0; i < numCores; i++) {
+		pbuff[i] = new char[buffSize];
+	}
+
+	numMsgs = new int[numCores];
+
+	for (int i=0; i< numCores; i++) {
 		numMsgs[i] = 0;
 	}
 
-	return 1;
+	pbi = new int[numCores];
+
+	for (int i=0; i< numCores; i++) {
+		pbi[i] = 0;
+	}
+
+	pbo = new int[numCores];
+
+	for (int i=0; i< numCores; i++) {
+		pbo[i] = 0;
+	}
 }
 
-int itcPrint::roomInITCPrintQ(int core)
+ITCPrint::~ITCPrint()
 {
+	if (pbuff != nullptr) {
+		for (int i = 0; i < numCores; i++) {
+			if (pbuff[i] != nullptr) {
+				delete [] pbuff[i];
+				pbuff[i] = nullptr;
+			}
+		}
+
+		delete [] pbuff;
+		pbuff = nullptr;
+	}
+
+	if (numMsgs != nullptr) {
+		delete [] numMsgs;
+		numMsgs = nullptr;
+	}
+
+	if (pbi != nullptr) {
+		delete [] pbi;
+		pbi = nullptr;
+	}
+
+	if (pbo != nullptr) {
+		delete [] pbo;
+		pbo = nullptr;
+	}
+}
+
+int ITCPrint::roomInITCPrintQ(uint8_t core)
+{
+	if (core >= numCores) {
+		return 0;
+	}
+
 	if (pbi[core] > pbo[core]) {
-		return sizeof pbuff[core] - pbi[core] + pbo[core] - 1;
+		return buffSize - pbi[core] + pbo[core] - 1;
 	}
 
 	if (pbi[core] < pbo[core]) {
 		return pbo[core] - pbi[core] - 1;
 	}
 
-	return sizeof pbuff[core]-1;
+	return buffSize-1;
 }
 
-void itcPrint::print(uint8_t core, uint32_t addr, uint32_t data)
+void ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 {
-	assert((core >= 0) && (core <= DQR_MAXCORES));
+	if (core >= numCores) {
+		return;
+	}
 
-	if (addr >= 4) {
-		// not an itc 0 print
+	if ((addr < (uint32_t)printChannel*4) || (addr >= (((uint32_t)printChannel+1)*4))) {
+		// not writing to the itcPrint channel
+
 		return;
 	}
 
@@ -968,7 +1019,7 @@ void itcPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 		if (room >= 2) {
 			pbuff[core][pbi[core]] = p[i];
 			pbi[core] += 1;
-			if (pbi[core] >= (int)(sizeof pbuff[core])) {
+			if (pbi[core] >= buffSize) {
 				pbi[core] = 0;
 			}
 			room -= 1;
@@ -981,7 +1032,7 @@ void itcPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 			case '\r':
 				pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
 				pbi[core] += 1;
-				if (pbi[core] >= (int)(sizeof pbuff[core])) {
+				if (pbi[core] >= buffSize) {
 					pbi[core] = 0;
 				}
 				room -= 1;
@@ -996,26 +1047,28 @@ void itcPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 	pbuff[core][pbi[core]] = 0; // make sure always null terminated
 }
 
-void itcPrint::haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES])
+void ITCPrint::haveITCPrintData(int numMsgs[], bool havePrintData[])
 {
 	if (numMsgs != nullptr) {
-		for (int i = 0; i < DQR_MAXCORES; i++) {
-			numMsgs[i] = itcPrint::numMsgs[i];
+		for (int i = 0; i < numCores; i++) {
+			numMsgs[i] = this->numMsgs[i];
 		}
 	}
 
 	if (havePrintData != nullptr) {
-		for (int i = 0; i < DQR_MAXCORES; i++) {
+		for (int i = 0; i < numCores; i++) {
 			havePrintData[i] = pbi[i] != pbo[i];
 		}
 	}
 }
 
-bool itcPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen)
+bool ITCPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen)
 {
 	bool rc = false;
 
-	assert(core < DQR_MAXCORES);
+	if (core >= numCores) {
+		return false;
+	}
 
 	assert((dst != nullptr) && (dstLen > 0));
 
@@ -1028,7 +1081,7 @@ bool itcPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen)
 			dstLen -= 1;
 
 			pbo[core] += 1;
-			if (pbo[core] >= (int)(sizeof pbuff[core])) {
+			if (pbo[core] >= buffSize) {
 				pbo[core] = 0;
 			}
 		}
@@ -1038,7 +1091,7 @@ bool itcPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen)
 		// skip past null terminted end of message
 
 		pbo[core] += 1;
-		if (pbo[core] >= (int)(sizeof pbuff[core])) {
+		if (pbo[core] >= buffSize) {
 			pbo[core] = 0;
 		}
 	}
@@ -1046,9 +1099,11 @@ bool itcPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen)
 	return rc;
 }
 
-bool itcPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen)
+bool ITCPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen)
 {
-	assert(core < DQR_MAXCORES);
+	if (core >= numCores) {
+		return false;
+	}
 
 	assert((dst != nullptr) && (dstLen > 0));
 
@@ -1062,7 +1117,7 @@ bool itcPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen)
 			dstLen -= 1;
 
 			pbo[core] += 1;
-			if (pbo[core] >= (int)(sizeof pbuff[core])) {
+			if (pbo[core] >= buffSize) {
 				pbo[core] = 0;
 			}
 		}
@@ -1072,9 +1127,11 @@ bool itcPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen)
 	return false;
 }
 
-bool itcPrint::getITCPrintStr(uint8_t core, std::string &s)
+bool ITCPrint::getITCPrintStr(uint8_t core, std::string &s)
 {
-	assert(core < DQR_MAXCORES);
+	if (core >= numCores) {
+		return false;
+	}
 
 	bool rc = false;
 
@@ -1086,13 +1143,13 @@ bool itcPrint::getITCPrintStr(uint8_t core, std::string &s)
 			s += pbuff[core][pbo[core]];
 
 			pbo[core] += 1;
-			if (pbo[core] >= (int)(sizeof pbuff[core])) {
+			if (pbo[core] >= buffSize) {
 				pbo[core] = 0;
 			}
 		}
 
 		pbo[core] += 1;
-		if (pbo[core] >= (int)(sizeof pbuff[core])) {
+		if (pbo[core] >= buffSize) {
 			pbo[core] = 0;
 		}
 	}
@@ -1100,9 +1157,11 @@ bool itcPrint::getITCPrintStr(uint8_t core, std::string &s)
 	return rc;
 }
 
-bool itcPrint::flushITCPrintStr(uint8_t core, std::string &s)
+bool ITCPrint::flushITCPrintStr(uint8_t core, std::string &s)
 {
-	assert(core < DQR_MAXCORES);
+	if (core >= numCores) {
+		return false;
+	}
 
 	if (numMsgs[core] > 0) {
 		return getITCPrintStr(core,s);
@@ -1114,7 +1173,7 @@ bool itcPrint::flushITCPrintStr(uint8_t core, std::string &s)
 			s += pbuff[core][pbo[core]];
 
 			pbo[core] += 1;
-			if (pbo[core] >= (int)(sizeof pbuff[core])) {
+			if (pbo[core] >= buffSize) {
 				pbo[core] = 0;
 			}
 		}
@@ -2340,20 +2399,22 @@ NexusMessage::NexusMessage()
 	time           = 0;
 }
 
-void NexusMessage::processITCPrintData()
+void NexusMessage::processITCPrintData(ITCPrint *itcPrint)
 {
 	// need to only do this once per message! Set a flag so we know we have done it.
 	// if flag set, return string (or null if none)
 
-	switch (tcode) {
-	case TraceDqr::TCODE_DATA_ACQUISITION:
-		itcPrint::print(coreId,dataAcquisition.idTag,dataAcquisition.data);
-		break;
-	case TraceDqr::TCODE_AUXACCESS_WRITE:
-		itcPrint::print(coreId,auxAccessWrite.addr,auxAccessWrite.data);
-		break;
-	default:
-		break;
+	if (itcPrint != nullptr) {
+		switch (tcode) {
+		case TraceDqr::TCODE_DATA_ACQUISITION:
+			itcPrint->print(coreId,dataAcquisition.idTag,dataAcquisition.data);
+			break;
+		case TraceDqr::TCODE_AUXACCESS_WRITE:
+			itcPrint->print(coreId,auxAccessWrite.addr,auxAccessWrite.data);
+			break;
+		default:
+			break;
+		}
 	}
 }
 

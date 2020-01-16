@@ -55,6 +55,8 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 
   assert(tf_name != nullptr);
 
+  itcPrint = nullptr;
+
   srcbits = srcBits;
 
   analytics.setSrcBits(srcBits);
@@ -213,6 +215,11 @@ Trace::~Trace()
 		delete elfReader;
 		elfReader = nullptr;
 	}
+
+	if (itcPrint  != nullptr) {
+		delete itcPrint;
+		itcPrint = nullptr;
+	}
 }
 
 int Trace::getArchSize()
@@ -347,26 +354,57 @@ const char *Trace::getNextSymbolByAddress()
 	return symtab->getNextSymbolByAddress();
 }
 
-void Trace::haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES])
+TraceDqr::DQErr Trace::setITCPrintOptions(int numCores,int buffSize,int channel)
 {
-	return itcPrint::haveITCPrintData(numMsgs, havePrintData);
+	if (itcPrint != nullptr) {
+		delete itcPrint;
+		itcPrint = nullptr;
+	}
+
+	itcPrint = new ITCPrint(numCores,buffSize,channel);
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Trace::haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES])
+{
+	if (itcPrint == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	itcPrint->haveITCPrintData(numMsgs, havePrintData);
+
+	return TraceDqr::DQERR_OK;
 }
 
 bool Trace::getITCPrintMsg(int core, char *dst, int dstLen)
 {
-	return itcPrint::getITCPrintMsg(core,dst,dstLen);
+	if (itcPrint == nullptr) {
+		return false;
+	}
+
+	return itcPrint->getITCPrintMsg(core,dst,dstLen);
 }
 
 bool Trace::flushITCPrintMsg(int core, char *dst, int dstLen)
 {
-	return itcPrint::flushITCPrintMsg(core,dst,dstLen);
+	if (itcPrint == nullptr) {
+		return false;
+	}
+
+	return itcPrint->flushITCPrintMsg(core,dst,dstLen);
 }
 
 std::string Trace::getITCPrintStr(int core, bool &haveData)
 {
-	std::string s;
+	std::string s = "";
 
-	haveData = itcPrint::getITCPrintStr(core,s);
+	if (itcPrint == nullptr) {
+		haveData = false;
+	}
+	else {
+		haveData = itcPrint->getITCPrintStr(core,s);
+	}
 
 	return s;
 }
@@ -375,7 +413,12 @@ std::string Trace::flushITCPrintStr(int core, bool &haveData)
 {
 	std::string s = "";
 
-	haveData = itcPrint::flushITCPrintStr(core,s);
+	if (itcPrint == nullptr) {
+		haveData = false;
+	}
+	else {
+		haveData = itcPrint->flushITCPrintStr(core,s);
+	}
 
 	return s;
 }
@@ -770,7 +813,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				messageInfo.currentAddress = currentAddress[currentCore];
 				messageInfo.time = lastTime[currentCore];
 
-				messageInfo.processITCPrintData();
+				messageInfo.processITCPrintData(itcPrint);
 
 				*msgInfo = &messageInfo;
 
@@ -850,7 +893,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				messageInfo.currentAddress = currentAddress[currentCore];
 				messageInfo.time = lastTime[currentCore];
 
-				messageInfo.processITCPrintData();
+				messageInfo.processITCPrintData(itcPrint);
 
 				*msgInfo = &messageInfo;
 			}
@@ -918,7 +961,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData();
+					messageInfo.processITCPrintData(itcPrint);
 
 					*msgInfo = &messageInfo;
 				}
@@ -951,7 +994,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData();
+					messageInfo.processITCPrintData(itcPrint);
 
 					*msgInfo = &messageInfo;
 				}
@@ -971,7 +1014,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData();
+					messageInfo.processITCPrintData(itcPrint);
 
 					*msgInfo = &messageInfo;
 				}
@@ -991,7 +1034,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData();
+					messageInfo.processITCPrintData(itcPrint);
 
 					*msgInfo = &messageInfo;
 				}
@@ -1028,7 +1071,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						messageInfo.time = lastTime[currentCore];
 						messageInfo.currentAddress = currentAddress[currentCore];
 
-						messageInfo.processITCPrintData();
+						messageInfo.processITCPrintData(itcPrint);
 
 						*msgInfo = &messageInfo;
 					}
@@ -1061,7 +1104,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData();
+					messageInfo.processITCPrintData(itcPrint);
 
 					*msgInfo = &messageInfo;
 				}
@@ -1085,7 +1128,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //					messageInfo.currentAddress = currentAddress;
 					messageInfo.currentAddress = lastFaddr[currentCore] + nm.correlation.i_cnt*2;
 
-					messageInfo.processITCPrintData();
+					messageInfo.processITCPrintData(itcPrint);
 
 					*msgInfo = &messageInfo;
 				}
@@ -1165,7 +1208,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData();
+					messageInfo.processITCPrintData(itcPrint);
 
 					*msgInfo = &messageInfo;
 				}

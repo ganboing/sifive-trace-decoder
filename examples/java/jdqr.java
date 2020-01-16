@@ -26,6 +26,8 @@ public class jdqr {
       System.exit(1);
     }
 
+    t.setITCPrintOptions(1 << 0,4096,0);
+
     Instruction instInfo = new Instruction();
 
     NexusMessage msgInfo = new NexusMessage();;

@@ -232,7 +232,7 @@ private:
 class NexusMessage {
 public:
 	NexusMessage();
-	void processITCPrintData();
+	void processITCPrintData(class ITCPrint *itcPrint);
 	void messageToText(char *dst,size_t dst_len,int level);
 	std::string messageToString(int detailLevel);
 
@@ -390,9 +390,10 @@ private:
 
 class Trace {
 public:
-	           Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
-	          ~Trace();
+    Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
+    ~Trace();
 	TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
+	TraceDqr::DQErr setITCPrintOptions(int numCores,int buffSize,int channel);
 
 	enum TraceFlags {
 		TF_INSTRUCTION = 0x01,
@@ -405,7 +406,7 @@ public:
 	TraceDqr::DQErr NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
 	TraceDqr::DQErr NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags);
 
-	void        haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES]);
+	TraceDqr::DQErr haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES]);
 	bool        getITCPrintMsg(int core,char *dst, int dstLen);
 	bool        flushITCPrintMsg(int core,char *dst, int dstLen);
 	std::string getITCPrintStr(int core, bool &haveData);
@@ -437,6 +438,7 @@ private:
 	class ElfReader       *elfReader;
 	class Symtab          *symtab;
 	class Disassembler    *disassembler;
+	class ITCPrint        *itcPrint;
 	TraceDqr::ADDRESS     currentAddress[DQR_MAXCORES];
 	TraceDqr::ADDRESS	 lastFaddr[DQR_MAXCORES];
 	TraceDqr::TIMESTAMP   lastTime[DQR_MAXCORES];
