@@ -33,7 +33,7 @@ $(SWIGLIB): $(SWIGLIBOBJS)
 $(SWIGOBJ): $(SWIGCPP)
 	@echo 'Building file $@'
 	@echo 'Invoking: GCC C++ Compiler'
-	$(CROSSPREFIX)g++ $(CFLAGS) $(SWIGCFLAGS) -c $< -I"..\include" $(JNIINCLUDEPATHS)
+	$(CROSSPREFIX)g++ $(CFLAGS) $(SWIGCFLAGS) -c $< -I"../include" $(JNIINCLUDEPATHS)
 	@echo 'Finished building: $@'
 	@echo ' '
 

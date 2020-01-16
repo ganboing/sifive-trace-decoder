@@ -38,11 +38,11 @@ else
     ifeq ($(UNAME_S),Linux)
         SWIG = $(shell which swig 2> /dev/null)
         ifeq ($(SWIG),)
-	    $(info swig not found; skipping swig and dqr shared library build)
+            $(info swig not found; skipping swig and dqr shared library build)
             SWIGLIB := 
         else
             ifndef JNIINCLUDE
-	        $(info JNIINCLUDE not defined; skipping swig and dqr shared library build)
+                $(info JNIINCLUDE not defined; skipping swig and dqr shared library build)
                 SWIGLIB := 
             else
                 SWIGLIB := libdqr.so
@@ -50,13 +50,13 @@ else
         endif
         REDHAT_REL := $(wildcard /etc/redhat-release)
         ifneq ($(REDHAT_REL),)
-            CFLAGS += -D LINUX -std=c++11
-            SWIGCFLAGS += -D LINUX -std=c++11
+            CFLAGS += -D LINUX -std=c++11 -fPIC -DPIC
+            SWIGCFLAGS += -D LINUX -std=c++11 -fPIC -DPIC
             LIBPATH = ../lib/linux
             LIBS := -lbfd -lopcodes -liberty -lz -ldl
             LNFLAGS =
             EXECUTABLE := dqr
-            JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)\linux"
+            JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)/linux"
         else
             ifeq ($(CROSSPREFIX),x86_64-w64-mingw32-)
                 CFLAGS += -D WINDOWS -std=c++11
@@ -66,20 +66,20 @@ else
                 LIBS := -lbfd -lopcodes -lintl -liberty -lz
                 EXECUTABLE := dqr.exe
             else
-                CFLAGS += -D LINUX -std=c++11
-                SWIGCFLAGS += -D LINUX -std=c++11
+                CFLAGS += -D LINUX -std=c++11 -fPIC -DPIC
+                SWIGCFLAGS += -D LINUX -std=c++11 -fPIC -DPIC
                 LIBPATH = ../lib/linux
                 LIBS := -lbfd -lopcodes -liberty -lz -ldl
                 LNFLAGS = -static
                 EXECUTABLE := dqr
             endif
-            JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)\linux"
+            JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)/linux"
         endif
     endif
     ifeq ($(UNAME_S),Darwin)
         SWIG = $(shell which swig 2> /dev/null)
         ifeq ($(SWIG),)
-	    $(info swig not found; skipping swig and dqr shared library build)
+            $(info swig not found; skipping swig and dqr shared library build)
             SWIGLIB := 
         else
            ifndef JNIINCLUDE
@@ -95,9 +95,8 @@ else
         LIBS := -lbfd -lopcodes -liberty -lz -lintl -liconv
         LNFLAGS =
         EXECUTABLE := dqr
-        JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)\darwin"
+        JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)/darwin"
     endif
     UNAME_P := $(shell uname -p)
 endif
-
 
