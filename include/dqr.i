@@ -1,4 +1,9 @@
 %module TraceDecoder
+
+%begin %{
+#include "config.h"
+%}
+
 //%include "typemaps.i"
 //%include "various.i"
 %include "cpointer.i"
