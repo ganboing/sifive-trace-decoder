@@ -394,7 +394,7 @@ public:
     Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
     ~Trace();
 	TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
-	TraceDqr::DQErr setITCPrintOptions(int numCores,int buffSize,int channel);
+	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
 
 	enum TraceFlags {
 		TF_INSTRUCTION = 0x01,

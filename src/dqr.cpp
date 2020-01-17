@@ -1009,7 +1009,7 @@ void ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 	}
 
 	if ((addr < (uint32_t)printChannel*4) || (addr >= (((uint32_t)printChannel+1)*4))) {
-		// not writing to the itcPrint channel
+		// not writing to this itc channel
 
 		return;
 	}

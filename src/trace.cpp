@@ -354,14 +354,14 @@ const char *Trace::getNextSymbolByAddress()
 	return symtab->getNextSymbolByAddress();
 }
 
-TraceDqr::DQErr Trace::setITCPrintOptions(int numCores,int buffSize,int channel)
+TraceDqr::DQErr Trace::setITCPrintOptions(int buffSize,int channel)
 {
 	if (itcPrint != nullptr) {
 		delete itcPrint;
 		itcPrint = nullptr;
 	}
 
-	itcPrint = new ITCPrint(numCores,buffSize,channel);
+	itcPrint = new ITCPrint(1 << srcbits,buffSize,channel);
 
 	return TraceDqr::DQERR_OK;
 }

@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "itc_utils.h"
+
 //#define	baseAddress	0x20007000
 #define	baseAddress	0x10000000
 
@@ -53,25 +55,25 @@
 #define	atbSink			((uint32_t*)(baseAddress+Offset_atbSink))
 #define pibSink			((uint32_t*)(baseAddress+Offset_pibSink))
 
-static int enable_itc(int reg)
+static int enable_itc(int channel)
 {
-	if ((reg < 0) || (reg > 31)) {
+	if ((channel < 0) || (channel > 31)) {
 		return 1;
 	}
 
-	*itcTraceEnable |= (1 << reg);
+	*itcTraceEnable |= (1 << channel);
 
 	return 0;
 }
 
-static int init_itc(int reg)
+static int init_itc(int channel)
 {
-	static int inited = 0;
+	static uint32_t inited_mask = 0;
 
-	if (inited == 0) {
-		int rc = enable_itc(reg);
+	if (inited_mask & (1 << channel) == 0) {
+		int rc = enable_itc(channel);
 		if (rc == 0) {
-			inited = 1;
+			inited_mask |= (1 << channel);
 		}
 
 		return rc;
@@ -80,30 +82,30 @@ static int init_itc(int reg)
 	return 0;
 }
 
-static inline void write_itc(uint32_t data)
+static inline void write_itc(int channel,uint32_t data)
 {
-	itcStimulus[0] = data;
+	itcStimulus[channel] = data;
 }
 
-static inline void write_itc_uint8(uint8_t data)
+static inline void write_itc_uint8(int channel,uint8_t data)
 {
-	uint8_t *itc_uint8 = (uint8_t*)&itcStimulus[0];
+	uint8_t *itc_uint8 = (uint8_t*)&itcStimulus[channel];
 	itc_uint8[3] = data;
 }
 
-static inline void write_itc_uint16(uint16_t data)
+static inline void write_itc_uint16(int channel,uint16_t data)
 {
-	uint16_t *itc_uint16 = (uint16_t*)&itcStimulus[0];
+	uint16_t *itc_uint16 = (uint16_t*)&itcStimulus[channel];
 	itc_uint16[1] = data;
 }
 
-// itc_put(): like puts, but no \n at end of text
+// itc_fputs(): like itc_puts(), but no \n at end of text. Also takes the itc channel to write to
 
-static int itc_put(const char *f)
+int itc_fputs(int channel,const char *f)
 {
 	int rc;
 
-	rc = init_itc(0);
+	rc = init_itc(channel);
 	if (rc != 0) {
 		return 0;
 	}
@@ -116,31 +118,31 @@ static int itc_put(const char *f)
 	uint16_t a;
 
     for (i = 0; i < words; i += 4) {
-		write_itc(*(uint32_t*)(f+i));
+		write_itc(channel,*(uint32_t*)(f+i));
 	}
 
     switch (bytes) {
     case 0:
     	break;
     case 1:
-    	write_itc_uint8(*(uint8_t*)(f+i));
+    	write_itc_uint8(channel,*(uint8_t*)(f+i));
     	break;
     case 2:
-    	write_itc_uint16(*(uint16_t*)(f+i));
+    	write_itc_uint16(channel,*(uint16_t*)(f+i));
     	break;
     case 3:
     	a = *(uint16_t*)(f+i);
-    	write_itc_uint16(a);
+    	write_itc_uint16(channel,a);
 
     	a = ((uint16_t)(*(uint8_t*)(f+i+2)));
-    	write_itc_uint8((uint8_t)a);
+    	write_itc_uint8(channel,(uint8_t)a);
     	break;
     }
 
 	return rc;
 }
 
-// itc_puts(): like puts, includes \n at end of text
+// itc_puts(): like C puts(), includes \n at end of text
 
 int itc_puts(const char *f)
 {
@@ -159,7 +161,7 @@ int itc_puts(const char *f)
 	uint16_t a;
 
     for (i = 0; i < words; i += 4) {
-		write_itc(*(uint32_t*)(f+i));
+		write_itc(0,*(uint32_t*)(f+i));
 	}
 
     // we actually have one more byte to send than bytes, because we need to append
@@ -167,26 +169,26 @@ int itc_puts(const char *f)
 
     switch (bytes) {
     case 0:
-    	write_itc_uint8('\n');
+    	write_itc_uint8(0,'\n');
     	break;
     case 1:
     	a = *(uint8_t*)(f+i);
-    	write_itc_uint16(('\n' << 8) | a);
+    	write_itc_uint16(0,('\n' << 8) | a);
     	break;
     case 2:
-    	write_itc_uint16(*(uint16_t*)(f+i));
-    	write_itc_uint8('\n');
+    	write_itc_uint16(0,*(uint16_t*)(f+i));
+    	write_itc_uint8(0,'\n');
     	break;
     case 3:
     	a = *(uint16_t*)(f+i);
-    	write_itc_uint16(a);
+    	write_itc_uint16(0,a);
 
     	a = ((uint16_t)(*(uint8_t*)(f+i+2)));
-    	write_itc_uint16(('\n' << 8) | a);
+    	write_itc_uint16(0,('\n' << 8) | a);
     	break;
     }
 
-	return rc;
+	return rc+1;
 }
 
 int itc_printf(const char *f, ... )
@@ -199,7 +201,20 @@ int itc_printf(const char *f, ... )
 	rc = vsnprintf(buffer,sizeof buffer, f, args);
 	va_end(args);
 
-	itc_put(buffer);
+	itc_puts(buffer);
 	return rc;
 }
 
+int itc_fprintf(int channel,const char *f, ... )
+{
+	char buffer[256];
+	va_list args;
+	int rc;
+
+	va_start(args, f);
+	rc = vsnprintf(buffer,sizeof buffer, f, args);
+	va_end(args);
+
+	itc_fputs(channel,buffer);
+	return rc;
+}

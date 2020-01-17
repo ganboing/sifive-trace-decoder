@@ -60,6 +60,8 @@ static void usage(char *name)
 	printf("              Path may be enclosed in quotes if it contains spaces.\n");
 	printf("-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatenated\n");
 	printf("              and displayed as a string until a terminating \\0 is found\n");
+	printf("-itcprint=n:  Disaply ITC channel n data as a null terminated string. Data for consectutie ITC channel n's will be\n");
+	printf("              concatinated and display as a string until a terminating \\n or \\0 is found\n");
 	printf("-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair\n");
 	printf("-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and\n");
 	printf("              cause the address field to be jagged. Overrides value address size read from elf file.\n");
@@ -153,11 +155,12 @@ int main(int argc, char *argv[])
 	bool func_flag = false;
 	uint32_t freq = 0;
 	char *strip_flag = nullptr;
-	bool itcprint_flag = false;
 	int  numAddrBits = 0;
 	uint32_t addrDispFlags = 0;
 	int srcbits = 0;
 	int analytics_detail = 0;
+	bool itcprint_flag = false;
+	int itcprint_channel = 0;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -280,6 +283,24 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp("-itcprint",argv[i]) == 0) {
 			itcprint_flag = true;
+			itcprint_channel = 0;
+		}
+		else if (strncmp("-itcprint=",argv[i],strlen("-itcprint=")) == 0) {
+			int l;
+			char *endptr;
+
+			l = strtol(&argv[i][strlen("-itcprint=")], &endptr, 0);
+
+			if (endptr[0] == 0 ) {
+				itcprint_flag = true;
+				itcprint_channel = l;
+			}
+			else {
+				itcprint_flag = false;
+				printf("Error: option -itcprint= requires a valid number 0 - 31\n");
+				usage(argv[0]);
+				return 1;
+			}
 		}
 		else if (strcmp("-noitcprint",argv[i]) == 0) {
 			itcprint_flag = false;
@@ -421,7 +442,9 @@ int main(int argc, char *argv[])
 
 	trace->setTraceRange(start_msg_num,stop_msg_num);
 
-	trace->setITCPrintOptions(1 << srcbits,4096,0);
+	if (itcprint_flag) {
+		trace->setITCPrintOptions(4096,itcprint_channel);
+	}
 
 	TraceDqr::DQErr ec;
 
