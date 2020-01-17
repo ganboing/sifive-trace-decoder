@@ -2398,7 +2398,7 @@ NexusMessage::NexusMessage()
 	haveTimestamp  = false;
 	timestamp      = 0;
 	currentAddress = 0;
-	time           = 0;
+	time = 0;
 }
 
 void NexusMessage::processITCPrintData(ITCPrint *itcPrint)
@@ -2452,7 +2452,7 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 
 	if (haveTimestamp) {
 		if (NexusMessage::targetFrequency != 0) {
-			n = snprintf(dst,dst_len,"Msg # %d, time: %0.8f, NxtAddr: %08llx, TCode: ",msgNum,(1.0*time)/NexusMessage::targetFrequency,currentAddress);
+			n = snprintf(dst,dst_len,"Msg # %d, time: %0.8f, NxtAddr: %08llx, TCode: ",msgNum,((double)time)/NexusMessage::targetFrequency,currentAddress);
 		}
 		else {
 			n = snprintf(dst,dst_len,"Msg # %d, Tics: %lld, NxtAddr: %08llx, TCode: ",msgNum,time,currentAddress);
@@ -2776,6 +2776,19 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 		snprintf(dst+n,dst_len-n,"BAD TCODE (%d)",tcode);
 		break;
 	}
+}
+
+double NexusMessage::seconds()
+{
+	if (haveTimestamp == false) {
+		return 0.0;
+	}
+
+	if (targetFrequency != 0) {
+		return ((double)time) / targetFrequency;
+	}
+
+	return (double)time;
 }
 
 void NexusMessage::dump()
