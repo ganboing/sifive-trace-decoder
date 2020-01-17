@@ -480,6 +480,8 @@ fileReader::fileList *fileReader::readFile(const char *file)
 {
 	assert(file != nullptr);
 
+	const char *original_file_name = file;
+
 	std::ifstream  f(file, std::ifstream::binary);
 
 	if (!f) {
@@ -496,7 +498,7 @@ fileReader::fileList *fileReader::readFile(const char *file)
 		}
 
 		if (l != -1) {
-			file = &file[l];
+			file = &file[l+1];
 			f.open(file, std::ifstream::binary);
 		}
 	}
@@ -521,14 +523,14 @@ fileReader::fileList *fileReader::readFile(const char *file)
 	fl->funcs = nullptr;
 	files = fl;
 
-	int len = strlen(file)+1;
+	int len = strlen(original_file_name)+1;
 	char *name = new char[len];
-	strcpy(name,file);
+	strcpy(name,original_file_name);
 
 	fl->name = name;
 
 	if (!f) {
-		// always retrun a file list pointer, even if a file isn't found. If file not
+		// always return a file list pointer, even if a file isn't found. If file not
 		// found, lines will be null
 
 		fl->lineCount = 0;
