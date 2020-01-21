@@ -4226,7 +4226,9 @@ TraceDqr::DQErr SliceFileParser::readAscMsg()
 
 TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics)	// generator to read trace messages one at a time
 {
-	assert(status == TraceDqr::DQERR_OK);
+	if (status != TraceDqr::DQERR_OK) {
+		return status;
+	}
 
 	TraceDqr::DQErr rc;
 	uint64_t   val;
