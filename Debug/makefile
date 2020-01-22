@@ -55,7 +55,11 @@ install:
 ifndef FS_DEV_TRACE_PLUGIN_FOLDER
 	$(error FS_DEV_TRACE_PLUGIN_FOLDER is undefined)
 endif
+ifndef FS_DEV_TRACE_SCRIPT_FOLDER
+	$(error FS_DEV_TRACE_SCRIPT_FOLDER is undefined)
+endif
 	cp TraceDecoder.jar $(FS_DEV_TRACE_PLUGIN_FOLDER)
 	cp $(SWIGLIB) $(FS_DEV_TRACE_PLUGIN_FOLDER)/os/win32/x86_64
+	cp ../scripts/trace.tcl $(FS_DEV_TRACE_SCRIPT_FOLDER)
 
 .PHONY: all clean dependents
