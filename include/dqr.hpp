@@ -295,6 +295,19 @@ public:
     		uint32_t process;
     	} ownership;
     };
+
+    int getI_Cnt();
+    TraceDqr::ADDRESS    getU_Addr();
+    TraceDqr::ADDRESS    getF_Addr();
+    TraceDqr::BType      getB_Type();
+	TraceDqr::SyncReason getSyncReason();
+	uint8_t   getEType();
+	uint8_t  getCDF();
+	uint8_t  getEVCode();
+	uint32_t getData();
+	uint32_t getAddr();
+	uint32_t getIdTag();
+	uint32_t getProcess();
 };
 
 #ifdef SWIG

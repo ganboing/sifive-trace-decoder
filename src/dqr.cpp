@@ -2401,6 +2401,546 @@ NexusMessage::NexusMessage()
 	time = 0;
 }
 
+int NexusMessage::getI_Cnt()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+		return directBranch.i_cnt;
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+		return indirectBranch.i_cnt;
+	case TraceDqr::TCODE_SYNC:
+		return sync.i_cnt;
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+		return directBranchWS.i_cnt;
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+		return indirectBranchWS.i_cnt;
+	case TraceDqr::TCODE_CORRELATION:
+		return correlation.i_cnt;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+TraceDqr::ADDRESS NexusMessage::getU_Addr()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+		return indirectBranch.u_addr;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+TraceDqr::ADDRESS NexusMessage::getF_Addr()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+		return directBranchWS.f_addr;
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+		return indirectBranchWS.f_addr;
+	case TraceDqr::TCODE_SYNC:
+		return sync.f_addr;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+TraceDqr::BType NexusMessage::getB_Type()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+		return indirectBranch.b_type;
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+		return indirectBranchWS.b_type;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return TraceDqr::BTYPE_UNDEFINED;
+}
+
+TraceDqr::SyncReason NexusMessage::getSyncReason()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_SYNC:
+		return sync.sync;
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+		return directBranchWS.sync;
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+		return indirectBranchWS.sync;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return TraceDqr::SYNC_NONE;
+}
+
+uint8_t NexusMessage::getEType()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_ERROR:
+		return error.etype;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint8_t NexusMessage::getCDF()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_CORRELATION:
+		return correlation.cdf;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint8_t NexusMessage::getEVCode()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_CORRELATION:
+		return correlation.evcode;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+		break;
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint32_t NexusMessage::getData()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+		return dataAcquisition.data;
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+		return auxAccessWrite.data;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint32_t NexusMessage::getAddr()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+		return auxAccessWrite.data;
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint32_t NexusMessage::getIdTag()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+		return dataAcquisition.idTag;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint32_t NexusMessage::getProcess()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+		return ownership.process;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 void NexusMessage::processITCPrintData(ITCPrint *itcPrint)
 {
 	// need to only do this once per message! Set a flag so we know we have done it.
@@ -4287,11 +4827,11 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 
 	switch (tcode) {
 	case TraceDqr::TCODE_DEBUG_STATUS:
-		std::cout << "unsupported debug status trace message\n";
+		std::cout << "Unsupported debug status trace message\n";
 		status = TraceDqr::DQERR_ERR;
 		break;
 	case TraceDqr::TCODE_DEVICE_ID:
-		std::cout << "unsupported device id trace message\n";
+		std::cout << "Unsupported device id trace message\n";
 		status = TraceDqr::DQERR_ERR;
 		break;
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
@@ -4324,7 +4864,7 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 		status = parseSync(nm,analytics);
 		break;
 	case TraceDqr::TCODE_CORRECTION:
-		std::cout << "unsupported correction trace message\n";
+		std::cout << "Unsupported correction trace message\n";
 		status = TraceDqr::DQERR_ERR;
 		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
