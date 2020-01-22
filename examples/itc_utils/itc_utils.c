@@ -5,11 +5,14 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <metal/machine/platform.h>
+
+#ifndef METAL_SIFIVE_TRACE_0_BASE_ADDRESS
+#error METAL_SIFIVE_TRACE_0_BASE_ADDRESS is not defined.  Does this target have trace?
+#endif
+#define baseAddress METAL_SIFIVE_TRACE_0_BASE_ADDRESS
 
 #include "itc_utils.h"
-
-//#define	baseAddress	0x20007000
-#define	baseAddress	0x10000000
 
 // Register Offsets
 
