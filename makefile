@@ -1,4 +1,4 @@
-TOPTARGETS := all clean
+TOPTARGETS := all clean install
 
 SUBDIRS := Debug Release
 

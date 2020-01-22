@@ -51,4 +51,11 @@ clean:
 	-$(RM) *.d $(OBJS) $(EXECUTABLE) $(SWIGCPP) $(SWIGOBJ) $(SWIGLIB) com/sifive/trace/*.java com/sifive/trace/*.class TraceDecoder.jar
 	-@echo ' '
 
+install:
+ifndef FS_DEV_TRACE_PLUGIN_FOLDER
+	$(error FS_DEV_TRACE_PLUGIN_FOLDER is undefined)
+endif
+	cp TraceDecoder.jar $(FS_DEV_TRACE_PLUGIN_FOLDER)
+	cp $(SWIGLIB) $(FS_DEV_TRACE_PLUGIN_FOLDER)/os/win32/x86_64
+
 .PHONY: all clean dependents
