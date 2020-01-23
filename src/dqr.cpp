@@ -3410,8 +3410,6 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 
 	srcbits = srcBits;
 
-	firstMsg = true;
-
 	msgSlices      = 0;
 	bitIndex       = 0;
 	currentAddress = 0;
@@ -4564,19 +4562,6 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 		}
 	} while ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL);
 
-	// make sure this is start of nexus message
-
-	if ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) {
-
-		tf.close();
-
-		status = TraceDqr::DQERR_ERR;
-
-		std::cout << "Error: SliceFileParser::readBinaryMsg(): expected start of message; got" << std::hex << static_cast<uint8_t>(msg[0] & 0x3) << std::dec << std::endl;
-
-		return TraceDqr::DQERR_ERR;
-	}
-
 	bool done = false;
 
 	for (int i = 1; !done; i++) {
@@ -4773,140 +4758,128 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 	TraceDqr::DQErr rc;
 	uint64_t   val;
 	uint8_t    tcode;
+	int getMsgAttempt = 3;
 
-	// read from file, store in object, compute and fill out full fields, such as address and more later
-	// need some place to put it. An object
+	do { // we will try to get a good message most 3 times if there are problems
 
-//	int i = 1;
-//	do {
-//		printf("trace msg %d\n",i);
-//		i += 1;
-//		rc = readBinaryMsg();
-//		printf("rc: %d\n",rc);
-//		dump();
-//	} while (rc == dqr::DQERR_OK); // foo
+		status = TraceDqr::DQERR_OK;
 
-	if (binary) {
-		rc = readBinaryMsg();
-		if (rc != TraceDqr::DQERR_OK) {
-			if (rc != TraceDqr::DQERR_EOF) {
-				std::cout << "Error: (): readBinaryMsg() returned error " << rc << std::endl;
+		// read from file, store in object, compute and fill out full fields, such as address and more later
+
+		if (binary) {
+			rc = readBinaryMsg();
+			if (rc != TraceDqr::DQERR_OK) {
+
+				// all errors from readBinaryMsg() are non-recoverable.
+
+				if (rc != TraceDqr::DQERR_EOF) {
+					std::cout << "Error: (): readBinaryMsg() returned error " << rc << std::endl;
+				}
+
+				status = rc;
+
+				return status;
 			}
-
-			status = rc;
-
-			return status;
 		}
-	}
-	else {	// text trace messages
-		rc = readAscMsg();
-		if (rc != TraceDqr::DQERR_OK) {
-			if (rc != TraceDqr::DQERR_EOF) {
-				std::cout << "Error: (): read/TxtMsg() returned error " << rc << std::endl;
+		else {	// text trace messages
+			rc = readAscMsg();
+			if (rc != TraceDqr::DQERR_OK) {
+				if (rc != TraceDqr::DQERR_EOF) {
+					std::cout << "Error: (): read/TxtMsg() returned error " << rc << std::endl;
+				}
+
+				status = rc;
+
+				return status;
 			}
-
-			status = rc;
-
-			return status;
 		}
-	}
 
-// crow	dump();
+		rc = parseFixedField(6, &val);
+		if (rc == TraceDqr::DQERR_OK) {
+			tcode = (uint8_t)val;
 
-	rc = parseFixedField(6, &val);
-
-	if (rc != TraceDqr::DQERR_OK) {
-		std::cout << "Error: (): could not read tcode\n";
-
-		status = rc;
-
-		return status;
-	}
-
-	tcode = (uint8_t)val;
-
-	switch (tcode) {
-	case TraceDqr::TCODE_DEBUG_STATUS:
-		std::cout << "Unsupported debug status trace message\n";
-		status = TraceDqr::DQERR_ERR;
-		break;
-	case TraceDqr::TCODE_DEVICE_ID:
-		std::cout << "Unsupported device id trace message\n";
-		status = TraceDqr::DQERR_ERR;
-		break;
-	case TraceDqr::TCODE_OWNERSHIP_TRACE:
-		status = parseOwnershipTrace(nm,analytics);
-		break;
-	case TraceDqr::TCODE_DIRECT_BRANCH:
+			switch (tcode) {
+			case TraceDqr::TCODE_DEBUG_STATUS:
+				std::cout << "Unsupported debug status trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_DEVICE_ID:
+				std::cout << "Unsupported device id trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_OWNERSHIP_TRACE:
+				rc = parseOwnershipTrace(nm,analytics);
+				break;
+			case TraceDqr::TCODE_DIRECT_BRANCH:
 //		cout << " | direct branch";
-		status = parseDirectBranch(nm,analytics);
-		break;
-	case TraceDqr::TCODE_INDIRECT_BRANCH:
+				rc = parseDirectBranch(nm,analytics);
+				break;
+			case TraceDqr::TCODE_INDIRECT_BRANCH:
 //		cout << "| indirect branch";
-		status = parseIndirectBranch(nm,analytics);
-		break;
-	case TraceDqr::TCODE_DATA_WRITE:
-		std::cout << "unsupported data write trace message\n";
-		status = TraceDqr::DQERR_ERR;
-		break;
-	case TraceDqr::TCODE_DATA_READ:
-		std::cout << "unsupported data read trace message\n";
-		status = TraceDqr::DQERR_ERR;
-		break;
-	case TraceDqr::TCODE_DATA_ACQUISITION:
-		status = parseDataAcquisition(nm,analytics);
-		break;
-	case TraceDqr::TCODE_ERROR:
-		status = parseError(nm,analytics);
-		break;
-	case TraceDqr::TCODE_SYNC:
+				rc = parseIndirectBranch(nm,analytics);
+				break;
+			case TraceDqr::TCODE_DATA_WRITE:
+				std::cout << "unsupported data write trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_DATA_READ:
+				std::cout << "unsupported data read trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_DATA_ACQUISITION:
+				rc = parseDataAcquisition(nm,analytics);
+				break;
+			case TraceDqr::TCODE_ERROR:
+				rc = parseError(nm,analytics);
+				break;
+			case TraceDqr::TCODE_SYNC:
 //		cout << "| sync";
-		status = parseSync(nm,analytics);
-		break;
-	case TraceDqr::TCODE_CORRECTION:
-		std::cout << "Unsupported correction trace message\n";
-		status = TraceDqr::DQERR_ERR;
-		break;
-	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+				rc = parseSync(nm,analytics);
+				break;
+			case TraceDqr::TCODE_CORRECTION:
+				std::cout << "Unsupported correction trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 //		cout << "| direct branch with sync\n";
-		status = parseDirectBranchWS(nm,analytics);
-		break;
-	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+				rc = parseDirectBranchWS(nm,analytics);
+				break;
+			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 //		cout << "| indirect branch with sync";
-		status = parseIndirectBranchWS(nm,analytics);
-		break;
-	case TraceDqr::TCODE_DATA_WRITE_WS:
-		std::cout << "unsupported data write with sync trace message\n";
-		status = TraceDqr::DQERR_ERR;
-		break;
-	case TraceDqr::TCODE_DATA_READ_WS:
-		std::cout << "unsupported data read with sync trace message\n";
-		status = TraceDqr::DQERR_ERR;
-		break;
-	case TraceDqr::TCODE_WATCHPOINT:
-		std::cout << "unsupported watchpoint trace message\n";
-		status = TraceDqr::DQERR_ERR;
-		break;
-	case TraceDqr::TCODE_CORRELATION:
-		status = parseCorrelation(nm,analytics);
-		break;
-	case TraceDqr::TCODE_AUXACCESS_WRITE:
-		status = parseAuxAccessWrite(nm,analytics);
-		break;
-	default:
-		std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << tcode << std::dec << std::endl;
-		status = TraceDqr::DQERR_ERR;
-	}
+				rc = parseIndirectBranchWS(nm,analytics);
+				break;
+			case TraceDqr::TCODE_DATA_WRITE_WS:
+				std::cout << "unsupported data write with sync trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_DATA_READ_WS:
+				std::cout << "unsupported data read with sync trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_WATCHPOINT:
+				std::cout << "unsupported watchpoint trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_CORRELATION:
+				rc = parseCorrelation(nm,analytics);
+				break;
+			case TraceDqr::TCODE_AUXACCESS_WRITE:
+				rc = parseAuxAccessWrite(nm,analytics);
+				break;
+			default:
+				std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << tcode << std::dec << std::endl;
+				rc = TraceDqr::DQERR_ERR;
+			}
 
-	if ((status != TraceDqr::DQERR_OK) && (firstMsg == true)) {
-		std::cout << "Error possibly due to corrupted first message in trace - skipping message" << std::endl;
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error possibly due to corrupted first message in trace - skipping message" << std::endl;
+			}
+		}
 
-		firstMsg = false;
+		getMsgAttempt -= 1;
+	} while ((rc != TraceDqr::DQERR_OK) && (getMsgAttempt > 0));
 
-		return readNextTraceMsg(nm,analytics);
-	}
-
-	firstMsg = false;
+	status = rc;
 
 	return status;
 }

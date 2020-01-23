@@ -187,7 +187,6 @@ public:
 
 private:
   TraceDqr::DQErr status;
-  bool		 firstMsg;
 
   // add other counts for each message type
 
