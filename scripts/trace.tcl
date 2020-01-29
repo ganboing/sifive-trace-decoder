@@ -301,7 +301,7 @@ proc isTsEnabled {core} {
 
   if {$core != "funnel"} {
     set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
-    if {[expr $tsctl & 0x00008001] != 0} {
+    if {[expr $tsctl & 0x00008003] == 0x00008003} {
       return "on"
     }
 
@@ -315,7 +315,7 @@ proc enableTs {core} {
 
   if {$core != "funnel"} {
     set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
-    set tsctl [expr $tsctl | 0x00008001]
+    set tsctl [expr $tsctl | 0x00008003]
     mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
   }
 }
@@ -337,7 +337,7 @@ proc resetTs {core} {
     set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set tsctl [expr $tsctl | 0x00008004]
     mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
-    set t [expr $tsctl | ~0x00008004]
+    set t [expr $tsctl & ~0x00008004]
     mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
   }
 }

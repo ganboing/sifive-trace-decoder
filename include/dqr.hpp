@@ -29,6 +29,8 @@
 //#define PACKAGE 1
 //#define PACKAGE_VERSION 1
 
+// PUBLIC definitions
+
 #include "config.h"
 #include "bfd.h"
 #include "dis-asm.h"
@@ -42,12 +44,20 @@
 
 #define DQR_MAXCORES	8
 
-class dqr {
+extern const char * const DQR_VERSION;
+
+class TraceDqr {
 public:
   typedef uint32_t RV_INST;
 
   typedef uint64_t ADDRESS;
   typedef uint64_t TIMESTAMP;
+
+  enum {
+	TRACE_HAVE_INSTINFO = 0x01,
+	TRACE_HAVE_SRCINFO  = 0x02,
+	TRACE_HAVE_MSGINFO  = 0x04,
+  };
 
   typedef enum {
   	MSEO_NORMAL  = 0x00,
@@ -133,45 +143,59 @@ public:
 	  ADDRDISP_WIDTHAUTO = 1,
 	  ADDRDISP_SEP  = 2,
   } AddrDisp;
-};
 
-// class section: work with elf file sections using libbfd
-
-class section {
-public:
-	section();
-	section *initSection(section **head,asection *newsp);
-	section *getSectionByAddress(dqr::ADDRESS addr);
-
-	section     *next;
-	bfd         *abfd;
-	dqr::ADDRESS startAddr;
-	dqr::ADDRESS endAddr;
-	int          size;
-	asection    *asecptr;
-	uint16_t    *code;
+  enum InstType {
+		INST_UNKNOWN = 0,
+		INST_JAL,
+		INST_JALR,
+		INST_BEQ,
+		INST_BNE,
+		INST_BLT,
+		INST_BGE,
+		INST_BLTU,
+		INST_BGEU,
+		INST_C_J,
+		INST_C_JAL,
+		INST_C_JR,
+		INST_C_JALR,
+		INST_C_BEQZ,
+		INST_C_BNEZ,
+	};
 };
 
 // class Instruction: work with an instruction
 
+#ifdef SWIG
+	%ignore Instruction::addressToText(char *dst,size_t len,int labelLevel);
+	%ignore Instruction::instructionToText(char *dst,size_t len,int labelLevel);
+#endif // SWIG
+
 class Instruction {
 public:
 	void addressToText(char *dst,size_t len,int labelLevel);
-	void opcodeToText();
+	std::string addressToString(int labelLevel);
+//	void opcodeToText();
 	void instructionToText(char *dst,size_t len,int labelLevel);
+	std::string instructionToString(int labelLevel);
 
 	uint8_t           coreId;
-	dqr::ADDRESS      address;
-	dqr::RV_INST      instruction;
+	TraceDqr::ADDRESS      address;
+	TraceDqr::RV_INST      instruction;
 	char              instructionText[64];
 	int               instSize;
 	static int        addrSize;
 	static uint32_t   addrDispFlags;
 	static int        addrPrintWidth;
+#ifdef SWIG
+	%immutable		addressLabel;
+#endif // SWIG
 	const char       *addressLabel;
 	int               addressLabelOffset;
 	bool              haveOperandAddress;
-	dqr::ADDRESS      operandAddress;
+	TraceDqr::ADDRESS      operandAddress;
+#ifdef SWIG
+	%immutable		operandLabel;
+#endif // SWIG
 	const char       *operandLabel;
 	int               operandLabelOffset;
 };
@@ -180,108 +204,51 @@ public:
 
 class Source {
 public:
+	std::string  sourceFileToString();
+	std::string  sourceFileToString(std::string path);
+	std::string  sourceLineToString();
+	std::string  sourceFunctionToString();
 	uint8_t      coreId;
+#ifdef SWIG
+	%immutable sourceFile;
+	%immutable sourceFunction;
+	%immutable sourceLine;
+#endif // SWIG
 	const char  *sourceFile;
 	const char  *sourceFunction;
-	unsigned int sourceLineNum;
 	const char  *sourceLine;
-};
-
-// class fileReader: Helper class to handler list of source code files
-
-class fileReader {
-public:
-	struct fileList {
-		fileList *next;
-		char     *name;
-		int       lineCount;
-		char    **lines;
-	};
-
-	fileReader(/*paths?*/);
-
-	fileList *findFile(const char *file);
-private:
-	fileList *readFile(const char *file);
-
-	fileList *lastFile;
-	fileList *files;
-};
-
-// class Symtab: Interface class between bfd symbols and what is needed for dqr
-
-class Symtab {
-public:
-	             Symtab(bfd *abfd);
-	            ~Symtab();
-	const char  *getSymbolByAddress(dqr::ADDRESS addr);
-	const char  *getNextSymbolByAddress();
-	dqr::ADDRESS getSymbolByName();
-	asymbol    **getSymbolTable() { return symbol_table; }
-	void         dump();
+	unsigned int sourceLineNum;
 
 private:
-	bfd      *abfd;
-	long      number_of_symbols;
-    asymbol **symbol_table;
-
-    dqr::ADDRESS vma;
-    int          index;
-};
-
-// Class ElfReader: Interface class between dqr and bfd
-
-class ElfReader {
-public:
-        	   ElfReader(char *elfname);
-	          ~ElfReader();
-	dqr::DQErr getStatus() { return status; }
-	dqr::DQErr getInstructionByAddress(dqr::ADDRESS addr, dqr::RV_INST &inst);
-	Symtab    *getSymtab();
-	bfd       *get_bfd() {return abfd;}
-	int        getArchSize() { return archSize; }
-	int        getBitsPerAddress() { return bitsPerAddress; }
-
-private:
-	static bool init;
-	dqr::DQErr  status;
-	bfd        *abfd;
-	int         archSize;
-	int	        bitsPerWord;
-	int         bitsPerAddress;
-	section	   *codeSectionLst;
-	Symtab     *symtab;
-};
-
-class itcPrint {
-private:
-	static bool init();
-public:
-	static char *print(uint8_t core, uint32_t address, uint32_t data);
-
-	static bool inited;
-	static bool buffering;
-	static bool eol[DQR_MAXCORES];
-	static char pbuff[DQR_MAXCORES][1024];
-	static int pbi[DQR_MAXCORES];
+	const char *stripPath(const char *path);
 };
 
 // class NexusMessage: class to hold Nexus messages and convert them to text
 
+#ifdef SWIG
+	%ignore NexusMessage::messageToText(char *dst,size_t dst_len,int level);
+#endif // SWIG
+
 class NexusMessage {
 public:
 	NexusMessage();
-	void messageToText(char *dst,size_t dst_len,char **pdst,int level);
+	void processITCPrintData(class ITCPrint *itcPrint);
+	void messageToText(char *dst,size_t dst_len,int level);
+	std::string messageToString(int detailLevel);
+	double seconds();
+
 	void dump();
 
-	int        	   msgNum;
-	dqr::TCode     tcode;
-    bool       	   haveTimestamp;
-    dqr::TIMESTAMP timestamp;
-    dqr::ADDRESS   currentAddress;
-    dqr::TIMESTAMP time;
+	static uint32_t targetFrequency;
 
-    uint8_t        src;
+	int        	   msgNum;
+	TraceDqr::TCode     tcode;
+    bool       	   haveTimestamp;
+    TraceDqr::TIMESTAMP timestamp;
+    TraceDqr::ADDRESS   currentAddress;
+    TraceDqr::TIMESTAMP time;
+
+    uint8_t        coreId;
 
     union {
     	struct {
@@ -289,24 +256,24 @@ public:
     	} directBranch;
     	struct {
     		int          i_cnt;
-    		dqr::ADDRESS u_addr;
-    		dqr::BType   b_type;
+    		TraceDqr::ADDRESS u_addr;
+    		TraceDqr::BType   b_type;
     	} indirectBranch;
     	struct {
     		int             i_cnt;
-    		dqr::ADDRESS    f_addr;
-    		dqr::SyncReason sync;
+    		TraceDqr::ADDRESS    f_addr;
+    		TraceDqr::SyncReason sync;
     	} directBranchWS;
     	struct {
     		int             i_cnt;
-    		dqr::ADDRESS    f_addr;
-    		dqr::BType      b_type;
-    		dqr::SyncReason sync;
+    		TraceDqr::ADDRESS    f_addr;
+    		TraceDqr::BType      b_type;
+    		TraceDqr::SyncReason sync;
     	} indirectBranchWS;
     	struct {
     		int             i_cnt;
-    		dqr::ADDRESS    f_addr;
-    		dqr::SyncReason sync;
+    		TraceDqr::ADDRESS    f_addr;
+    		TraceDqr::SyncReason sync;
     	} sync;
     	struct {
     		uint8_t etype;
@@ -329,176 +296,36 @@ public:
     	} ownership;
     };
 
-private:
-    // empty
+    int getI_Cnt();
+    TraceDqr::ADDRESS    getU_Addr();
+    TraceDqr::ADDRESS    getF_Addr();
+    TraceDqr::BType      getB_Type();
+	TraceDqr::SyncReason getSyncReason();
+	uint8_t   getEType();
+	uint8_t  getCDF();
+	uint8_t  getEVCode();
+	uint32_t getData();
+	uint32_t getAddr();
+	uint32_t getIdTag();
+	uint32_t getProcess();
 };
 
-#ifdef foo
-class linkedNexusMessage {
-public:
-	linkedNexusMessage();
-	static void init();
-	static dqr::DQErr buildLinkedMsgs(NexusMessage &nm);
-	static dqr::DQErr nextTraceMessage(NexusMessage &nm);
-
-    linkedNexusMessage *nextCoreMessage;
-    linkedNexusMessage *nextInOrderMessage;
-
-    bool consumed;
-    static linkedNexusMessage *firstMsg;
-    static int lastCore;
-    static linkedNexusMessage *linkedNexusMessageHeads[8];
-    static linkedNexusMessage *lastNexusMsgPtr[8];
-
-    NexusMessage nm;
-};
-#endif // foo
-
-// class SliceFileParser: Class to parse binary or ascii nexus messages into a NexusMessage object
-class SliceFileParser {
-public:
-             SliceFileParser(char *filename, bool binary, int srcBits);
-  dqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics);
-
-// foo  dqr::DQErr readAllTraceMsgs();
-  dqr::DQErr getErr() { return status; };
-  void       dump();
-
-private:
-  dqr::DQErr status;
-  bool		 firstMsg;
-
-  // add other counts for each message type
-
-  bool          binary;
-  int           srcbits;
-  std::ifstream tf;
-  int           bitIndex;
-  int           msgSlices;
-  uint8_t       msg[64];
-  bool          eom = false;
-
-  dqr::ADDRESS	 currentAddress;
-  dqr::TIMESTAMP currentTime;
-
-  dqr::DQErr readBinaryMsg();
-  dqr::DQErr readNextByte(uint8_t *byte);
-  dqr::DQErr readAscMsg();
-  dqr::DQErr parseVarField(uint64_t *val,int *width);
-  dqr::DQErr parseFixedField(int width, uint64_t *val);
-  dqr::DQErr parseDirectBranch(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseIndirectBranch(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseDirectBranchWS(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseIndirectBranchWS(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseSync(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseCorrelation(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseAuxAccessWrite(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseDataAcquisition(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseOwnershipTrace(NexusMessage &nm,Analytics &analytics);
-  dqr::DQErr parseError(NexusMessage &nm,Analytics &analytics);
-};
-
-// class Disassembler: class to help in the dissasemblhy of instrucitons
-
-class Disassembler {
-public:
-	enum instType {
-		UNKNOWN = 0,
-		JAL,
-		JALR,
-		BEQ,
-		BNE,
-		BLT,
-		BGE,
-		BLTU,
-		BGEU,
-		C_J,
-		C_JAL,
-		C_JR,
-		C_JALR,
-		C_BEQZ,
-		C_BNEZ,
-	};
-
-	      Disassembler(bfd *abfd);
-	int   Disassemble(dqr::ADDRESS addr);
-
-	int   getSrcLines(dqr::ADDRESS addr, const char **filename, const char **functionname, unsigned int *linenumber, const char **line);
-
-	int   decodeInstructionSize(uint32_t inst, int &inst_size);
-	int   decodeInstruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch);
-
-	void  overridePrintAddress(bfd_vma addr, struct disassemble_info *info); // hmm.. don't need info - part of object!
-
-	Instruction getInstructionInfo() { return instruction; }
-	Source      getSourceInfo() { return source; }
-
-	dqr::DQErr getStatus() {return status;}
-
-private:
-	typedef struct {
-		flagword sym_flags;
-		bfd_vma  func_vma;
-		int      func_size;
-	} func_info_t;
-
-	bfd               *abfd;
-	disassembler_ftype disassemble_func;
-	dqr::DQErr         status;
-
-	bfd_vma           start_address;
-	long              number_of_syms;
-	asymbol         **symbol_table;
-	asymbol         **sorted_syms;
-	func_info_t      *func_info;
-	disassemble_info *info;
-	section	         *codeSectionLst;
-	int               prev_index;
-	int               cached_sym_index;
-	bfd_vma           cached_sym_vma;
-	int               cached_sym_size;
-
-	Instruction instruction;
-	Source      source;
-
-	class fileReader *fileReader;
-
-	const char  *lastFileName;
-	unsigned int lastLineNumber;
-
-	void print_address(bfd_vma vma);
-	void print_address_and_instruction(bfd_vma vma);
-	void setInstructionAddress(bfd_vma vma);
-
-	int lookup_symbol_by_address(bfd_vma,flagword flags,int *index,int *offset);
-	int lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size);
-//	int get_ins(bfd_vma vma,uint32_t *ins,int *ins_size);
-
-	int decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch);
-	int decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch);
-	int decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch);
-	int decodeRV32Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch);
-};
-
-struct NexusMessageSync {
-	NexusMessageSync();
-	int          firstMsgNum;
-	int          lastMsgNum;
-	int          index;
-	NexusMessage msgs[512];
-};
+#ifdef SWIG
+	%ignore Analytics::toText(char *dst,size_t dst_len,int level);
+#endif // SWIG
 
 class Analytics {
 public:
 	Analytics();
-	dqr::DQErr updateTraceInfo(uint32_t core_id,dqr::TCode tcode,uint32_t bits,uint32_t meso_bits,uint32_t ts_bits,uint32_t addr_bits);
-	dqr::DQErr updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize);
+	TraceDqr::DQErr updateTraceInfo(uint32_t core_id,TraceDqr::TCode tcode,uint32_t bits,uint32_t meso_bits,uint32_t ts_bits,uint32_t addr_bits);
+	TraceDqr::DQErr updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize);
 	int currentTraceMsgNum() { return num_trace_msgs_all_cores; }
 	void setSrcBits(int sbits) { srcBits = sbits; }
-	dqr::DQErr display(int detail);
+	void toText(char *dst,int dst_len,int detailLevel);
+	std::string toString(int detailLevel);
 
 private:
-	dqr::DQErr status;
+	TraceDqr::DQErr status;
 	uint32_t cores;
 
 	int srcBits;
@@ -568,33 +395,44 @@ private:
 
 // class Trace: high level class that performs the raw trace data to dissasemble and decorated instruction trace
 
+#ifdef SWIG
+	%ignore Trace::NextInstruction(Instruction **instInfo,NexusMessage **msgInfo,Source **srcInfo);
+	%ignore Trace::getITCPrintMsg(int core,char *dst,int dstLen);
+	%ignore Trace::flushITCPrintMsg(int core,char *dst,int dstLen);
+	%ignore Trace::analyticsToText(char *dst,int dst_len,int detailLevel);
+#endif // SWIG
+
 class Trace {
 public:
-	enum SymFlags {
-		SYMFLAGS_NONE = 0,
-		SYMFLAGS_xx   = 1 << 0,
-	};
-	           Trace(char *tf_name,bool binaryFlag,char *ef_name,SymFlags sym_flags,int numAddrBits,uint32_t addrDispFlags,int srcBits);
-	          ~Trace();
-	dqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
+    Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
+    ~Trace();
+	TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
+	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
 
-	enum traceFlags {
+	enum TraceFlags {
 		TF_INSTRUCTION = 0x01,
 		TF_ADDRESS     = 0x02,
 		TF_DISSASEMBLE = 0x04,
 		TF_TIMESTAMP   = 0x08,
 		TF_TRACEINFO   = 0x10,
 	};
-	dqr::DQErr getStatus() { return status; }
-	dqr::DQErr NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
+	TraceDqr::DQErr getStatus() { return status; }
+	TraceDqr::DQErr NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
+	TraceDqr::DQErr NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags);
 
-	const char *getSymbolByAddress(dqr::ADDRESS addr) { return symtab->getSymbolByAddress(addr); }
-	const char *getNextSymbolByAddress() { return symtab->getNextSymbolByAddress(); }
-	int         Disassemble(dqr::ADDRESS addr);
+	TraceDqr::DQErr haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES]);
+	bool        getITCPrintMsg(int core,char *dst, int dstLen);
+	bool        flushITCPrintMsg(int core,char *dst, int dstLen);
+	std::string getITCPrintStr(int core, bool &haveData);
+	std::string flushITCPrintStr(int core, bool &haveData);
+
+	const char *getSymbolByAddress(TraceDqr::ADDRESS addr);
+	const char *getNextSymbolByAddress();
+	int         Disassemble(TraceDqr::ADDRESS addr);
 	int         getArchSize();
 	int         getAddressSize();
-	void        setITCBuffering(bool itcbuffer_flag);
-	dqr::DQErr displayAnalytics(int detail) { return analytics.display(detail); }
+	void analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
+	std::string analyticsToString(int detailLevel) { return analytics.toString(detailLevel); }
 
 private:
 	enum state {
@@ -609,15 +447,15 @@ private:
 		TRACE_STATE_ERROR
 	};
 
-	dqr::DQErr       status;
-	SliceFileParser *sfp;
-	ElfReader       *elfReader;
-	Symtab          *symtab;
-	Disassembler    *disassembler;
-	SymFlags		 symflags;
-	dqr::ADDRESS     currentAddress[DQR_MAXCORES];
-	dqr::ADDRESS	 lastFaddr[DQR_MAXCORES];
-	dqr::TIMESTAMP   lastTime[DQR_MAXCORES];
+	TraceDqr::DQErr       status;
+	class SliceFileParser *sfp;
+	class ElfReader       *elfReader;
+	class Symtab          *symtab;
+	class Disassembler    *disassembler;
+	class ITCPrint        *itcPrint;
+	TraceDqr::ADDRESS     currentAddress[DQR_MAXCORES];
+	TraceDqr::ADDRESS	 lastFaddr[DQR_MAXCORES];
+	TraceDqr::TIMESTAMP   lastTime[DQR_MAXCORES];
 	enum state       state[DQR_MAXCORES];
 	bool             readNewTraceMessage;
 	int              currentCore;
@@ -641,18 +479,18 @@ private:
 
 	int i_cnt[DQR_MAXCORES];
 
-	uint32_t               inst = -1;
-	int                    inst_size = -1;
-	Disassembler::instType inst_type = Disassembler::instType::UNKNOWN;
-	int32_t                immeadiate = -1;
-	bool                   is_branch = false;
+	uint32_t                inst = -1;
+	int                     inst_size = -1;
+	TraceDqr::InstType inst_type = TraceDqr::InstType::INST_UNKNOWN;
+	int32_t                 immeadiate = -1;
+	bool                    is_branch = false;
 
-	NexusMessageSync      *messageSync[DQR_MAXCORES];
+	class NexusMessageSync *messageSync[DQR_MAXCORES];
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
-	int decodeInstruction(uint32_t instruction,int &inst_size,Disassembler::instType &inst_type,int32_t &immeadiate,bool &is_branch);
+	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
 
-	dqr::ADDRESS computeAddress();
+	TraceDqr::ADDRESS computeAddress();
 };
 
 #endif /* DQR_HPP_ */

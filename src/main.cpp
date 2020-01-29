@@ -60,9 +60,8 @@ static void usage(char *name)
 	printf("              Path may be enclosed in quotes if it contains spaces.\n");
 	printf("-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatenated\n");
 	printf("              and displayed as a string until a terminating \\0 is found\n");
-	printf("-itcprintnobuffer:    Display ITC 0 data as a null terminated string without buffering multiple itc messages into a\n");
-	printf("              single message. Data from consecutive ITC 0's will not be concatenated. Potentially useful where the\n");
-	printf("              buffering of itc 0 print messages causes flushing issues.\n");
+	printf("-itcprint=n:  Disaply ITC channel n data as a null terminated string. Data for consectutie ITC channel n's will be\n");
+	printf("              concatinated and display as a string until a terminating \\n or \\0 is found\n");
 	printf("-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair\n");
 	printf("-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and\n");
 	printf("              cause the address field to be jagged. Overrides value address size read from elf file.\n");
@@ -87,7 +86,9 @@ static void usage(char *name)
 	printf("-analytics:   Compute and display detail level 1 trace analytics.\n");
 	printf("-analytics=n: Specify the detail level for trace analytics dispaly. N sets the level to either 0 (no analytics display)\n");
 	printf("              1 (sort system totals), or 2 (display analytics by core).\n");
-	printf("-noanaylitics: Do not compute and display trace analytics (default). Same as -analytics=0.");
+	printf("-noanaylitics: Do not compute and display trace analytics (default). Same as -analytics=0.\n");
+	printf("-freq nn      Specify the frequency in Hz for the timestamp tics clock. If specified, time instead\n");
+	printf("              of tics will be displayed.\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -152,13 +153,14 @@ int main(int argc, char *argv[])
 	bool dasm_flag = true;
 	bool trace_flag = false;
 	bool func_flag = false;
+	uint32_t freq = 0;
 	char *strip_flag = nullptr;
-	bool itcprint_flag = false;
 	int  numAddrBits = 0;
 	uint32_t addrDispFlags = 0;
-	bool itcbuffer_flag = true;
 	int srcbits = 0;
 	int analytics_detail = 0;
+	bool itcprint_flag = false;
+	int itcprint_channel = 0;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -281,26 +283,39 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp("-itcprint",argv[i]) == 0) {
 			itcprint_flag = true;
-			itcbuffer_flag = true;
+			itcprint_channel = 0;
 		}
-		else if (strcmp("-itcprintnobuffer",argv[i]) == 0) {
-			itcprint_flag = true;
-			itcbuffer_flag = false;
+		else if (strncmp("-itcprint=",argv[i],strlen("-itcprint=")) == 0) {
+			int l;
+			char *endptr;
+
+			l = strtol(&argv[i][strlen("-itcprint=")], &endptr, 0);
+
+			if (endptr[0] == 0 ) {
+				itcprint_flag = true;
+				itcprint_channel = l;
+			}
+			else {
+				itcprint_flag = false;
+				printf("Error: option -itcprint= requires a valid number 0 - 31\n");
+				usage(argv[0]);
+				return 1;
+			}
 		}
 		else if (strcmp("-noitcprint",argv[i]) == 0) {
 			itcprint_flag = false;
 		}
 		else if (strcmp("-32",argv[i]) == 0) {
 			numAddrBits = 32;
-			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_WIDTHAUTO;
+			addrDispFlags = addrDispFlags & ~TraceDqr::ADDRDISP_WIDTHAUTO;
 		}
 		else if (strcmp("-64",argv[i]) == 0) {
 			numAddrBits = 64;
-			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_WIDTHAUTO;
+			addrDispFlags = addrDispFlags & ~TraceDqr::ADDRDISP_WIDTHAUTO;
 		}
 		else if (strcmp("-32+",argv[i]) == 0) {
 			numAddrBits = 32;
-			addrDispFlags = addrDispFlags | dqr::ADDRDISP_WIDTHAUTO;
+			addrDispFlags = addrDispFlags | TraceDqr::ADDRDISP_WIDTHAUTO;
 		}
 		else if (strncmp("-addrsize=",argv[i],strlen("-addrsize=")) == 0) {
 			int l;
@@ -310,11 +325,11 @@ int main(int argc, char *argv[])
 
 			if (endptr[0] == 0 ) {
 				numAddrBits = l;
-				addrDispFlags = addrDispFlags  & ~dqr::ADDRDISP_WIDTHAUTO;
+				addrDispFlags = addrDispFlags  & ~TraceDqr::ADDRDISP_WIDTHAUTO;
 			}
 			else if (endptr[0] == '+') {
 				numAddrBits = l;
-				addrDispFlags = addrDispFlags | dqr::ADDRDISP_WIDTHAUTO;
+				addrDispFlags = addrDispFlags | TraceDqr::ADDRDISP_WIDTHAUTO;
 			}
 			else {
 				printf("Error: option -addressize= requires a valid number <= 32, >= 64\n");
@@ -329,10 +344,10 @@ int main(int argc, char *argv[])
 			}
 		}
 		else if (strcmp("-addrsep", argv[i]) == 0) {
-			addrDispFlags = addrDispFlags | dqr::ADDRDISP_SEP;
+			addrDispFlags = addrDispFlags | TraceDqr::ADDRDISP_SEP;
 		}
 		else if (strcmp("-noaddrsep", argv[i]) == 0) {
-			addrDispFlags = addrDispFlags & ~dqr::ADDRDISP_SEP;
+			addrDispFlags = addrDispFlags & ~TraceDqr::ADDRDISP_SEP;
 		}
 		else if (strncmp("-srcbits=",argv[i],strlen("-srcbits=")) == 0) {
 			srcbits = atoi(argv[i]+strlen("-srcbits="));
@@ -358,6 +373,20 @@ int main(int argc, char *argv[])
 		else if (strcmp("-noanalytics",argv[i]) == 0) {
 			analytics_detail = 0;
 		}
+		else if (strcmp("-freq",argv[i]) == 0) {
+			i += 1;
+			if (i >= argc) {
+				printf("Error: option -freq requires a clock frequency to be specified\n");
+				usage(argv[0]);
+				return 1;
+			}
+
+			freq = atoi(argv[i]);
+			if (freq < 0) {
+				printf("Error: clock frequency must be >= 0\n");
+				return 1;
+			}
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -370,7 +399,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (version_flag) {
-		printf("%s: version %s\n",argv[0],"0.4");
+		printf("%s: version %s\n",argv[0],DQR_VERSION);
 		return 0;
 	}
 
@@ -396,15 +425,13 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	Trace::SymFlags symFlags = Trace::SYMFLAGS_NONE;
-
 	// might want to include some path info!
 
-	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,symFlags,numAddrBits,addrDispFlags,srcbits);
+	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
 
 	assert(trace != nullptr);
 
-	if (trace->getStatus() != dqr::DQERR_OK) {
+	if (trace->getStatus() != TraceDqr::DQERR_OK) {
 		delete trace;
 		trace = nullptr;
 
@@ -413,11 +440,13 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	trace->setITCBuffering(itcbuffer_flag);
-
 	trace->setTraceRange(start_msg_num,stop_msg_num);
 
-	dqr::DQErr ec;
+	if (itcprint_flag) {
+		trace->setITCPrintOptions(4096,itcprint_channel);
+	}
+
+	TraceDqr::DQErr ec;
 
 	// main loop
 
@@ -442,7 +471,6 @@ int main(int argc, char *argv[])
 //
 //	should look at source code display!
 
-
 	Instruction *instInfo;
 	NexusMessage *msgInfo;
 	Source *srcInfo;
@@ -452,14 +480,15 @@ int main(int argc, char *argv[])
 	const char *lastSrcFile = nullptr;
 	const char *lastSrcLine = nullptr;
 	unsigned int lastSrcLineNum = 0;
-	dqr::ADDRESS lastAddress = 0;
+	TraceDqr::ADDRESS lastAddress = 0;
 	int lastInstSize = 0;
 	bool firstPrint = true;
+	uint32_t core_mask = 0;
 
 	do {
 		ec = trace->NextInstruction(&instInfo,&msgInfo,&srcInfo);
 
-		if (ec == dqr::DQERR_OK) {
+		if (ec == TraceDqr::DQERR_OK) {
 			if (srcInfo != nullptr) {
 				if ((lastSrcFile != srcInfo->sourceFile) || (lastSrcLine != srcInfo->sourceLine) || (lastSrcLineNum != srcInfo->sourceLineNum)) {
 					lastSrcFile = srcInfo->sourceFile;
@@ -548,9 +577,10 @@ int main(int argc, char *argv[])
 
 			if ((trace_flag || itcprint_flag) && (msgInfo != nullptr)) {
 				// got the goods! Get to it!
-				char *itcprint = nullptr;
 
-				msgInfo->messageToText(dst,sizeof dst,&itcprint,msgLevel);
+				core_mask |= 1 << msgInfo->coreId;
+
+				msgInfo->messageToText(dst,sizeof dst,msgLevel);
 
 				if (trace_flag) {
 					if (firstPrint == false) {
@@ -558,7 +588,7 @@ int main(int argc, char *argv[])
 					}
 
 					if (srcbits > 0) {
-						printf("[%d] ",msgInfo->src);
+						printf("[%d] ",msgInfo->coreId);
 					}
 
 					printf("Trace: %s",dst);
@@ -568,24 +598,66 @@ int main(int argc, char *argv[])
 					firstPrint = false;
 				}
 
-				if (itcprint_flag && (itcprint != nullptr)) {
+				if (itcprint_flag) {
+					std::string s;
+					bool haveStr;
+
+					s = trace->getITCPrintStr(msgInfo->coreId,haveStr);
+					while (haveStr != false) {
+						if (firstPrint == false) {
+							printf("\n");
+						}
+
+						if (srcbits > 0) {
+							printf("[%d] ",msgInfo->coreId);
+						}
+
+						std::cout << "ITC Print: " << s;
+
+						firstPrint = false;
+
+						s = trace->getITCPrintStr(msgInfo->coreId,haveStr);
+					}
+				}
+			}
+		}
+	} while (ec == TraceDqr::DQERR_OK);
+
+	if (itcprint_flag) {
+		std::string s = "";
+		bool haveStr;
+
+		for (int core = 0; core_mask != 0; core++) {
+			if (core_mask & 1) {
+				s = trace->flushITCPrintStr(core,haveStr);
+				while (haveStr != false) {
 					if (firstPrint == false) {
 						printf("\n");
 					}
 
 					if (srcbits > 0) {
-						printf("[%d] ",msgInfo->src);
+						printf("[%d] ",core);
 					}
 
-					puts(itcprint);
+					std::cout << "ITC Print: " << s;
 
 					firstPrint = false;
+
+					s = trace->flushITCPrintStr(core,haveStr);
 				}
 			}
+			core_mask >>= 1;
 		}
-	} while (ec == dqr::DQERR_OK);
+	}
 
-	trace->displayAnalytics(analytics_detail);
+	if (analytics_detail > 0) {
+		trace->analyticsToText(dst,sizeof dst,analytics_detail);
+		if (firstPrint == false) {
+			printf("\n");
+		}
+		firstPrint = false;
+		printf("%s",dst);
+	}
 
 	delete trace;
 

@@ -31,6 +31,11 @@
 #include <cassert>
 
 #include "dqr.hpp"
+#include "trace.hpp"
+
+//#define DQR_MAXCORES	8
+
+const char * const DQR_VERSION = "0.6";
 
 // static C type helper functions
 
@@ -220,8 +225,8 @@ section::section()
 	abfd      = nullptr;
 	asecptr   = nullptr;
 	size      = 0;
-	startAddr = (dqr::ADDRESS)0;
-	endAddr   = (dqr::ADDRESS)0;
+	startAddr = (TraceDqr::ADDRESS)0;
+	endAddr   = (TraceDqr::ADDRESS)0;
 	code      = nullptr;
 }
 
@@ -233,8 +238,8 @@ section *section::initSection(section **head, asection *newsp)
 	abfd = newsp->owner;
 	asecptr = newsp;
 	size = newsp->size;
-	startAddr = (dqr::ADDRESS)newsp->vma;
-	endAddr = (dqr::ADDRESS)(newsp->vma + size - 1);
+	startAddr = (TraceDqr::ADDRESS)newsp->vma;
+	endAddr = (TraceDqr::ADDRESS)(newsp->vma + size - 1);
 
 	int words = (size+1)/2;
 
@@ -257,7 +262,7 @@ section *section::initSection(section **head, asection *newsp)
     return this;
 }
 
-section *section::getSectionByAddress(dqr::ADDRESS addr)
+section *section::getSectionByAddress(TraceDqr::ADDRESS addr)
 {
 	section *sp = this;
 
@@ -276,13 +281,28 @@ int      Instruction::addrSize;
 uint32_t Instruction::addrDispFlags;
 int      Instruction::addrPrintWidth;
 
+std::string Instruction::addressToString(int labelLevel)
+{
+	char dst[128];
+
+	addressToText(dst,sizeof dst,labelLevel);
+
+	std::string s = "";
+
+	for (int i = 0; dst[i] != 0; i++) {
+		s += dst[i];
+	}
+
+	return s;
+}
+
 void Instruction::addressToText(char *dst,size_t len,int labelLevel)
 {
 	assert(dst != nullptr);
 
 	dst[0] = 0;
 
-	if (addrDispFlags & dqr::ADDRDISP_WIDTHAUTO) {
+	if (addrDispFlags & TraceDqr::ADDRDISP_WIDTHAUTO) {
 		while (address > (0xffffffffffffffffllu >> (64 - addrPrintWidth*4))) {
 			addrPrintWidth += 1;
 		}
@@ -290,7 +310,7 @@ void Instruction::addressToText(char *dst,size_t len,int labelLevel)
 
     int n;
 
-	if ((addrPrintWidth > 8) && (addrDispFlags & dqr::ADDRDISP_SEP)) {
+	if ((addrPrintWidth > 8) && (addrDispFlags & TraceDqr::ADDRDISP_SEP)) {
 		n = snprintf(dst,len,"%0*x.%08x",addrPrintWidth-8,(uint32_t)(address >> 32),(uint32_t)address);
 	}
 	else {
@@ -305,6 +325,21 @@ void Instruction::addressToText(char *dst,size_t len,int labelLevel)
 		    snprintf(dst+n,len-n," <%s>",addressLabel);
 		}
 	}
+}
+
+std::string Instruction::instructionToString(int labelLevel)
+{
+	char dst[128];
+
+	instructionToText(dst,sizeof dst,labelLevel);
+
+	std::string s = "";
+
+	for (int i = 0; dst[i] != 0; i++) {
+		s += dst[i];
+	}
+
+	return s;
 }
 
 void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
@@ -338,6 +373,103 @@ void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 	}
 }
 
+const char *Source::stripPath(const char *path)
+{
+	if (path == nullptr) {
+		return sourceFile;
+	}
+
+	const char *s = sourceFile;
+
+	if (s == nullptr) {
+		return nullptr;
+	}
+
+	for (;;) {
+		if (*path == 0) {
+			return s;
+		}
+
+		if (tolower(*path) == tolower(*s)) {
+			path += 1;
+			s += 1;
+		}
+		else if (*path == '/') {
+			if (*s != '\\') {
+				return sourceFile;
+			}
+			path += 1;
+			s += 1;
+		}
+		else if (*path == '\\') {
+			if (*s != '/') {
+				return sourceFile;
+			}
+			path += 1;
+			s += 1;
+		}
+		else {
+			return sourceFile;
+		}
+	}
+
+	return nullptr;
+}
+
+std::string Source::sourceFileToString(std::string path)
+{
+	std::string s = "";
+
+	if (sourceFile != nullptr) {
+	  const char *sf = stripPath(path.c_str());
+
+	  for (int i = 0; sf[i] != 0; i++) {
+		s += sf[i];
+	  }
+	}
+
+	return s;
+}
+
+std::string Source::sourceFileToString()
+{
+	std::string s = "";
+
+	if (sourceFile != nullptr) {
+	  for (int i = 0; sourceFile[i] != 0; i++) {
+		s += sourceFile[i];
+	  }
+	}
+
+	return s;
+}
+
+std::string Source::sourceLineToString()
+{
+	std::string s = "";
+
+	if (sourceLine != nullptr) {
+	  for (int i = 0; sourceLine[i] != 0; i++) {
+		s += sourceLine[i];
+	  }
+	}
+
+	return s;
+}
+
+std::string Source::sourceFunctionToString()
+{
+	std::string s = "";
+
+	if (sourceFunction != nullptr) {
+	  for (int i = 0; sourceFunction[i] != 0; i++) {
+		s += sourceFunction[i];
+	  }
+	}
+
+	return s;
+}
+
 fileReader::fileReader(/*paths*/)
 {
 	lastFile = nullptr;
@@ -347,6 +479,8 @@ fileReader::fileReader(/*paths*/)
 fileReader::fileList *fileReader::readFile(const char *file)
 {
 	assert(file != nullptr);
+
+	const char *original_file_name = file;
 
 	std::ifstream  f(file, std::ifstream::binary);
 
@@ -364,7 +498,7 @@ fileReader::fileList *fileReader::readFile(const char *file)
 		}
 
 		if (l != -1) {
-			file = &file[l];
+			file = &file[l+1];
 			f.open(file, std::ifstream::binary);
 		}
 	}
@@ -383,8 +517,26 @@ fileReader::fileList *fileReader::readFile(const char *file)
 	//    f.open(fn, ifsteam::binary);
 	//  }
 
+	fileList *fl = new fileList;
+
+	fl->next = files;
+	fl->funcs = nullptr;
+	files = fl;
+
+	int len = strlen(original_file_name)+1;
+	char *name = new char[len];
+	strcpy(name,original_file_name);
+
+	fl->name = name;
+
 	if (!f) {
-		return nullptr;
+		// always return a file list pointer, even if a file isn't found. If file not
+		// found, lines will be null
+
+		fl->lineCount = 0;
+		fl->lines = nullptr;
+
+		return fl;
 	}
 
 	// get length of file:
@@ -399,7 +551,7 @@ fileReader::fileList *fileReader::readFile(const char *file)
 
 	// read file into buffer
 
-	f.read (buffer,length);
+	f.read(buffer,length);
 
 	f.close();
 
@@ -444,29 +596,20 @@ fileReader::fileList *fileReader::readFile(const char *file)
 	}
 
 	if (l >= lc) {
+		delete [] lines;
+		delete [] buffer;
+
 		printf("Error: readFile(): Error computing line count for file\n");
+
 		return nullptr;
 	}
 
 	lines[l] = nullptr;
 
-	fileList *fl = new fileList;
-
-	fl->next = files;
-
-	int len = strlen(file)+1;
-	char *name = new char[len];
-	strcpy(name,file);
-
-	fl->name = name;
-
 	fl->lineCount = l;
 	fl->lines = lines;
 
-	files = fl;
-
 	return fl;
-
 }
 
 fileReader::fileList *fileReader::findFile(const char *file)
@@ -474,7 +617,6 @@ fileReader::fileList *fileReader::findFile(const char *file)
 	assert(file != nullptr);
 
 	// first check if file is same as last one uesed
-
 
 	if (lastFile != nullptr) {
 		if (strcmp(lastFile->name,file) == 0) {
@@ -539,7 +681,7 @@ Symtab::~Symtab()
 	}
 }
 
-const char *Symtab::getSymbolByAddress(dqr::ADDRESS addr)
+const char *Symtab::getSymbolByAddress(TraceDqr::ADDRESS addr)
 {
 	if (addr == 0) {
 		return nullptr;
@@ -618,10 +760,11 @@ ElfReader::ElfReader(char *elfname)
 
   abfd = bfd_openr(elfname,NULL);
   if (abfd == nullptr) {
-    status = dqr::dqr::DQERR_ERR;
+    status = TraceDqr::TraceDqr::DQERR_ERR;
 
     bfd_error_type bfd_error = bfd_get_error();
     printf("Error: bfd_openr() returned null. Error: %d\n",bfd_error);
+    printf("Error: Can't open file %s\n",elfname);
 
     return;
   }
@@ -629,7 +772,7 @@ ElfReader::ElfReader(char *elfname)
   if(!bfd_check_format(abfd,bfd_object)) {
     printf("Error: ElfReader(): %s not object file: %d\n",elfname,bfd_get_error());
 
-	status = dqr::dqr::DQERR_ERR;
+	status = TraceDqr::TraceDqr::DQERR_ERR;
 
 	return;
   }
@@ -640,7 +783,7 @@ ElfReader::ElfReader(char *elfname)
   if (aitp == nullptr) {
 	  printf("Error: ElfReader(): Cannot get arch in for file %s\n",elfname);
 
-	  status = dqr::dqr::DQERR_ERR;
+	  status = TraceDqr::TraceDqr::DQERR_ERR;
 	  return;
   }
 
@@ -670,7 +813,7 @@ ElfReader::ElfReader(char *elfname)
   default:
 	  printf("Error: ElfReader(): elf file is for unknown machine type\n");
 
-	  status = dqr::dqr::DQERR_ERR;
+	  status = TraceDqr::TraceDqr::DQERR_ERR;
 	  return;
   }
   symtab = nullptr;
@@ -685,7 +828,7 @@ ElfReader::ElfReader(char *elfname)
 	  }
   }
 
-  status = dqr::DQERR_OK;
+  status = TraceDqr::DQERR_OK;
 }
 
 ElfReader::~ElfReader()
@@ -694,9 +837,15 @@ ElfReader::~ElfReader()
 		delete symtab;
 		symtab = nullptr;
 	}
+
+	if (abfd != nullptr) {
+		bfd_close(abfd);
+
+		abfd = nullptr;
+	}
 }
 
-dqr::DQErr ElfReader::getInstructionByAddress(dqr::ADDRESS addr,dqr::RV_INST &inst)
+TraceDqr::DQErr ElfReader::getInstructionByAddress(TraceDqr::ADDRESS addr,TraceDqr::RV_INST &inst)
 {
 	// get instruction at addr
 
@@ -706,18 +855,18 @@ dqr::DQErr ElfReader::getInstructionByAddress(dqr::ADDRESS addr,dqr::RV_INST &in
 
 	section *sp;
 	if (codeSectionLst == nullptr) {
-		status = dqr::DQERR_ERR;
+		status = TraceDqr::DQERR_ERR;
 		return status;
 	}
 
 	sp = codeSectionLst->getSectionByAddress(addr);
 	if (sp == nullptr) {
-		status = dqr::DQERR_ERR;
+		status = TraceDqr::DQERR_ERR;
 		return status;
 	}
 
 	if ((addr < sp->startAddr) || (addr > sp->endAddr)) {
-		status = dqr::DQERR_ERR;
+		status = TraceDqr::DQERR_ERR;
 		return status;
 	}
 
@@ -744,18 +893,18 @@ dqr::DQErr ElfReader::getInstructionByAddress(dqr::ADDRESS addr,dqr::RV_INST &in
 	case 0x0000:	// quadrant 0, compressed
 	case 0x0001:	// quadrant 1, compressed
 	case 0x0002:	// quadrant 2, compressed
-		status = dqr::DQERR_OK;
+		status = TraceDqr::DQERR_OK;
 		break;
 	case 0x0003:	// not compressed. Assume RV32 for now
 		if ((inst & 0x1f) == 0x1f) {
 			fprintf(stderr,"Error: getInstructionByAddress(): cann't decode instructions longer than 32 bits\n");
-			status = dqr::DQERR_ERR;
+			status = TraceDqr::DQERR_ERR;
 			break;
 		}
 
 		inst = inst | (((uint32_t)sp->code[index+1]) << 16);
 
-		status = dqr::DQERR_OK;
+		status = TraceDqr::DQERR_OK;
 		break;
 	}
 
@@ -773,103 +922,267 @@ Symtab *ElfReader::getSymtab()
 	return symtab;
 }
 
-bool itcPrint::inited = itcPrint::init();
-
-bool itcPrint::buffering;
-bool itcPrint::eol[DQR_MAXCORES];
-char itcPrint::pbuff[DQR_MAXCORES][1024];
-int itcPrint::pbi[DQR_MAXCORES];
-
-bool itcPrint::init()
+ITCPrint::ITCPrint(int numCores, int buffSize,int channel)
 {
-	buffering = true;
+	assert((numCores > 0) && (buffSize > 0));
 
-	for (int i = 0; (size_t)i < (sizeof eol / sizeof eol[0]); i++) {
-		eol[i] = true;
+	this->numCores = numCores;
+	this->buffSize = buffSize;
+	this->printChannel = channel;
+
+	pbuff = new char*[numCores];
+
+	for (int i = 0; i < numCores; i++) {
+		pbuff[i] = new char[buffSize];
 	}
 
-	for (int i = 0; (size_t)i < (sizeof pbuff / sizeof pbuff[0]); i++ ) {
-		pbuff[i][0] = 0;
+	numMsgs = new int[numCores];
+
+	for (int i=0; i< numCores; i++) {
+		numMsgs[i] = 0;
 	}
 
-	for (int i = 0; (size_t)i < (sizeof pbi / sizeof pbi[0]); i++ ) {
+	pbi = new int[numCores];
+
+	for (int i=0; i< numCores; i++) {
 		pbi[i] = 0;
 	}
 
-	return 1;
+	pbo = new int[numCores];
+
+	for (int i=0; i< numCores; i++) {
+		pbo[i] = 0;
+	}
 }
 
-char *itcPrint::print(uint8_t core, uint32_t addr, uint32_t data)
+ITCPrint::~ITCPrint()
 {
-	assert((core >= 0) && (core <= DQR_MAXCORES));
+	if (pbuff != nullptr) {
+		for (int i = 0; i < numCores; i++) {
+			if (pbuff[i] != nullptr) {
+				delete [] pbuff[i];
+				pbuff[i] = nullptr;
+			}
+		}
 
-	if (addr >= 4) {
-		// not an itc 0 print
-		pbuff[core][pbi[core]] = 0;
-
-		return nullptr;
+		delete [] pbuff;
+		pbuff = nullptr;
 	}
 
-	if (buffering) {
-		char *p = (char *)&data;
-		bool flush = false;
+	if (numMsgs != nullptr) {
+		delete [] numMsgs;
+		numMsgs = nullptr;
+	}
 
-		// fill in buffer until eol is found (\n, \r, or \0). Need to dump buffer if
-		// it gets full
+	if (pbi != nullptr) {
+		delete [] pbi;
+		pbi = nullptr;
+	}
 
-		for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
-			if (eol[core] == true) {
-				pbi[core] += sprintf(pbuff[core]+pbi[core],"ITC Print: ");
+	if (pbo != nullptr) {
+		delete [] pbo;
+		pbo = nullptr;
+	}
+}
+
+int ITCPrint::roomInITCPrintQ(uint8_t core)
+{
+	if (core >= numCores) {
+		return 0;
+	}
+
+	if (pbi[core] > pbo[core]) {
+		return buffSize - pbi[core] + pbo[core] - 1;
+	}
+
+	if (pbi[core] < pbo[core]) {
+		return pbo[core] - pbi[core] - 1;
+	}
+
+	return buffSize-1;
+}
+
+void ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data)
+{
+	if (core >= numCores) {
+		return;
+	}
+
+	if ((addr < (uint32_t)printChannel*4) || (addr >= (((uint32_t)printChannel+1)*4))) {
+		// not writing to this itc channel
+
+		return;
+	}
+
+	char *p = (char *)&data;
+	int room = roomInITCPrintQ(core);
+
+	for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
+		if (room >= 2) {
+			pbuff[core][pbi[core]] = p[i];
+			pbi[core] += 1;
+			if (pbi[core] >= buffSize) {
+				pbi[core] = 0;
 			}
-
-			pbuff[core][pbi[core]++] = p[i];
+			room -= 1;
 
 			switch (p[i]) {
 			case 0:
+				numMsgs[core] += 1;
+				break;
 			case '\n':
 			case '\r':
-				eol[core] = true;
-				flush = true;
+				pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
+				pbi[core] += 1;
+				if (pbi[core] >= buffSize) {
+					pbi[core] = 0;
+				}
+				room -= 1;
+				numMsgs[core] += 1;
 				break;
 			default:
-				eol[core] = false;
+				break;
+			}
+		}
+	}
+
+	pbuff[core][pbi[core]] = 0; // make sure always null terminated
+}
+
+void ITCPrint::haveITCPrintData(int numMsgs[], bool havePrintData[])
+{
+	if (numMsgs != nullptr) {
+		for (int i = 0; i < numCores; i++) {
+			numMsgs[i] = this->numMsgs[i];
+		}
+	}
+
+	if (havePrintData != nullptr) {
+		for (int i = 0; i < numCores; i++) {
+			havePrintData[i] = pbi[i] != pbo[i];
+		}
+	}
+}
+
+bool ITCPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen)
+{
+	bool rc = false;
+
+	if (core >= numCores) {
+		return false;
+	}
+
+	assert((dst != nullptr) && (dstLen > 0));
+
+	if (numMsgs[core] > 0) {
+		rc = true;
+		numMsgs[core] -= 1;
+
+		while (pbuff[core][pbo[core]] && (dstLen > 1)) {
+			*dst++ = pbuff[core][pbo[core]];
+			dstLen -= 1;
+
+			pbo[core] += 1;
+			if (pbo[core] >= buffSize) {
+				pbo[core] = 0;
 			}
 		}
 
-		if ((size_t)pbi[core] > (sizeof pbuff[core]) - 20) {
-			// flush if buffer is almost full
-			flush = true;
-		} else if (addr == 0x00000003) {
-			// all one byte writes flush
-			flush = true;
-		}
+		*dst = 0;
 
-		if (flush) {
-			pbuff[core][pbi[core]] = 0;
-			pbi[core] = 0;
+		// skip past null terminted end of message
 
-			return pbuff[core];
+		pbo[core] += 1;
+		if (pbo[core] >= buffSize) {
+			pbo[core] = 0;
 		}
 	}
-	else {
-		// no buffering
 
-		char *p = (char *)&data;
+	return rc;
+}
 
-		pbi[core] += sprintf(pbuff[core]+pbi[core],"ITC Print: ");
-
-		for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
-			pbuff[core][pbi[core]++] = p[i];
-		}
-
-		pbuff[core][pbi[core]] = 0;
-		pbi[core] = 0;
-		eol[core] = true;
-
-		return pbuff[core];
+bool ITCPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen)
+{
+	if (core >= numCores) {
+		return false;
 	}
 
-	return nullptr;
+	assert((dst != nullptr) && (dstLen > 0));
+
+	if (numMsgs[core] > 0) {
+		return getITCPrintMsg(core,dst,dstLen);
+	}
+
+	if (pbo[core] != pbi[core]) {
+		while (pbuff[core][pbo[core]] && (dstLen > 1)) {
+			*dst++ = pbuff[core][pbo[core]];
+			dstLen -= 1;
+
+			pbo[core] += 1;
+			if (pbo[core] >= buffSize) {
+				pbo[core] = 0;
+			}
+		}
+		return true;
+	}
+
+	return false;
+}
+
+bool ITCPrint::getITCPrintStr(uint8_t core, std::string &s)
+{
+	if (core >= numCores) {
+		return false;
+	}
+
+	bool rc = false;
+
+	if (numMsgs[core] > 0) { // stuff in the Q
+		rc = true;
+		numMsgs[core] -= 1;
+
+		while (pbuff[core][pbo[core]]) {
+			s += pbuff[core][pbo[core]];
+
+			pbo[core] += 1;
+			if (pbo[core] >= buffSize) {
+				pbo[core] = 0;
+			}
+		}
+
+		pbo[core] += 1;
+		if (pbo[core] >= buffSize) {
+			pbo[core] = 0;
+		}
+	}
+
+	return rc;
+}
+
+bool ITCPrint::flushITCPrintStr(uint8_t core, std::string &s)
+{
+	if (core >= numCores) {
+		return false;
+	}
+
+	if (numMsgs[core] > 0) {
+		return getITCPrintStr(core,s);
+	}
+
+	if (pbo[core] != pbi[core]) {
+		s = "";
+		while (pbuff[core][pbo[core]]) {
+			s += pbuff[core][pbo[core]];
+
+			pbo[core] += 1;
+			if (pbo[core] >= buffSize) {
+				pbo[core] = 0;
+			}
+		}
+		return true;
+	}
+
+	return false;
 }
 
 Analytics::Analytics()
@@ -933,10 +1246,10 @@ Analytics::Analytics()
 		core[i].trace_bits_faddr_min = 0;
 	}
 
-	status = dqr::DQERR_OK;
+	status = TraceDqr::DQERR_OK;
 }
 
-dqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,dqr::TCode tcode,uint32_t bits,uint32_t mseo_bits,uint32_t ts_bits,uint32_t addr_bits)
+TraceDqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,TraceDqr::TCode tcode,uint32_t bits,uint32_t mseo_bits,uint32_t ts_bits,uint32_t addr_bits)
 {
 	bool have_uaddr = false;
 	bool have_faddr = false;
@@ -982,81 +1295,81 @@ dqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,dqr::TCode tcode,uint32_t
 	}
 
 	switch (tcode) {
-	case dqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
 		core[core_id].num_trace_ownership += 1;
 		core[core_id].trace_bits_ownership += bits;
 		break;
-	case dqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
 		core[core_id].num_trace_dbranch += 1;
 		core[core_id].trace_bits_dbranch += bits;
 		num_branches_all_cores += 1;
 		break;
-	case dqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
 		core[core_id].num_trace_ibranch += 1;
 		core[core_id].trace_bits_ibranch += bits;
 		num_branches_all_cores += 1;
 
 		have_uaddr = true;
 		break;
-	case dqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
 		core[core_id].num_trace_dataacq += 1;
 		core[core_id].trace_bits_dataacq += bits;
 		break;
-	case dqr::TCODE_ERROR:
+	case TraceDqr::TCODE_ERROR:
 		core[core_id].num_trace_error += 1;
 		core[core_id].trace_bits_error += bits;
 		break;
-	case dqr::TCODE_SYNC:
+	case TraceDqr::TCODE_SYNC:
 		core[core_id].num_trace_syncs += 1;
 		core[core_id].trace_bits_sync += bits;
 
 		have_faddr = true;
 		break;
-	case dqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 		core[core_id].num_trace_dbranchws += 1;
 		core[core_id].trace_bits_dbranchws += bits;
 		num_branches_all_cores += 1;
 
 		have_faddr = true;
 		break;
-	case dqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 		core[core_id].num_trace_ibranchws += 1;
 		core[core_id].trace_bits_ibranchws += bits;
 		num_branches_all_cores += 1;
 
 		have_faddr = true;
 		break;
-	case dqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
 		core[core_id].num_trace_auxaccesswrite += 1;
 		core[core_id].trace_bits_auxaccesswrite += bits;
 		break;
-	case dqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_CORRELATION:
 		core[core_id].num_trace_correlation += 1;
 		core[core_id].trace_bits_ibranchws += bits;
 		break;
-	case dqr::TCODE_DEBUG_STATUS:
-	case dqr::TCODE_DEVICE_ID:
-	case dqr::TCODE_DATA_WRITE:
-	case dqr::TCODE_DATA_READ:
-	case dqr::TCODE_CORRECTION:
-	case dqr::TCODE_DATA_WRITE_WS:
-	case dqr::TCODE_DATA_READ_WS:
-	case dqr::TCODE_WATCHPOINT:
-	case dqr::TCODE_OUTPUT_PORTREPLACEMENT:
-	case dqr::TCODE_INPUT_PORTREPLACEMENT:
-	case dqr::TCODE_AUXACCESS_READ:
-	case dqr::TCODE_AUXACCESS_READNEXT:
-	case dqr::TCODE_AUXACCESS_WRITENEXT:
-	case dqr::TCODE_AUXACCESS_RESPONSE:
-	case dqr::TCODE_RESURCEFULL:
-	case dqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case dqr::TCODE_INDIRECTBRANCHHISORY_WS:
-	case dqr::TCODE_REPEATBRANCH:
-	case dqr::TCODE_REPEATINSTRUCITON:
-	case dqr::TCODE_REPEATSINSTURCIONT_WS:
-	case dqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
 	default:
-		status = dqr::DQERR_ERR;
+		status = TraceDqr::DQERR_ERR;
 		return status;
 	}
 
@@ -1088,7 +1401,7 @@ dqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,dqr::TCode tcode,uint32_t
 	return status;
 }
 
-dqr::DQErr Analytics::updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize)
+TraceDqr::DQErr Analytics::updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize)
 {
 	num_inst_all_cores += 1;
 	core[core_id].num_inst += 1;
@@ -1103,16 +1416,35 @@ dqr::DQErr Analytics::updateInstructionInfo(uint32_t core_id,uint32_t inst,int i
 		core[core_id].num_inst32 += 1;
 		break;
 	default:
-		status = dqr::DQERR_ERR;
+		status = TraceDqr::DQERR_ERR;
 	}
 
 	return status;
 }
 
-dqr::DQErr Analytics::display(int detail)
+static void updateDst(int n, char *&dst,int &dst_len)
 {
-	if (detail <= 0) {
-		return status;
+	if (n >= dst_len) {
+		dst += dst_len;
+		dst_len = 0;
+	}
+	else {
+		dst += n;
+		dst_len -= n;
+	}
+}
+
+void Analytics::toText(char *dst,int dst_len,int detailLevel)
+{
+	char tmp_dst[512];
+	int n;
+
+	assert(dst != nullptr);
+
+	dst[0] = 0;
+
+	if (detailLevel <= 0) {
+		return;
 	}
 
 	uint32_t have_ts = 0;
@@ -1125,44 +1457,62 @@ dqr::DQErr Analytics::display(int detail)
 		}
 	}
 
-	printf("\n");
-
 	if (srcBits == 0) {
-		printf("Trace Analytics: Single core");
-
+		n = snprintf(dst,dst_len,"Trace Analytics: Single core");
+		updateDst(n,dst,dst_len);
 	}
 	else {
-		printf("Trace Analytics: Multi core (src field %d bits)",srcBits);
+		n = snprintf(dst,dst_len,"Trace Analytics: Multi core (src field %d bits)",srcBits);
+		updateDst(n,dst,dst_len);
 	}
 
 	if (have_ts == 0) {
-		printf("; Trace messages do not have timestamps\n");
+		n = snprintf(dst,dst_len,"; Trace messages do not have timestamps\n");
+		updateDst(n,dst,dst_len);
 	}
 	else if (have_ts == cores) {
-		printf("; Trace messages have timestamps\n");
+		n = snprintf(dst,dst_len,"; Trace messages have timestamps\n");
+		updateDst(n,dst,dst_len);
 	}
 	else {
-		printf("; Some trace messages have timestamps\n");
+		n = snprintf(dst,dst_len,"; Some trace messages have timestamps\n");
+		updateDst(n,dst,dst_len);
 	}
 
-	if (detail == 1) {
-		printf("\n");
+	if (detailLevel == 1) {
+		n = snprintf(dst,dst_len,"\n");
+		updateDst(n,dst,dst_len);
 
-		printf("Instructions             Compressed                   RV32\n");
-		printf("  %10u    %10u (%0.2f%%)    %10u (%0.2f%%)\n",num_inst_all_cores,num_inst16_all_cores,((float)num_inst16_all_cores)/num_inst_all_cores*100.0,num_inst32_all_cores,((float)num_inst32_all_cores)/num_inst_all_cores*100.0);
-		printf("\n");
+		n = snprintf(dst,dst_len,"Instructions             Compressed                   RV32\n");
+		updateDst(n,dst,dst_len);
 
-		printf("Number of Trace Msgs      Avg Length    Min Length    Max Length    Total Length\n");
-		printf("          %10u          %6.2f    %10u    %10u      %10u\n",num_trace_msgs_all_cores,((float)num_trace_bits_all_cores)/num_trace_msgs_all_cores,num_trace_bits_all_cores_min,num_trace_bits_all_cores_max,num_trace_bits_all_cores);
+		n = snprintf(dst,dst_len,"  %10u    %10u (%0.2f%%)    %10u (%0.2f%%)\n",num_inst_all_cores,num_inst16_all_cores,((float)num_inst16_all_cores)/num_inst_all_cores*100.0,num_inst32_all_cores,((float)num_inst32_all_cores)/num_inst_all_cores*100.0);
+		updateDst(n,dst,dst_len);
 
-		printf("\n");
+		n = snprintf(dst,dst_len,"\n");
+		updateDst(n,dst,dst_len);
 
-		printf("Trace bits per instruction:     %5.2f\n",((float)num_trace_bits_all_cores)/num_inst_all_cores);
-		printf("Instructions per trace message: %5.2f\n",((float)num_inst_all_cores)/num_trace_msgs_all_cores);
-		printf("Instructions per taken branch:  %5.2f\n",((float)num_inst_all_cores)/num_branches_all_cores);
+		n = snprintf(dst,dst_len,"Number of Trace Msgs      Avg Length    Min Length    Max Length    Total Length\n");
+		updateDst(n,dst,dst_len);
+
+		n = snprintf(dst,dst_len,"          %10u          %6.2f    %10u    %10u      %10u\n",num_trace_msgs_all_cores,((float)num_trace_bits_all_cores)/num_trace_msgs_all_cores,num_trace_bits_all_cores_min,num_trace_bits_all_cores_max,num_trace_bits_all_cores);
+		updateDst(n,dst,dst_len);
+
+		n = snprintf(dst,dst_len,"\n");
+		updateDst(n,dst,dst_len);
+
+		n = snprintf(dst,dst_len,"Trace bits per instruction:     %5.2f\n",((float)num_trace_bits_all_cores)/num_inst_all_cores);
+		updateDst(n,dst,dst_len);
+
+		n = snprintf(dst,dst_len,"Instructions per trace message: %5.2f\n",((float)num_inst_all_cores)/num_trace_msgs_all_cores);
+		updateDst(n,dst,dst_len);
+
+		n = snprintf(dst,dst_len,"Instructions per taken branch:  %5.2f\n",((float)num_inst_all_cores)/num_branches_all_cores);
+		updateDst(n,dst,dst_len);
 
 		if (srcBits > 0) {
-			printf("Src bits %% of message:          %5.2f%%\n",((float)srcBits*num_trace_msgs_all_cores)/num_trace_bits_all_cores*100.0);
+			n = snprintf(dst,dst_len,"Src bits %% of message:          %5.2f%%\n",((float)srcBits*num_trace_msgs_all_cores)/num_trace_bits_all_cores*100.0);
+			updateDst(n,dst,dst_len);
 		}
 
 		if (have_ts != 0 || 1) {
@@ -1173,99 +1523,109 @@ dqr::DQErr Analytics::display(int detail)
 					bits_ts += core[i].trace_bits_ts;
 				}
 			}
-			printf("Timestamp bits %% of message:    %5.2f%%\n",((float)bits_ts)/num_trace_bits_all_cores*100.0);
+			n = snprintf(dst,dst_len,"Timestamp bits %% of message:    %5.2f%%\n",((float)bits_ts)/num_trace_bits_all_cores*100.0);
+			updateDst(n,dst,dst_len);
 		}
-
-//		printf("MSEO bits %10u (%0.2f%%)\n",num_trace_mseo_bits_all_cores,((float)num_trace_mseo_bits_all_cores)/num_trace_bits_all_cores*100.0);
-	} else if (detail > 1) {
+	}
+	else if (detailLevel > 1) {
 		int position;
 		int tabs[] = {19+21*0,19+21*1,19+21*2,19+21*3,19+21*4,19+21*5,19+21*6,19+21*7,19+21*8};
 		uint32_t t1, t2;
 		int ts;
 
-		printf("\n");
-		printf("                 ");
+		n = sprintf(tmp_dst,"\n");
+		n += sprintf(tmp_dst+n,"                 ");
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				printf("          Core %d",i);
+				n += sprintf(tmp_dst+n,"          Core %d",i);
 			}
 		}
 
 		if (srcBits > 0) {
-			printf("               Total");
+			n += sprintf(tmp_dst+n,"               Total");
 		}
 
-		printf("\n");
-		position = printf("Instructions");
+		n += sprintf(tmp_dst+n,"\n");
+
+		n = snprintf(dst,dst_len,"%s",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Instructions");
 
 		t1 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].num_inst);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_inst);
 				t1 += core[i].num_inst;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  Compressed");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Compressed");
 
 		t2 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_inst16,((float)core[i].num_inst16)/core[i].num_inst*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_inst16,((float)core[i].num_inst16)/core[i].num_inst*100.0);
 				t2 += core[i].num_inst16;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  RV32");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  RV32");
 
 		t2 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_inst32,((float)core[i].num_inst32)/core[i].num_inst*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_inst32,((float)core[i].num_inst32)/core[i].num_inst*100.0);
 				t2 += core[i].num_inst32;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("Trace Msgs");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Trace Msgs");
 
 		t1 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].num_trace_msgs);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_trace_msgs);
 				t1 += core[i].num_trace_msgs;
 				ts += 1;
 			}
@@ -1273,227 +1633,249 @@ dqr::DQErr Analytics::display(int detail)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  Sync");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Sync");
 
 		t2 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_syncs,((float)core[i].num_trace_syncs)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_syncs,((float)core[i].num_trace_syncs)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_syncs;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  DBranch");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  DBranch");
 
 		t2 = 0;
 		ts = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_dbranch,((float)core[i].num_trace_dbranch)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dbranch,((float)core[i].num_trace_dbranch)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_dbranch;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  IBranch");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  IBranch");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_ibranch,((float)core[i].num_trace_ibranch)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ibranch,((float)core[i].num_trace_ibranch)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_ibranch;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  DBranch WS");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  DBranch WS");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_dbranchws,((float)core[i].num_trace_dbranchws)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dbranchws,((float)core[i].num_trace_dbranchws)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_dbranchws;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  IBranch WS");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  IBranch WS");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_ibranchws,((float)core[i].num_trace_ibranchws)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ibranchws,((float)core[i].num_trace_ibranchws)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_ibranchws;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  Data Acq");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Data Acq");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_dataacq,((float)core[i].num_trace_dataacq)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dataacq,((float)core[i].num_trace_dataacq)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_dataacq;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  Correlation");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Correlation");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_correlation,((float)core[i].num_trace_correlation)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_correlation,((float)core[i].num_trace_correlation)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_correlation;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  Aux Acc Write");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Aux Acc Write");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_auxaccesswrite,((float)core[i].num_trace_auxaccesswrite)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_auxaccesswrite,((float)core[i].num_trace_auxaccesswrite)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_auxaccesswrite;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  Ownership");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Ownership");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_ownership,((float)core[i].num_trace_ownership)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ownership,((float)core[i].num_trace_ownership)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_ownership;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("  Error");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  Error");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u (%0.2f%%)",core[i].num_trace_error,((float)core[i].num_trace_error)/core[i].num_trace_msgs*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_error,((float)core[i].num_trace_error)/core[i].num_trace_msgs*100.0);
 				t2 += core[i].num_trace_error;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("Trace Bits Total");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Trace Bits Total");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits);
 				t1 += core[i].trace_bits;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
 //		printf("\n");
@@ -1516,8 +1898,10 @@ dqr::DQErr Analytics::display(int detail)
 //			printf("%10u",t1);
 //		}
 
-		printf("\n");
-		position = printf("Trace Bits/Inst");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Trace Bits/Inst");
 
 		ts = 0;
 		t1 = 0;
@@ -1525,8 +1909,8 @@ dqr::DQErr Analytics::display(int detail)
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%13.2f",((float)core[i].trace_bits)/core[i].num_inst);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits)/core[i].num_inst);
 				t1 += core[i].trace_bits;
 				t2 += core[i].num_inst;
 				ts += 1;
@@ -1534,52 +1918,58 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%13.2f",((float)t1)/t2);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%13.2f",((float)t1)/t2);
 		}
 
-		printf("\n");
-		position = printf("Inst/Trace Msg");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Inst/Trace Msg");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%13.2f",((float)core[i].num_inst)/core[i].num_trace_msgs);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/core[i].num_trace_msgs);
 				t1 += core[i].num_trace_msgs;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%13.2f",((float)t2)/t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
 		}
 
-		printf("\n");
-		position = printf("Inst/Taken Branch");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Inst/Taken Branch");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%13.2f",((float)core[i].num_inst)/(core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws));
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/(core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws));
 				t1 += core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%13.2f",((float)t2)/t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
 		}
 
-		printf("\n");
-		position = printf("Avg Msg Length");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Avg Msg Length");
 
 		ts = 0;
 		t1 = 0;
@@ -1587,8 +1977,8 @@ dqr::DQErr Analytics::display(int detail)
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%13.2f",((float)core[i].trace_bits)/core[i].num_trace_msgs);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits)/core[i].num_trace_msgs);
 				t1 += core[i].trace_bits;
 				t2 += core[i].num_trace_msgs;
 				ts += 1;
@@ -1596,20 +1986,22 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%13.2f",((float)t1)/t2);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%13.2f",((float)t1)/t2);
 		}
 
-		printf("\n");
-		position = printf("Min Msg Length");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Min Msg Length");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_min);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_min);
 				if ((t1 == 0) || (core[i].trace_bits_min < t1)) {
 					t1 = core[i].trace_bits_min;
 				}
@@ -1618,20 +2010,22 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("Max Msg Length");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Max Msg Length");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_max);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_max);
 				if (core[i].trace_bits_max > t1) {
 					t1 = core[i].trace_bits_max;
 				}
@@ -1640,70 +2034,76 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("Timestamp Counts");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Timestamp Counts");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].num_trace_ts);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_trace_ts);
 				t1 += core[i].num_trace_ts;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  TStamp Size Avg");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  TStamp Size Avg");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 				if (core[i].num_trace_ts > 0) {
-					position += printf("%13.2f",core[i].trace_bits_ts/core[i].num_trace_ts);
+					position += sprintf(tmp_dst+position,"%13.2f",core[i].trace_bits_ts/core[i].num_trace_ts);
 					t2 += core[i].trace_bits_ts;
 				}
 				else {
-					position += printf("         0");
+					position += sprintf(tmp_dst+position,"         0");
 				}
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 			if (t1 > 0) {
-				printf("%13.2f",((float)t2)/t1);
+				position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
 			}
 			else {
-				printf("         0");
+				position += sprintf(tmp_dst+position,"         0");
 			}
 		}
 
-		printf("\n");
-		position = printf("  TStamp Size Min");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  TStamp Size Min");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_ts_min);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_ts_min);
 				if ((t1 == 0) || (t1 > core[i].trace_bits_ts_min)) {
 					t1 = core[i].trace_bits_ts_min;
 				}
@@ -1712,20 +2112,22 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  TStamp Size Max");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  TStamp Size Max");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_ts_max);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_ts_max);
 				if (core[i].trace_bits_ts_max > t1) {
 					t1 = core[i].trace_bits_ts_max;
 				}
@@ -1734,90 +2136,98 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("Timestamp %% of Msg");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Timestamp %% of Msg");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%13.2f%%",((float)core[i].trace_bits_ts)/core[i].trace_bits*100.0);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%13.2f%%",((float)core[i].trace_bits_ts)/core[i].trace_bits*100.0);
 				t1 += core[i].trace_bits;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%13.2f%%",((float)t2)/t1*100.0);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%13.2f%%",((float)t2)/t1*100.0);
 		}
 
-		printf("\n");
-		position = printf("UADDR Counts");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"UADDR Counts");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].num_trace_uaddr);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_trace_uaddr);
 				t1 += core[i].num_trace_uaddr;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  UADDR Size Avg");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  UADDR Size Avg");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 				if (core[i].num_trace_uaddr > 0) {
-					position += printf("%13.2f",((float)core[i].trace_bits_uaddr)/core[i].num_trace_uaddr);
+					position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits_uaddr)/core[i].num_trace_uaddr);
 					t2 += core[i].trace_bits_uaddr;
 				}
 				else {
-					position += printf("        0");
+					position += sprintf(tmp_dst+position,"        0");
 				}
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 			if (t1 > 0) {
-				printf("%13.2f",((float)t2)/t1);
+				position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
 			}
 			else {
-				printf("        0");
+				position += sprintf(tmp_dst+position,"        0");
 			}
 		}
 
-		printf("\n");
-		position = printf("  UADDR Size Min");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  UADDR Size Min");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_uaddr_min);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_uaddr_min);
 				if ((t1 == 0) || (core[i].trace_bits_uaddr_min < t1)) {
 					t1 = core[i].trace_bits_uaddr_min;
 				}
@@ -1826,20 +2236,22 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  UADDR Size Max");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  UADDR Size Max");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_uaddr_max);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_uaddr_max);
 				if (t1 < core[i].trace_bits_uaddr_max) {
 					t1 = core[i].trace_bits_uaddr_max;
 				}
@@ -1848,70 +2260,76 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("FADDR Counts");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"FADDR Counts");
 
 		ts = 0;
 		t1 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].num_trace_faddr);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_trace_faddr);
 				t1 += core[i].num_trace_faddr;
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t1);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t1);
 		}
 
-		printf("\n");
-		position = printf("  FADDR Size Avg");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  FADDR Size Avg");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 				if (core[i].num_trace_faddr > 0) {
-					position += printf("%13.2f",((float)core[i].trace_bits_faddr)/core[i].num_trace_faddr);
+					position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits_faddr)/core[i].num_trace_faddr);
 					t2 = core[i].trace_bits_faddr;
 				}
 				else {
-					position += printf("        0");
+					position += sprintf(tmp_dst+position,"        0");
 				}
 				ts += 1;
 			}
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 			if (t1 > 0) {
-				printf("%13.2f",((float)t2)/t1);
+				position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
 			}
 			else {
-				printf("        0");
+				position += sprintf(tmp_dst+position,"        0");
 			}
 		}
 
-		printf("\n");
-		position = printf("  FADDR Size Min");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  FADDR Size Min");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_faddr_min);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_faddr_min);
 				if ((t2 == 0) || (core[i].trace_bits_faddr_min < t2)) {
 					t2 = core[i].trace_bits_faddr_min;
 				}
@@ -1920,20 +2338,22 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t2);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t2);
 		}
 
-		printf("\n");
-		position = printf("  FADDR Size Max");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  FADDR Size Max");
 
 		ts = 0;
 		t2 = 0;
 
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
-				while (position < tabs[ts]) { position += printf(" "); }
-				position += printf("%10u",core[i].trace_bits_faddr_max);
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].trace_bits_faddr_max);
 				if (core[i].trace_bits_faddr_max > t2) {
 					t2 = core[i].trace_bits_faddr_max;
 				}
@@ -1942,28 +2362,616 @@ dqr::DQErr Analytics::display(int detail)
 		}
 
 		if (srcBits > 0) {
-			while (position < tabs[ts]) { position += printf(" "); }
-			printf("%10u",t2);
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u",t2);
 		}
 
-		printf("\n");
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+	}
+}
+
+std::string Analytics::toString(int detailLevel)
+{
+	char dst[4096];
+
+	dst[0] = 0;
+
+	toText(dst,sizeof dst,detailLevel);
+
+	std::string s = "";
+
+	for (int i = 0; dst[i] != 0; i++) {
+		s += dst[i];
 	}
 
-	return status;
+	return s;
 }
+
+uint32_t NexusMessage::targetFrequency = 0;
 
 NexusMessage::NexusMessage()
 {
 	msgNum         = 0;
-	tcode          = dqr::TCODE_UNDEFINED;
-	src            = 0;
+	tcode          = TraceDqr::TCODE_UNDEFINED;
+	coreId         = 0;
 	haveTimestamp  = false;
 	timestamp      = 0;
 	currentAddress = 0;
-	time           = 0;
+	time = 0;
 }
 
-void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
+int NexusMessage::getI_Cnt()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+		return directBranch.i_cnt;
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+		return indirectBranch.i_cnt;
+	case TraceDqr::TCODE_SYNC:
+		return sync.i_cnt;
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+		return directBranchWS.i_cnt;
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+		return indirectBranchWS.i_cnt;
+	case TraceDqr::TCODE_CORRELATION:
+		return correlation.i_cnt;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+TraceDqr::ADDRESS NexusMessage::getU_Addr()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+		return indirectBranch.u_addr;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+TraceDqr::ADDRESS NexusMessage::getF_Addr()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+		return directBranchWS.f_addr;
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+		return indirectBranchWS.f_addr;
+	case TraceDqr::TCODE_SYNC:
+		return sync.f_addr;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+TraceDqr::BType NexusMessage::getB_Type()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+		return indirectBranch.b_type;
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+		return indirectBranchWS.b_type;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return TraceDqr::BTYPE_UNDEFINED;
+}
+
+TraceDqr::SyncReason NexusMessage::getSyncReason()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_SYNC:
+		return sync.sync;
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+		return directBranchWS.sync;
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+		return indirectBranchWS.sync;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return TraceDqr::SYNC_NONE;
+}
+
+uint8_t NexusMessage::getEType()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_ERROR:
+		return error.etype;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint8_t NexusMessage::getCDF()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_CORRELATION:
+		return correlation.cdf;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint8_t NexusMessage::getEVCode()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_CORRELATION:
+		return correlation.evcode;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+		break;
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint32_t NexusMessage::getData()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+		return dataAcquisition.data;
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+		return auxAccessWrite.data;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint32_t NexusMessage::getAddr()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+		return auxAccessWrite.data;
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint32_t NexusMessage::getIdTag()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+		return dataAcquisition.idTag;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint32_t NexusMessage::getProcess()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+		return ownership.process;
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+void NexusMessage::processITCPrintData(ITCPrint *itcPrint)
+{
+	// need to only do this once per message! Set a flag so we know we have done it.
+	// if flag set, return string (or null if none)
+
+	if (itcPrint != nullptr) {
+		switch (tcode) {
+		case TraceDqr::TCODE_DATA_ACQUISITION:
+			itcPrint->print(coreId,dataAcquisition.idTag,dataAcquisition.data);
+			break;
+		case TraceDqr::TCODE_AUXACCESS_WRITE:
+			itcPrint->print(coreId,auxAccessWrite.addr,auxAccessWrite.data);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+std::string NexusMessage::messageToString(int detailLevel)
+{
+	char dst[512];
+
+	messageToText(dst,sizeof dst,detailLevel);
+
+	std::string s(dst);
+
+	return s;
+}
+
+void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 {
 	assert(dst != nullptr);
 
@@ -1971,13 +2979,11 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 	const char *bt;
 	int n;
 
-	if (pdst != nullptr) {
-		*pdst = nullptr;
-	}
+	// level = 0, itcprint (always process itc print info
+	// level = 1, timestamp + target + itcprint
+	// level = 2, message info + timestamp + target + itcprint
 
-	// level = 0, nothing
-	// level = 1, timestamp and target
-	// level = 2, message info + timestamp + target
+//	processITCPrintData();
 
 	if (level <= 0) {
 		dst[0] = 0;
@@ -1985,47 +2991,52 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 	}
 
 	if (haveTimestamp) {
-		n = snprintf(dst,dst_len,"Msg # %d, Tics: %lld, NxtAddr: %08llx, TCode: ",msgNum,time,currentAddress);
+		if (NexusMessage::targetFrequency != 0) {
+			n = snprintf(dst,dst_len,"Msg # %d, time: %0.8f, NxtAddr: %08llx, TCode: ",msgNum,((double)time)/NexusMessage::targetFrequency,currentAddress);
+		}
+		else {
+			n = snprintf(dst,dst_len,"Msg # %d, Tics: %lld, NxtAddr: %08llx, TCode: ",msgNum,time,currentAddress);
+		}
 	}
 	else {
 		n = snprintf(dst,dst_len,"Msg # %d, NxtAddr: %08llx, TCode: ",msgNum,currentAddress);
 	}
 
 	switch (tcode) {
-	case dqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEBUG_STATUS:
 		snprintf(dst+n,dst_len-n,"DEBUG STATUS (%d)",tcode);
 		break;
-	case dqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_DEVICE_ID:
 		snprintf(dst+n,dst_len-n,"DEVICE ID (%d)",tcode);
 		break;
-	case dqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
 		n += snprintf(dst+n,dst_len-n,"OWNERSHIP TRACE (%d)",tcode);
 
 		if (level >= 2) {
 			snprintf(dst+n,dst_len-n," process: %d",ownership.process);
 		}
 		break;
-	case dqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
 		n += snprintf(dst+n,dst_len-n,"DIRECT BRANCH (%d)",tcode);
 		if (level >= 2) {
 			snprintf(dst+n,dst_len-n," I-CNT: %d",directBranch.i_cnt);
 		}
 		break;
-	case dqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
 		n += snprintf(dst+n,dst_len-n,"INDIRECT BRANCH (%d)",tcode);
 
 		if (level >= 2) {
 			switch (indirectBranch.b_type) {
-			case dqr::BTYPE_INDIRECT:
+			case TraceDqr::BTYPE_INDIRECT:
 				bt = "Indirect";
 				break;
-			case dqr::BTYPE_EXCEPTION:
+			case TraceDqr::BTYPE_EXCEPTION:
 				bt = "Exception";
 				break;
-			case dqr::BTYPE_HARDWARE:
+			case TraceDqr::BTYPE_HARDWARE:
 				bt = "Hardware";
 				break;
-			case dqr::BTYPE_UNDEFINED:
+			case TraceDqr::BTYPE_UNDEFINED:
 				bt = "Undefined";
 				break;
 			default:
@@ -2036,54 +3047,54 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 			snprintf(dst+n,dst_len-n," Branch Type: %s (%d) I-CNT: %d U-ADDR: 0x%08llx ",bt,indirectBranch.b_type,indirectBranch.i_cnt,indirectBranch.u_addr);
 		}
 		break;
-	case dqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_WRITE:
 		snprintf(dst+n,dst_len-n,"DATA WRITE (%d)",tcode);
 		break;
-	case dqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_READ:
 		snprintf(dst+n,dst_len-n,"DATA READ (%d)",tcode);
 		break;
-	case dqr::TCODE_ERROR:
+	case TraceDqr::TCODE_ERROR:
 		n += snprintf(dst+n,dst_len-n,"ERROR (%d)",tcode);
 		if (level >= 2) {
 			snprintf(dst+n,dst_len-n," Error Type %d",error.etype);
 		}
 		break;
-	case dqr::TCODE_SYNC:
+	case TraceDqr::TCODE_SYNC:
 		n += snprintf(dst+n,dst_len-n,"SYNC (%d)",tcode);
 
 		if (level >= 2) {
 			switch (sync.sync) {
-			case dqr::SYNC_EVTI:
+			case TraceDqr::SYNC_EVTI:
 				sr = "EVTI";
 				break;
-			case dqr::SYNC_EXIT_RESET:
+			case TraceDqr::SYNC_EXIT_RESET:
 				sr = "Exit Reset";
 				break;
-			case dqr::SYNC_T_CNT:
+			case TraceDqr::SYNC_T_CNT:
 				sr = "T Count";
 				break;
-			case dqr::SYNC_EXIT_DEBUG:
+			case TraceDqr::SYNC_EXIT_DEBUG:
 				sr = "Exit Debug";
 				break;
-			case dqr::SYNC_I_CNT_OVERFLOW:
+			case TraceDqr::SYNC_I_CNT_OVERFLOW:
 				sr = "I-Count Overflow";
 				break;
-			case dqr::SYNC_TRACE_ENABLE:
+			case TraceDqr::SYNC_TRACE_ENABLE:
 				sr = "Trace Enable";
 				break;
-			case dqr::SYNC_WATCHPINT:
+			case TraceDqr::SYNC_WATCHPINT:
 				sr = "Watchpoint";
 				break;
-			case dqr::SYNC_FIFO_OVERRUN:
+			case TraceDqr::SYNC_FIFO_OVERRUN:
 				sr = "FIFO Overrun";
 				break;
-			case dqr::SYNC_EXIT_POWERDOWN:
+			case TraceDqr::SYNC_EXIT_POWERDOWN:
 				sr = "Exit Powerdown";
 				break;
-			case dqr::SYNC_MESSAGE_CONTENTION:
+			case TraceDqr::SYNC_MESSAGE_CONTENTION:
 				sr = "Message Contention";
 				break;
-			case dqr::SYNC_NONE:
+			case TraceDqr::SYNC_NONE:
 				sr = "None";
 				break;
 			default:
@@ -2094,45 +3105,45 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 			snprintf(dst+n,dst_len-n," Reason: (%d) %s I-CNT: %d F-Addr: 0x%08llx",sync.sync,sr,sync.i_cnt,sync.f_addr);
 		}
 		break;
-	case dqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_CORRECTION:
 		snprintf(dst+n,dst_len-n,"Correction (%d)",tcode);
 		break;
-	case dqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 		n += snprintf(dst+n,dst_len-n,"DIRECT BRANCH WS (%d)",tcode);
 
 		if (level >= 2) {
 			switch (directBranchWS.sync) {
-			case dqr::SYNC_EVTI:
+			case TraceDqr::SYNC_EVTI:
 				sr = "EVTI";
 				break;
-			case dqr::SYNC_EXIT_RESET:
+			case TraceDqr::SYNC_EXIT_RESET:
 				sr = "Exit Reset";
 				break;
-			case dqr::SYNC_T_CNT:
+			case TraceDqr::SYNC_T_CNT:
 				sr = "T Count";
 				break;
-			case dqr::SYNC_EXIT_DEBUG:
+			case TraceDqr::SYNC_EXIT_DEBUG:
 				sr = "Exit Debug";
 				break;
-			case dqr::SYNC_I_CNT_OVERFLOW:
+			case TraceDqr::SYNC_I_CNT_OVERFLOW:
 				sr = "I-Count Overflow";
 				break;
-			case dqr::SYNC_TRACE_ENABLE:
+			case TraceDqr::SYNC_TRACE_ENABLE:
 				sr = "Trace Enable";
 				break;
-			case dqr::SYNC_WATCHPINT:
+			case TraceDqr::SYNC_WATCHPINT:
 				sr = "Watchpoint";
 				break;
-			case dqr::SYNC_FIFO_OVERRUN:
+			case TraceDqr::SYNC_FIFO_OVERRUN:
 				sr = "FIFO Overrun";
 				break;
-			case dqr::SYNC_EXIT_POWERDOWN:
+			case TraceDqr::SYNC_EXIT_POWERDOWN:
 				sr = "Exit Powerdown";
 				break;
-			case dqr::SYNC_MESSAGE_CONTENTION:
+			case TraceDqr::SYNC_MESSAGE_CONTENTION:
 				sr = "Message Contention";
 				break;
-			case dqr::SYNC_NONE:
+			case TraceDqr::SYNC_NONE:
 				sr = "None";
 				break;
 			default:
@@ -2143,42 +3154,42 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 			snprintf(dst+n,dst_len-n," Reason: (%d) %s I-CNT: %d F-Addr: 0x%08llx",directBranchWS.sync,sr,directBranchWS.i_cnt,directBranchWS.f_addr);
 		}
 		break;
-	case dqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 		n += snprintf(dst+n,dst_len-n,"INDIRECT BRANCH WS (%d)",tcode);
 
 		if (level >= 2) {
 			switch (indirectBranchWS.sync) {
-			case dqr::SYNC_EVTI:
+			case TraceDqr::SYNC_EVTI:
 				sr = "EVTI";
 				break;
-			case dqr::SYNC_EXIT_RESET:
+			case TraceDqr::SYNC_EXIT_RESET:
 				sr = "Exit Reset";
 				break;
-			case dqr::SYNC_T_CNT:
+			case TraceDqr::SYNC_T_CNT:
 				sr = "T Count";
 				break;
-			case dqr::SYNC_EXIT_DEBUG:
+			case TraceDqr::SYNC_EXIT_DEBUG:
 				sr = "Exit Debug";
 				break;
-			case dqr::SYNC_I_CNT_OVERFLOW:
+			case TraceDqr::SYNC_I_CNT_OVERFLOW:
 				sr = "I-Count Overflow";
 				break;
-			case dqr::SYNC_TRACE_ENABLE:
+			case TraceDqr::SYNC_TRACE_ENABLE:
 				sr = "Trace Enable";
 				break;
-			case dqr::SYNC_WATCHPINT:
+			case TraceDqr::SYNC_WATCHPINT:
 				sr = "Watchpoint";
 				break;
-			case dqr::SYNC_FIFO_OVERRUN:
+			case TraceDqr::SYNC_FIFO_OVERRUN:
 				sr = "FIFO Overrun";
 				break;
-			case dqr::SYNC_EXIT_POWERDOWN:
+			case TraceDqr::SYNC_EXIT_POWERDOWN:
 				sr = "Exit Powerdown";
 				break;
-			case dqr::SYNC_MESSAGE_CONTENTION:
+			case TraceDqr::SYNC_MESSAGE_CONTENTION:
 				sr = "Message Contention";
 				break;
-			case dqr::SYNC_NONE:
+			case TraceDqr::SYNC_NONE:
 				sr = "None";
 				break;
 			default:
@@ -2187,16 +3198,16 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 			}
 
 			switch (indirectBranchWS.b_type) {
-			case dqr::BTYPE_INDIRECT:
+			case TraceDqr::BTYPE_INDIRECT:
 				bt = "Indirect";
 				break;
-			case dqr::BTYPE_EXCEPTION:
+			case TraceDqr::BTYPE_EXCEPTION:
 				bt = "Exception";
 				break;
-			case dqr::BTYPE_HARDWARE:
+			case TraceDqr::BTYPE_HARDWARE:
 				bt = "Hardware";
 				break;
-			case dqr::BTYPE_UNDEFINED:
+			case TraceDqr::BTYPE_UNDEFINED:
 				bt = "Undefined";
 				break;
 			default:
@@ -2207,25 +3218,25 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 			snprintf(dst+n,dst_len-n," Reason: (%d) %s Branch Type %s (%d) I-CNT: %d F-Addr: 0x%08llx",indirectBranchWS.sync,sr,bt,indirectBranchWS.b_type,indirectBranchWS.i_cnt,indirectBranchWS.f_addr);
 		}
 		break;
-	case dqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
 		snprintf(dst+n,dst_len-n,"DATA WRITE WS (%d)",tcode);
 		break;
-	case dqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
 		snprintf(dst+n,dst_len-n,"DATA READ WS (%d)",tcode);
 		break;
-	case dqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_WATCHPOINT:
 		snprintf(dst+n,dst_len-n,"TCode: WATCHPOINT (%d)",tcode);
 		break;
-	case dqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
 		snprintf(dst+n,dst_len-n,"OUTPUT PORT REPLACEMENT (%d)",tcode);
 		break;
-	case dqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
 		snprintf(dst+n,dst_len-n,"INPUT PORT REPLACEMENT (%d)",tcode);
 		break;
-	case dqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_READ:
 		snprintf(dst+n,dst_len-n,"AUX ACCESS READ (%d)",tcode);
 		break;
-	case dqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
 		n += snprintf(dst+n,dst_len-n,"DATA ACQUISITION (%d)",tcode);
 
 		if (level >= 2) { // here, if addr not on word boudry, have a partial write!
@@ -2242,12 +3253,8 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 				break;
 			}
 		}
-
-		if (pdst != nullptr) {
-			*pdst = itcPrint::print(src,dataAcquisition.idTag,dataAcquisition.data);
-		}
 		break;
-	case dqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
 		n += snprintf(dst+n,dst_len-n,"AUX ACCESS WRITE (%d)",tcode);
 
 		if (level >= 2) { // here, if addr not on word boudry, have a partial write!
@@ -2264,49 +3271,45 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 				break;
 			}
 		}
-
-		if (pdst != nullptr) {
-			*pdst = itcPrint::print(src,auxAccessWrite.addr,auxAccessWrite.data);
-		}
 		break;
-	case dqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 		snprintf(dst+n,dst_len-n,"AUX ACCESS READNEXT (%d)",tcode);
 		break;
-	case dqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 		snprintf(dst+n,dst_len-n,"AUX ACCESS WRITENEXT (%d)",tcode);
 		break;
-	case dqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
 		snprintf(dst+n,dst_len-n,"AUXACCESS RESPOINSE (%d)",tcode);
 		break;
-	case dqr::TCODE_RESURCEFULL:
+	case TraceDqr::TCODE_RESURCEFULL:
 		snprintf(dst+n,dst_len-n,"RESOURCE FULL (%d)",tcode);
 		break;
-	case dqr::TCODE_INDIRECTBRANCHHISOTRY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
 		snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY (%d)",tcode);
 		break;
-	case dqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
 		snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY WS (%d)",tcode);
 		break;
-	case dqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATBRANCH:
 		snprintf(dst+n,dst_len-n,"REPEAT BRANCH (%d)",tcode);
 		break;
-	case dqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATINSTRUCITON:
 		snprintf(dst+n,dst_len-n,"REPEAT INSTRUCTION (%d)",tcode);
 		break;
-	case dqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
 		snprintf(dst+n,dst_len-n,"REPEAT INSTRUCTIN WS (%d)",tcode);
 		break;
-	case dqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_CORRELATION:
 		n += snprintf(dst+n,dst_len-n,"CORRELATION (%d)",tcode);
 
 		if (level >= 2) {
 			snprintf(dst+n,dst_len-n," EVCODE: %d I-CNT: %d",correlation.evcode,correlation.i_cnt);
 		}
 		break;
-	case dqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
 		snprintf(dst+n,dst_len-n,"INCIRCUITTRACE (%d)",tcode);
 		break;
-	case dqr::TCODE_UNDEFINED:
+	case TraceDqr::TCODE_UNDEFINED:
 		snprintf(dst+n,dst_len-n,"UNDEFINED (%d)",tcode);
 		break;
 	default:
@@ -2315,72 +3318,85 @@ void NexusMessage::messageToText(char *dst,size_t dst_len,char **pdst,int level)
 	}
 }
 
+double NexusMessage::seconds()
+{
+	if (haveTimestamp == false) {
+		return 0.0;
+	}
+
+	if (targetFrequency != 0) {
+		return ((double)time) / targetFrequency;
+	}
+
+	return (double)time;
+}
+
 void NexusMessage::dump()
 {
 	switch (tcode) {
-	case dqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEBUG_STATUS:
 		std::cout << "unsupported debug status trace message\n";
 		break;
-	case dqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_DEVICE_ID:
 		std::cout << "unsupported device id trace message\n";
 		break;
-	case dqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
 //bks
 		std::cout << "  # Trace Message(" << msgNum << "): Ownership, process=" << ownership.process; // << ", TS=0x" << hex << timestamp << dec; // << endl;
 		break;
-	case dqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
 //		cout << "(" << traceNum << ") ";
 //		cout << "  | Direct Branch | TYPE=DBM, ICNT=" << i_cnt << ", TS=0x" << hex << timestamp << dec; // << endl;
 //bks		cout << "  # Trace Message(" << msgNum << "): Direct Branch, ICNT=" << i_cnt; // << ", TS=0x" << hex << timestamp << dec; // << endl;
 		break;
-	case dqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
 //		cout << "(" << traceNum << ") ";
 //		cout << "  | Indirect Branch | TYPE=IBM, BTYPE=" << b_type << ", ICNT=" << i_cnt << ", UADDR=0x" << hex << u_addr << ", TS=0x" << timestamp << dec;// << endl;
 //bks		cout << "  # Trace Message(" << msgNum << "): Indirect Branch, BTYPE=" << b_type << ", ICNT=" << i_cnt << ", UADDR=0x" << hex << u_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
-	case dqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_WRITE:
 		std::cout << "unsupported data write trace message\n";
 		break;
-	case dqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_READ:
 		std::cout << "unsupported data read trace message\n";
 		break;
-	case dqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
 		std::cout << "unsupported data acquisition trace message\n";
 		break;
-	case dqr::TCODE_ERROR:
+	case TraceDqr::TCODE_ERROR:
 //bks		cout << "  # Trace Message(" << msgNum << "): Error, ETYPE=" << (uint32_t)etype; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
-	case dqr::TCODE_SYNC:
+	case TraceDqr::TCODE_SYNC:
 //		cout << "(" << traceNum << "," << syncNum << ") ";
 //		cout << "  | Sync | TYPE=SYNC, SYNC=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << ", TS=0x" << timestamp << dec;// << endl;
 //bks		cout << "  # Trace Message(" << msgNum << "): Sync, SYNCREASON=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
-	case dqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_CORRECTION:
 		std::cout << "unsupported correction trace message\n";
 		break;
-	case dqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 //		cout << "(" << traceNum << "," << syncNum << ") ";
 //		cout << "  | Direct Branch With Sync | TYPE=DBWS, SYNC=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << ", TS=0x" << timestamp << dec;// << endl;
 //bks		cout << "  # Trace Message(" << msgNum << "): Direct Branch With Sync, SYNCTYPE=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
-	case dqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 //		cout << "(" << traceNum << "," << syncNum << ") ";
 //		cout << "  | Indirect Branch With Sync | TYPE=IBWS, SYNC=" << sync << ", BTYPE=" << b_type << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << ", TS=0x" << timestamp << dec;// << endl;
 //bks		cout << "  # Trace Message(" << msgNum << "): Indirect Branch With sync, SYNCTYPE=" << sync << ", BTYPE=" << b_type << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
-	case dqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
 		std::cout << "unsupported data write with sync trace message\n";
 		break;
-	case dqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
 		std::cout << "unsupported data read with sync trace message\n";
 		break;
-	case dqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_WATCHPOINT:
 		std::cout << "unsupported watchpoint trace message\n";
 		break;
-	case dqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
 //bks		cout << "  # Trace Message(" << msgNum << "): Auxillary Access Write, address=" << hex << auxAddr << dec << ", data=" << hex << data << dec; // << ", TS=0x" << hex << timestamp << dec; // << endl;
 		break;
-	case dqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_CORRELATION:
 //bks		cout << "  # Trace Message(" << msgNum << "): Correlation, EVCODE=" << (uint32_t)evcode << ", CDF=" << (int)cdf << ", ICNT=" << i_cnt << "\n"; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
 	default:
@@ -2393,8 +3409,6 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 	assert(filename != nullptr);
 
 	srcbits = srcBits;
-
-	firstMsg = true;
 
 	msgSlices      = 0;
 	bitIndex       = 0;
@@ -2412,10 +3426,10 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 
 	if (!tf) {
 		printf("Error: SliceFileParder(): could not open file %s for input",filename);
-		status = dqr::DQERR_OPEN;
+		status = TraceDqr::DQERR_OPEN;
 	}
 	else {
-		status = dqr::DQERR_OK;
+		status = TraceDqr::DQERR_OK;
 	}
 
 #if	0
@@ -2423,6 +3437,13 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 
 	readAllTraceMsgs();
 #endif
+}
+
+SliceFileParser::~SliceFileParser()
+{
+	if (tf.is_open()) {
+		tf.close();
+	}
 }
 
 void SliceFileParser::dump()
@@ -2443,21 +3464,21 @@ void SliceFileParser::dump()
 	}
 }
 
-dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &analytics)
+TraceDqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &analytics)
 {
-	dqr::DQErr rc;
+	TraceDqr::DQErr rc;
 	uint64_t   tmp;
 	int        width;
 	int        bits = 6;	// start bits at 6 to account for tcode
 	int        ts_bits = 0;
 
-	nm.tcode = dqr::TCODE_DIRECT_BRANCH;
+	nm.tcode = TraceDqr::TCODE_DIRECT_BRANCH;
 
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
-        if (rc != dqr::DQERR_OK) {
+        if (rc != TraceDqr::DQERR_OK) {
             status = rc;
 
             return status;
@@ -2465,16 +3486,16 @@ dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &analyt
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the variable length the i-cnt
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2490,7 +3511,7 @@ dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &analyt
 	}
 	else {
 		rc = parseVarField(&tmp,&width); // this field is optional - check err
-		if (rc != dqr::DQERR_OK) {
+		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 
 			return status;
@@ -2502,38 +3523,38 @@ dqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &analyt
 		// check if entire message has been consumed
 
 		if (eom != true) {
-			status = dqr::DQERR_BM;
+			status = TraceDqr::DQERR_BM;
 
 			return status;
 		}
 
 		nm.haveTimestamp = true;
-		nm.timestamp = (dqr::TIMESTAMP)tmp;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_DIRECT_BRANCH,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_DIRECT_BRANCH,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
 	return status;
 }
 
-dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm,Analytics &analytics)
+TraceDqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm,Analytics &analytics)
 {
-	dqr::DQErr rc;
+	TraceDqr::DQErr rc;
 	uint64_t   tmp;
 	int        width;
 	int        bits = 6;
 	int        ts_bits = 0;
 	int        addr_bits;
 
-	nm.tcode = dqr::TCODE_DIRECT_BRANCH_WS;
+	nm.tcode = TraceDqr::TCODE_DIRECT_BRANCH_WS;
 
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
-        if (rc != dqr::DQERR_OK) {
+        if (rc != TraceDqr::DQERR_OK) {
             status = rc;
 
             return status;
@@ -2541,16 +3562,16 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm,Analytics &anal
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the fixed length sync reason field
 
 	rc = parseFixedField(4,&tmp);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2558,12 +3579,12 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm,Analytics &anal
 
 	bits += 4;
 
-	nm.directBranchWS.sync   = (dqr::SyncReason)tmp;
+	nm.directBranchWS.sync   = (TraceDqr::SyncReason)tmp;
 
 	// parse the variable length the i-cnt
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2574,7 +3595,7 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm,Analytics &anal
 	nm.directBranchWS.i_cnt  = (int)tmp;
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2583,7 +3604,7 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm,Analytics &anal
 	bits += width;
 	addr_bits = width;
 
-	nm.directBranchWS.f_addr = (dqr::ADDRESS)tmp;
+	nm.directBranchWS.f_addr = (TraceDqr::ADDRESS)tmp;
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -2591,7 +3612,7 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm,Analytics &anal
 	}
 	else {
 		rc = parseVarField(&tmp,&width); // this field is optional - check err
-		if (rc != dqr::DQERR_OK) {
+		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 
 			return status;
@@ -2603,38 +3624,38 @@ dqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm,Analytics &anal
 		// check if entire message has been consumed
 
 		if (eom != true) {
-			status = dqr::DQERR_BM;
+			status = TraceDqr::DQERR_BM;
 
 			return status;
 		}
 
 		nm.haveTimestamp = true;
-		nm.timestamp = (dqr::TIMESTAMP)tmp;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_DIRECT_BRANCH_WS,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_DIRECT_BRANCH_WS,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
 	return status;
 }
 
-dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics &analytics)
+TraceDqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics &analytics)
 {
-	dqr::DQErr rc;
+	TraceDqr::DQErr rc;
 	uint64_t   tmp;
 	int        width;
 	int        bits = 6;
 	int        ts_bits = 0;
 	int        addr_bits;
 
-	nm.tcode = dqr::TCODE_INDIRECT_BRANCH;
+	nm.tcode = TraceDqr::TCODE_INDIRECT_BRANCH;
 
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
-        if (rc != dqr::DQERR_OK) {
+        if (rc != TraceDqr::DQERR_OK) {
             status = rc;
 
             return status;
@@ -2642,16 +3663,16 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics &anal
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the fixed lenght b-type
 
 	rc = parseFixedField(2,&tmp);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2659,12 +3680,12 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics &anal
 
 	bits += 2;
 
-	nm.indirectBranch.b_type = (dqr::BType)tmp;
+	nm.indirectBranch.b_type = (TraceDqr::BType)tmp;
 
 	// parse the variable length the i-cnt
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2675,7 +3696,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics &anal
 	nm.indirectBranch.i_cnt  = (int)tmp;
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2684,7 +3705,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics &anal
 	bits += width;
 	addr_bits = width;
 
-	nm.indirectBranch.u_addr = (dqr::ADDRESS)tmp;
+	nm.indirectBranch.u_addr = (TraceDqr::ADDRESS)tmp;
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -2692,7 +3713,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics &anal
 	}
 	else {
 		rc = parseVarField(&tmp,&width); // this field is optional - check err
-		if (rc != dqr::DQERR_OK) {
+		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 
 			return status;
@@ -2704,38 +3725,38 @@ dqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics &anal
 		// check if entire message has been consumed
 
 		if (eom != true) {
-			status = dqr::DQERR_BM;
+			status = TraceDqr::DQERR_BM;
 
 			return status;
 		}
 
 		nm.haveTimestamp = true;
-		nm.timestamp = (dqr::TIMESTAMP)tmp;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_INDIRECT_BRANCH,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_INDIRECT_BRANCH,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
 	return status;
 }
 
-dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &analytics)
+TraceDqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &analytics)
 {
-	dqr::DQErr rc;
+	TraceDqr::DQErr rc;
 	uint64_t   tmp;
 	int        width;
 	int        bits = 6;
 	int        ts_bits = 0;
 	int        addr_bits;
 
-	nm.tcode = dqr::TCODE_INDIRECT_BRANCH_WS;
+	nm.tcode = TraceDqr::TCODE_INDIRECT_BRANCH_WS;
 
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
-        if (rc != dqr::DQERR_OK) {
+        if (rc != TraceDqr::DQERR_OK) {
             status = rc;
 
             return status;
@@ -2743,16 +3764,16 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &an
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the fixed length sync field
 
 	rc = parseFixedField(4,&tmp);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2760,12 +3781,12 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &an
 
 	bits += 4;
 
-	nm.indirectBranchWS.sync = (dqr::SyncReason)tmp;
+	nm.indirectBranchWS.sync = (TraceDqr::SyncReason)tmp;
 
 	// parse the fixed length b-type
 
 	rc = parseFixedField(2,&tmp);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2773,12 +3794,12 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &an
 
 	bits += 2;
 
-	nm.indirectBranchWS.b_type = (dqr::BType)tmp;
+	nm.indirectBranchWS.b_type = (TraceDqr::BType)tmp;
 
 	// parse the variable length the i-cnt
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2789,7 +3810,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &an
 	nm.indirectBranchWS.i_cnt = (int)tmp;
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2798,7 +3819,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &an
 	bits += width;
 	addr_bits = width;
 
-	nm.indirectBranchWS.f_addr = (dqr::ADDRESS)tmp;
+	nm.indirectBranchWS.f_addr = (TraceDqr::ADDRESS)tmp;
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -2806,7 +3827,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &an
 	}
 	else {
 		rc = parseVarField(&tmp,&width); // this field is optional - check err
-		if (rc != dqr::DQERR_OK) {
+		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 
 			return status;
@@ -2815,7 +3836,7 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &an
 		// check if entire message has been consumed
 
 		if (eom != true) {
-			status = dqr::DQERR_BM;
+			status = TraceDqr::DQERR_BM;
 
 			return status;
 		}
@@ -2824,32 +3845,32 @@ dqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytics &an
 		ts_bits = width;
 
 		nm.haveTimestamp = true;
-		nm.timestamp = (dqr::TIMESTAMP)tmp;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_INDIRECT_BRANCH_WS,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_INDIRECT_BRANCH_WS,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
 	return status;
 }
 
-dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics)
+TraceDqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics)
 {
-	dqr::DQErr rc;
+	TraceDqr::DQErr rc;
 	uint64_t   tmp;
 	int        width;
 	int        bits = 6;
 	int        ts_bits = 0;
 	int        addr_bits;
 
-	nm.tcode         = dqr::TCODE_SYNC;
+	nm.tcode         = TraceDqr::TCODE_SYNC;
 
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
-        if (rc != dqr::DQERR_OK) {
+        if (rc != TraceDqr::DQERR_OK) {
             status = rc;
 
             return status;
@@ -2857,16 +3878,16 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics)
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the variable length the sync
 
 	rc = parseFixedField(4,&tmp);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2874,10 +3895,10 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics)
 
 	bits += 4;
 
-	nm.sync.sync     = (dqr::SyncReason)tmp;
+	nm.sync.sync     = (TraceDqr::SyncReason)tmp;
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2888,7 +3909,7 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics)
 	nm.sync.i_cnt    = (int)tmp;
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2897,7 +3918,7 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics)
 	bits += width;
 	addr_bits = width;
 
-	nm.sync.f_addr   = (dqr::ADDRESS)tmp;
+	nm.sync.f_addr   = (TraceDqr::ADDRESS)tmp;
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -2905,7 +3926,7 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics)
 	}
 	else {
 		rc = parseVarField(&tmp,&width); // this field is optional - check err
-		if (rc != dqr::DQERR_OK) {
+		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 
 			return status;
@@ -2914,7 +3935,7 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics)
 		// check if entire message has been consumed
 
 		if (eom != true) {
-			status = dqr::DQERR_BM;
+			status = TraceDqr::DQERR_BM;
 
 			return status;
 		}
@@ -2923,31 +3944,31 @@ dqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics)
 		ts_bits = width;
 
 		nm.haveTimestamp = true;
-		nm.timestamp = (dqr::TIMESTAMP)tmp;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_SYNC,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_SYNC,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
 	return status;
 }
 
-dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &analytics)
+TraceDqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &analytics)
 {
-	dqr::DQErr rc;
+	TraceDqr::DQErr rc;
 	uint64_t   tmp;
 	int        width;
 	int        bits = 6;
 	int        ts_bits = 0;
 
-	nm.tcode = dqr::TCODE_CORRELATION;
+	nm.tcode = TraceDqr::TCODE_CORRELATION;
 
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
-        if (rc != dqr::DQERR_OK) {
+        if (rc != TraceDqr::DQERR_OK) {
             status = rc;
 
             return status;
@@ -2955,16 +3976,16 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &analyti
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the 4-bit evcode field
 
 	rc = parseFixedField(4,&tmp);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2977,7 +3998,7 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &analyti
 	// parse the 2-bit cdf field.
 
 	rc = parseFixedField(2,&tmp);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -2988,7 +4009,7 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &analyti
 	if (tmp != 0) {
 		printf("Error: DQErr SliceFileParser::parseCorrelation(): Expected CDF to be 0 (%d)\n",(int)tmp);
 
-		status = dqr::DQERR_ERR;
+		status = TraceDqr::DQERR_ERR;
 
 		return status;
 	}
@@ -2998,7 +4019,7 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &analyti
 	// parse the variable length i-cnt field
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -3014,7 +4035,7 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &analyti
 	}
 	else {
 		rc = parseVarField(&tmp,&width); // this field is optional - check err
-		if (rc != dqr::DQERR_OK) {
+		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 
 			return status;
@@ -3023,7 +4044,7 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &analyti
 		// check if entire message has been consumed
 
 		if (eom != true) {
-			status = dqr::DQERR_BM;
+			status = TraceDqr::DQERR_BM;
 
 			return status;
 		}
@@ -3032,31 +4053,31 @@ dqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &analyti
 		ts_bits = width;
 
 		nm.haveTimestamp = true;
-		nm.timestamp = (dqr::TIMESTAMP)tmp;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_CORRELATION,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_CORRELATION,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
 	return status;
 }
 
-dqr::DQErr SliceFileParser::parseError(NexusMessage &nm,Analytics &analytics)
+TraceDqr::DQErr SliceFileParser::parseError(NexusMessage &nm,Analytics &analytics)
 {
-	dqr::DQErr rc;
+	TraceDqr::DQErr rc;
 	uint64_t   tmp;
 	int        width;
 	int        bits = 6;
 	int        ts_bits = 0;
 
-	nm.tcode = dqr::TCODE_ERROR;
+	nm.tcode = TraceDqr::TCODE_ERROR;
 
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
-        if (rc != dqr::DQERR_OK) {
+        if (rc != TraceDqr::DQERR_OK) {
             status = rc;
 
             return status;
@@ -3064,16 +4085,16 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm,Analytics &analytics)
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the 4 bit ETYPE field
 
 	rc = parseFixedField(4,&tmp);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -3086,7 +4107,7 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm,Analytics &analytics)
 	// parse the variable sized padd field
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -3100,7 +4121,7 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm,Analytics &analytics)
 	}
 	else {
 		rc = parseVarField(&tmp,&width); // this field is optional - check err
-		if (rc != dqr::DQERR_OK) {
+		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 
 			return status;
@@ -3109,7 +4130,7 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm,Analytics &analytics)
 		// check if entire message has been consumed
 
 		if (eom != true) {
-			status = dqr::DQERR_BM;
+			status = TraceDqr::DQERR_BM;
 
 			return status;
 		}
@@ -3118,31 +4139,31 @@ dqr::DQErr SliceFileParser::parseError(NexusMessage &nm,Analytics &analytics)
 		ts_bits = width;
 
 		nm.haveTimestamp = true;
-		nm.timestamp = (dqr::TIMESTAMP)tmp;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_ERROR,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_ERROR,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
 	return status;
 }
 
-dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm,Analytics &analytics)
+TraceDqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm,Analytics &analytics)
 {
-	dqr::DQErr rc;
+	TraceDqr::DQErr rc;
 	uint64_t   tmp;
 	int        width;
 	int        bits = 6;
 	int        ts_bits = 0;
 
-	nm.tcode = dqr::TCODE_OWNERSHIP_TRACE;
+	nm.tcode = TraceDqr::TCODE_OWNERSHIP_TRACE;
 
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
-        if (rc != dqr::DQERR_OK) {
+        if (rc != TraceDqr::DQERR_OK) {
             status = rc;
 
             return status;
@@ -3150,16 +4171,16 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm,Analytics &anal
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the variable length process ID field
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -3175,7 +4196,7 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm,Analytics &anal
 	}
 	else {
 		rc = parseVarField(&tmp,&width); // this field is optional - check err
-		if (rc != dqr::DQERR_OK) {
+		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 
 			return status;
@@ -3184,7 +4205,7 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm,Analytics &anal
 		// check if entire message has been consumed
 
 		if (eom != true) {
-			status = dqr::DQERR_BM;
+			status = TraceDqr::DQERR_BM;
 
 			return status;
 		}
@@ -3193,31 +4214,31 @@ dqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm,Analytics &anal
 		ts_bits = width;
 
 		nm.haveTimestamp = true;
-		nm.timestamp = (dqr::TIMESTAMP)tmp;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_OWNERSHIP_TRACE,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_OWNERSHIP_TRACE,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
 	return status;
 }
 
-dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm,Analytics &analytics)
+TraceDqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm,Analytics &analytics)
 {
-	dqr::DQErr rc;
+	TraceDqr::DQErr rc;
 	uint64_t   tmp;
 	int        width;
 	int        bits = 6;
 	int        ts_bits = 0;
 
-	nm.tcode = dqr::TCODE_AUXACCESS_WRITE;
+	nm.tcode = TraceDqr::TCODE_AUXACCESS_WRITE;
 
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
-        if (rc != dqr::DQERR_OK) {
+        if (rc != TraceDqr::DQERR_OK) {
             status = rc;
 
             return status;
@@ -3225,16 +4246,16 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm,Analytics &anal
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the ADDR field
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -3247,7 +4268,7 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm,Analytics &anal
 	// parse the data field
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -3263,7 +4284,7 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm,Analytics &anal
 	}
 	else {
 		rc = parseVarField(&tmp,&width); // this field is optional - check err
-		if (rc != dqr::DQERR_OK) {
+		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 
 			return status;
@@ -3272,7 +4293,7 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm,Analytics &anal
 		// check if entire message has been consumed
 
 		if (eom != true) {
-			status = dqr::DQERR_BM;
+			status = TraceDqr::DQERR_BM;
 
 			return status;
 		}
@@ -3281,31 +4302,31 @@ dqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm,Analytics &anal
 		ts_bits = width;
 
 		nm.haveTimestamp = true;
-		nm.timestamp = (dqr::TIMESTAMP)tmp;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_AUXACCESS_WRITE,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_AUXACCESS_WRITE,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
 	return status;
 }
 
-dqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm,Analytics &analytics)
+TraceDqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm,Analytics &analytics)
 {
-	dqr::DQErr rc;
+	TraceDqr::DQErr rc;
 	uint64_t   tmp;
 	int        width;
 	int        bits = 6;
 	int        ts_bits = 0;
 
-	nm.tcode = dqr::TCODE_DATA_ACQUISITION;
+	nm.tcode = TraceDqr::TCODE_DATA_ACQUISITION;
 
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
         rc = parseFixedField(srcbits,&tmp);
-        if (rc != dqr::DQERR_OK) {
+        if (rc != TraceDqr::DQERR_OK) {
             status = rc;
 
             return status;
@@ -3313,16 +4334,16 @@ dqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm,Analytics &ana
 
         bits += srcbits;
 
-        nm.src = (uint8_t)tmp;
+        nm.coreId = (uint8_t)tmp;
 	}
 	else {
-		nm.src = 0;
+		nm.coreId = 0;
 	}
 
 	// parse the idTag field
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -3335,7 +4356,7 @@ dqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm,Analytics &ana
 	// parse the data field
 
 	rc = parseVarField(&tmp,&width);
-	if (rc != dqr::DQERR_OK) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
 		return status;
@@ -3351,7 +4372,7 @@ dqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm,Analytics &ana
 	}
 	else {
 		rc = parseVarField(&tmp,&width); // this field is optional - check err
-		if (rc != dqr::DQERR_OK) {
+		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 
 			return status;
@@ -3360,7 +4381,7 @@ dqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm,Analytics &ana
 		// check if entire message has been consumed
 
 		if (eom != true) {
-			status = dqr::DQERR_BM;
+			status = TraceDqr::DQERR_BM;
 
 			return status;
 		}
@@ -3369,17 +4390,17 @@ dqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm,Analytics &ana
 		ts_bits = width;
 
 		nm.haveTimestamp = true;
-		nm.timestamp = (dqr::TIMESTAMP)tmp;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.src,dqr::TCODE_DATA_ACQUISITION,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_DATA_ACQUISITION,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
 	return status;
 }
 
-dqr::DQErr SliceFileParser::parseFixedField(int width, uint64_t *val)
+TraceDqr::DQErr SliceFileParser::parseFixedField(int width, uint64_t *val)
 {
 	assert(width != 0);
 	assert(val != nullptr);
@@ -3402,9 +4423,9 @@ dqr::DQErr SliceFileParser::parseFixedField(int width, uint64_t *val)
 	if (bitIndex >= msgSlices * 6) {
 		// read past end of message
 
-		status = dqr::DQERR_EOM;
+		status = TraceDqr::DQERR_EOM;
 
-		return dqr::DQERR_EOM;
+		return TraceDqr::DQERR_EOM;
 	}
 
 	if (b+width > 6) {
@@ -3449,14 +4470,14 @@ dqr::DQErr SliceFileParser::parseFixedField(int width, uint64_t *val)
 		*val = uint64_t(v);
 	}
 
-	if ((msg[i] & 0x03) == dqr::MSEO_END) {
+	if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
 		eom = true;
 	}
 
-	return dqr::DQERR_OK;
+	return TraceDqr::DQERR_OK;
 }
 
-dqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
+TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 {
 	assert(val != nullptr);
 
@@ -3470,9 +4491,9 @@ dqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 	if (i >= msgSlices) {
 		// read past end of message
 
-		status = dqr::DQERR_EOM;
+		status = TraceDqr::DQERR_EOM;
 
-		return dqr::DQERR_EOM;
+		return TraceDqr::DQERR_EOM;
 	}
 
 	uint64_t v;
@@ -3485,21 +4506,21 @@ dqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 
 	v = msg[i] >> (b+2);
 
-	while ((msg[i] & 0x03) == dqr::MSEO_NORMAL) {
+	while ((msg[i] & 0x03) == TraceDqr::MSEO_NORMAL) {
 		i += 1;
 		if (i >= msgSlices) {
 			// read past end of message
 
-			status = dqr::DQERR_ERR;
+			status = TraceDqr::DQERR_ERR;
 
-			return dqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
 		}
 
 		v = v | ((msg[i] >> 2) << w);
 		w += 6;
 	}
 
-	if ((msg[i] & 0x03) == dqr::MSEO_END) {
+	if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
 		eom = true;
 	}
 
@@ -3510,10 +4531,10 @@ dqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 
 //	printf("-> bitIndex: %d, value: %llx\n",bitIndex,v);
 
-	return dqr::DQERR_OK;
+	return TraceDqr::DQERR_OK;
 }
 
-dqr::DQErr SliceFileParser::readBinaryMsg()
+TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 {
 	// start by stripping off end of message or end of var bytes. These would be here in the case
 	// of a wrapped buffer, or some kind of corruption
@@ -3522,12 +4543,12 @@ dqr::DQErr SliceFileParser::readBinaryMsg()
 		tf.read((char*)&msg[0],sizeof msg[0]);
 		if (!tf) {
 			if (tf.eof()) {
-				status = dqr::DQERR_EOF;
+				status = TraceDqr::DQERR_EOF;
 
 				std::cout << "Info: End of trace file\n";
 			}
 			else {
-				status = dqr::DQERR_ERR;
+				status = TraceDqr::DQERR_ERR;
 
 				std::cout << "Error reading trace file\n";
 			}
@@ -3536,23 +4557,10 @@ dqr::DQErr SliceFileParser::readBinaryMsg()
 
 			return status;
 		}
-		if ((msg[0] & 0x3) != dqr::MSEO_NORMAL) {
+		if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && ((msg[0] & 0x3) != TraceDqr::MSEO_END)) {
 			printf("skipping: %02x\n",msg[0]);
 		}
-	} while ((msg[0] & 0x3) != dqr::MSEO_NORMAL);
-
-	// make sure this is start of nexus message
-
-	if ((msg[0] & 0x3) != dqr::MSEO_NORMAL) {
-
-		tf.close();
-
-		status = dqr::DQERR_ERR;
-
-		std::cout << "Error: SliceFileParser::readBinaryMsg(): expected start of message; got" << std::hex << static_cast<uint8_t>(msg[0] & 0x3) << std::dec << std::endl;
-
-		return dqr::DQERR_ERR;
-	}
+	} while ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL);
 
 	bool done = false;
 
@@ -3563,20 +4571,20 @@ dqr::DQErr SliceFileParser::readBinaryMsg()
 
 			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
 
-			status = dqr::DQERR_ERR;
+			status = TraceDqr::DQERR_ERR;
 
-			return dqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
 		}
 
 		tf.read((char*)&msg[i],sizeof msg[0]);
 		if (!tf) {
 			if (tf.eof()) {
-				status = dqr::DQERR_EOF;
+				status = TraceDqr::DQERR_EOF;
 
 				std::cout << "End of trace file\n";
 			}
 			else {
-				status = dqr::DQERR_ERR;
+				status = TraceDqr::DQERR_ERR;
 
 				std::cout << "Error reading trace filem\n";
 			}
@@ -3586,7 +4594,7 @@ dqr::DQErr SliceFileParser::readBinaryMsg()
 			return status;
 		}
 
-		if ((msg[i] & 0x03) == dqr::MSEO_END) {
+		if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
 			done = true;
 			msgSlices = i+1;
 		}
@@ -3595,10 +4603,10 @@ dqr::DQErr SliceFileParser::readBinaryMsg()
 	eom = false;
 	bitIndex = 0;
 
-	return dqr::DQERR_OK;
+	return TraceDqr::DQERR_OK;
 }
 
-dqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
+TraceDqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
 {
 	char c;
 
@@ -3615,9 +4623,9 @@ dqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
 		if (!tf) {
 			tf.close();
 
-			status = dqr::DQERR_EOF;
+			status = TraceDqr::DQERR_EOF;
 
-			return dqr::DQERR_EOF;
+			return TraceDqr::DQERR_EOF;
 		}
 
 		switch (ss) {
@@ -3653,9 +4661,9 @@ dqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
 	if (!tf) {
 		tf.close();
 
-		status = dqr::DQERR_EOF;
+		status = TraceDqr::DQERR_EOF;
 
-		return dqr::DQERR_EOF;
+		return TraceDqr::DQERR_EOF;
 	}
 
 	int hd;
@@ -3663,50 +4671,50 @@ dqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
 
 	hd = atoh(c);
 	if (hd < 0) {
-		status = dqr::DQERR_ERR;
+		status = TraceDqr::DQERR_ERR;
 
-		return dqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
 	}
 
 	hn = hd << 4;
 
 	hd = atoh(c);
 	if (hd < 0) {
-		status = dqr::DQERR_ERR;
+		status = TraceDqr::DQERR_ERR;
 
-		return dqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
 	}
 
 	hn = hn | hd;
 
 	*byte = hn;
 
-	return dqr::DQERR_OK;
+	return TraceDqr::DQERR_OK;
 }
 
-dqr::DQErr SliceFileParser::readAscMsg()
+TraceDqr::DQErr SliceFileParser::readAscMsg()
 {
 	std::cout << "Error: SliceFileP{arser::readAscMsg(): not implemented" << std::endl;
-	status = dqr::DQERR_ERR;
+	status = TraceDqr::DQERR_ERR;
 
-	return dqr::DQERR_ERR;
+	return TraceDqr::DQERR_ERR;
 
 	// strip off idle bytes
 
 	do {
-		if (readNextByte(&msg[0]) != dqr::DQERR_OK) {
+		if (readNextByte(&msg[0]) != TraceDqr::DQERR_OK) {
 			return status;
 		}
-	} while ((msg[0] & 0x3) == dqr::MSEO_END);
+	} while ((msg[0] & 0x3) == TraceDqr::MSEO_END);
 
 	// make sure this is start of nexus message
 
-	if ((msg[0] & 0x3) != dqr::MSEO_NORMAL) {
-		status = dqr::DQERR_ERR;
+	if ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) {
+		status = TraceDqr::DQERR_ERR;
 
 		std::cout << "Error: SliceFileParser::readBinaryMsg(): expected start of message; got" << std::hex << static_cast<uint8_t>(msg[0] & 0x3) << std::dec << std::endl;
 
-		return dqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
 	}
 
 	// now get bytes
@@ -3719,16 +4727,16 @@ dqr::DQErr SliceFileParser::readAscMsg()
 
 			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
 
-			status = dqr::DQERR_ERR;
+			status = TraceDqr::DQERR_ERR;
 
-			return dqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
 		}
 
-		if (readNextByte(&msg[i]) != dqr::DQERR_OK) {
+		if (readNextByte(&msg[i]) != TraceDqr::DQERR_OK) {
 			return status;
 		}
 
-		if ((msg[i] & 0x03) == dqr::MSEO_END) {
+		if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
 			done = true;
 			msgSlices = i+1;
 		}
@@ -3738,150 +4746,140 @@ dqr::DQErr SliceFileParser::readAscMsg()
 
 	bitIndex = 0;
 
-	return dqr::DQERR_OK;
+	return TraceDqr::DQERR_OK;
 }
 
-dqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics)	// generator to read trace messages one at a time
+TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics)	// generator to read trace messages one at a time
 {
-	assert(status == dqr::DQERR_OK);
-
-	dqr::DQErr rc;
-	uint64_t   val;
-	uint8_t    tcode;
-
-	// read from file, store in object, compute and fill out full fields, such as address and more later
-	// need some place to put it. An object
-
-//	int i = 1;
-//	do {
-//		printf("trace msg %d\n",i);
-//		i += 1;
-//		rc = readBinaryMsg();
-//		printf("rc: %d\n",rc);
-//		dump();
-//	} while (rc == dqr::DQERR_OK); // foo
-
-	if (binary) {
-		rc = readBinaryMsg();
-		if (rc != dqr::DQERR_OK) {
-			if (rc != dqr::DQERR_EOF) {
-				std::cout << "Error: (): readBinaryMsg() returned error " << rc << std::endl;
-			}
-
-			status = rc;
-
-			return status;
-		}
-	}
-	else {	// text trace messages
-		rc = readAscMsg();
-		if (rc != dqr::DQERR_OK) {
-			if (rc != dqr::DQERR_EOF) {
-				std::cout << "Error: (): read/TxtMsg() returned error " << rc << std::endl;
-			}
-
-			status = rc;
-
-			return status;
-		}
-	}
-
-// crow	dump();
-
-	rc = parseFixedField(6, &val);
-
-	if (rc != dqr::DQERR_OK) {
-		std::cout << "Error: (): could not read tcode\n";
-
-		status = rc;
-
+	if (status != TraceDqr::DQERR_OK) {
 		return status;
 	}
 
-	tcode = (uint8_t)val;
+	TraceDqr::DQErr rc;
+	uint64_t   val;
+	uint8_t    tcode;
+	int getMsgAttempt = 3;
 
-	switch (tcode) {
-	case dqr::TCODE_DEBUG_STATUS:
-		std::cout << "unsupported debug status trace message\n";
-		status = dqr::DQERR_ERR;
-		break;
-	case dqr::TCODE_DEVICE_ID:
-		std::cout << "unsupported device id trace message\n";
-		status = dqr::DQERR_ERR;
-		break;
-	case dqr::TCODE_OWNERSHIP_TRACE:
-		status = parseOwnershipTrace(nm,analytics);
-		break;
-	case dqr::TCODE_DIRECT_BRANCH:
+	do { // we will try to get a good message most 3 times if there are problems
+
+		status = TraceDqr::DQERR_OK;
+
+		// read from file, store in object, compute and fill out full fields, such as address and more later
+
+		if (binary) {
+			rc = readBinaryMsg();
+			if (rc != TraceDqr::DQERR_OK) {
+
+				// all errors from readBinaryMsg() are non-recoverable.
+
+				if (rc != TraceDqr::DQERR_EOF) {
+					std::cout << "Error: (): readBinaryMsg() returned error " << rc << std::endl;
+				}
+
+				status = rc;
+
+				return status;
+			}
+		}
+		else {	// text trace messages
+			rc = readAscMsg();
+			if (rc != TraceDqr::DQERR_OK) {
+				if (rc != TraceDqr::DQERR_EOF) {
+					std::cout << "Error: (): read/TxtMsg() returned error " << rc << std::endl;
+				}
+
+				status = rc;
+
+				return status;
+			}
+		}
+
+		rc = parseFixedField(6, &val);
+		if (rc == TraceDqr::DQERR_OK) {
+			tcode = (uint8_t)val;
+
+			switch (tcode) {
+			case TraceDqr::TCODE_DEBUG_STATUS:
+				std::cout << "Unsupported debug status trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_DEVICE_ID:
+				std::cout << "Unsupported device id trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_OWNERSHIP_TRACE:
+				rc = parseOwnershipTrace(nm,analytics);
+				break;
+			case TraceDqr::TCODE_DIRECT_BRANCH:
 //		cout << " | direct branch";
-		status = parseDirectBranch(nm,analytics);
-		break;
-	case dqr::TCODE_INDIRECT_BRANCH:
+				rc = parseDirectBranch(nm,analytics);
+				break;
+			case TraceDqr::TCODE_INDIRECT_BRANCH:
 //		cout << "| indirect branch";
-		status = parseIndirectBranch(nm,analytics);
-		break;
-	case dqr::TCODE_DATA_WRITE:
-		std::cout << "unsupported data write trace message\n";
-		status = dqr::DQERR_ERR;
-		break;
-	case dqr::TCODE_DATA_READ:
-		std::cout << "unsupported data read trace message\n";
-		status = dqr::DQERR_ERR;
-		break;
-	case dqr::TCODE_DATA_ACQUISITION:
-		status = parseDataAcquisition(nm,analytics);
-		break;
-	case dqr::TCODE_ERROR:
-		status = parseError(nm,analytics);
-		break;
-	case dqr::TCODE_SYNC:
+				rc = parseIndirectBranch(nm,analytics);
+				break;
+			case TraceDqr::TCODE_DATA_WRITE:
+				std::cout << "unsupported data write trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_DATA_READ:
+				std::cout << "unsupported data read trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_DATA_ACQUISITION:
+				rc = parseDataAcquisition(nm,analytics);
+				break;
+			case TraceDqr::TCODE_ERROR:
+				rc = parseError(nm,analytics);
+				break;
+			case TraceDqr::TCODE_SYNC:
 //		cout << "| sync";
-		status = parseSync(nm,analytics);
-		break;
-	case dqr::TCODE_CORRECTION:
-		std::cout << "unsupported correction trace message\n";
-		status = dqr::DQERR_ERR;
-		break;
-	case dqr::TCODE_DIRECT_BRANCH_WS:
+				rc = parseSync(nm,analytics);
+				break;
+			case TraceDqr::TCODE_CORRECTION:
+				std::cout << "Unsupported correction trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 //		cout << "| direct branch with sync\n";
-		status = parseDirectBranchWS(nm,analytics);
-		break;
-	case dqr::TCODE_INDIRECT_BRANCH_WS:
+				rc = parseDirectBranchWS(nm,analytics);
+				break;
+			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 //		cout << "| indirect branch with sync";
-		status = parseIndirectBranchWS(nm,analytics);
-		break;
-	case dqr::TCODE_DATA_WRITE_WS:
-		std::cout << "unsupported data write with sync trace message\n";
-		status = dqr::DQERR_ERR;
-		break;
-	case dqr::TCODE_DATA_READ_WS:
-		std::cout << "unsupported data read with sync trace message\n";
-		status = dqr::DQERR_ERR;
-		break;
-	case dqr::TCODE_WATCHPOINT:
-		std::cout << "unsupported watchpoint trace message\n";
-		status = dqr::DQERR_ERR;
-		break;
-	case dqr::TCODE_CORRELATION:
-		status = parseCorrelation(nm,analytics);
-		break;
-	case dqr::TCODE_AUXACCESS_WRITE:
-		status = parseAuxAccessWrite(nm,analytics);
-		break;
-	default:
-		std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << tcode << std::dec << std::endl;
-		status = dqr::DQERR_ERR;
-	}
+				rc = parseIndirectBranchWS(nm,analytics);
+				break;
+			case TraceDqr::TCODE_DATA_WRITE_WS:
+				std::cout << "unsupported data write with sync trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_DATA_READ_WS:
+				std::cout << "unsupported data read with sync trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_WATCHPOINT:
+				std::cout << "unsupported watchpoint trace message\n";
+				rc = TraceDqr::DQERR_ERR;
+				break;
+			case TraceDqr::TCODE_CORRELATION:
+				rc = parseCorrelation(nm,analytics);
+				break;
+			case TraceDqr::TCODE_AUXACCESS_WRITE:
+				rc = parseAuxAccessWrite(nm,analytics);
+				break;
+			default:
+				std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << tcode << std::dec << std::endl;
+				rc = TraceDqr::DQERR_ERR;
+			}
 
-	if ((status != dqr::DQERR_OK) && (firstMsg == true)) {
-		std::cout << "Error possibly due to corrupted first message in trace - skipping message" << std::endl;
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error possibly due to corrupted first message in trace - skipping message" << std::endl;
+			}
+		}
 
-		firstMsg = false;
+		getMsgAttempt -= 1;
+	} while ((rc != TraceDqr::DQERR_OK) && (getMsgAttempt > 0));
 
-		return readNextTraceMsg(nm,analytics);
-	}
-
-	firstMsg = false;
+	status = rc;
 
 	return status;
 }
@@ -4071,7 +5069,7 @@ Disassembler::Disassembler(bfd *abfd)
 
   		  section *sp = new section;
   		  if (sp->initSection(&codeSectionLst, p) == nullptr) {
-  			  status = dqr::DQERR_ERR;
+  			  status = TraceDqr::DQERR_ERR;
   			  return;
   		  }
   	  }
@@ -4080,7 +5078,7 @@ Disassembler::Disassembler(bfd *abfd)
     if (codeSectionLst == nullptr) {
     	printf("Error: no code sections found\n");
 
-    	status = dqr::DQERR_ERR;
+    	status = TraceDqr::DQERR_ERR;
     	return;
     }
 
@@ -4095,7 +5093,7 @@ Disassembler::Disassembler(bfd *abfd)
    		delete [] info;
    		info = nullptr;
 
-   		status = dqr::DQERR_ERR;
+   		status = TraceDqr::DQERR_ERR;
    		return;
    	}
 
@@ -4124,7 +5122,7 @@ Disassembler::Disassembler(bfd *abfd)
    	lastFileName = nullptr;
    	lastLineNumber = -1;
 
-    status = dqr::DQERR_OK;
+    status = TraceDqr::DQERR_OK;
 }
 
 int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size)
@@ -4138,17 +5136,17 @@ int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_
 	// need to support multiple code sections and do some error checking on the address!
 
 	if (codeSectionLst == nullptr) {
-		status = dqr::DQERR_ERR;
+		status = TraceDqr::DQERR_ERR;
 
 		return 1;
 	}
 
 	section *sp;
 
-	sp = codeSectionLst->getSectionByAddress((dqr::ADDRESS)vma);
+	sp = codeSectionLst->getSectionByAddress((TraceDqr::ADDRESS)vma);
 
 	if (sp == nullptr) {
-		status = dqr::DQERR_ERR;
+		status = TraceDqr::DQERR_ERR;
 
 		return 1;
 	}
@@ -4157,7 +5155,7 @@ int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_
 
 	rc = decodeInstructionSize(inst, size);
 	if (rc != 0) {
-		status = dqr::DQERR_ERR;
+		status = TraceDqr::DQERR_ERR;
 
 		return rc;
 	}
@@ -4412,7 +5410,7 @@ int Disassembler::decodeInstructionSize(uint32_t inst, int &inst_size)
 
 #define MOVE_BIT(bits,s,d)	((bits&(1<<s))?(1<<d):0)
 
-int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch)
 {
 	// no branch or jump instruction in quadrant 0
 
@@ -4424,12 +5422,12 @@ int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,in
 		return 1;
 	}
 
-	inst_type = UNKNOWN;
+	inst_type = TraceDqr::INST_UNKNOWN;
 
 	return 0;
 }
 
-int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch)
 {
 	// Q1 compressed instruction
 
@@ -4439,7 +5437,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 
 	switch (instruction >> 13) {
 	case 0x1:
-		inst_type = C_JAL;
+		inst_type = TraceDqr::INST_C_JAL;
 		is_branch = true;
 
 		t = MOVE_BIT(instruction,3,1);
@@ -4461,7 +5459,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 		immeadiate = t;
 		break;
 	case 0x5:
-		inst_type = C_J;
+		inst_type = TraceDqr::INST_C_J;
 		is_branch = true;
 
 		t = MOVE_BIT(instruction,3,1);
@@ -4483,7 +5481,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 		immeadiate = t;
 		break;
 	case 0x6:
-		inst_type = C_BEQZ;
+		inst_type = TraceDqr::INST_C_BEQZ;
 		is_branch = true;
 
 		t = MOVE_BIT(instruction,3,1);
@@ -4502,7 +5500,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 		immeadiate = t;
 		break;
 	case 0x7:
-		inst_type = C_BNEZ;
+		inst_type = TraceDqr::INST_C_BNEZ;
 		is_branch = true;
 
 		t = MOVE_BIT(instruction,3,1);
@@ -4521,7 +5519,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 		immeadiate = t;
 		break;
 	default:
-		inst_type = UNKNOWN;
+		inst_type = TraceDqr::INST_UNKNOWN;
 		is_branch = 0;
 		break;
 	}
@@ -4529,13 +5527,13 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,in
 	return 0;
 }
 
-int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch)
 {
 	// Q1 compressed instruction
 
 	inst_size = 16;
 
-	inst_type = UNKNOWN;
+	inst_type = TraceDqr::INST_UNKNOWN;
 	is_branch = false;
 
 	switch (instruction >> 13) {
@@ -4543,7 +5541,7 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,in
 		if (instruction & (1<<12)) {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
-					inst_type = C_JALR;
+					inst_type = TraceDqr::INST_C_JALR;
 					is_branch = true;
 					immeadiate = 0;
 				}
@@ -4552,7 +5550,7 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,in
 		else {
 			if ((instruction & 0x007c) == 0x0000) {
 				if ((instruction & 0x0f80) != 0x0000) {
-					inst_type = C_JR;
+					inst_type = TraceDqr::INST_C_JR;
 					is_branch = true;
 					immeadiate = 0;
 				}
@@ -4566,7 +5564,7 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,in
 	return 0;
 }
 
-int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch)
 {
 	if ((instruction & 0x1f) == 0x1f) {
 		fprintf(stderr,"Error: decodeBranch(): cann't decode instructions longer than 32 bits\n");
@@ -4579,7 +5577,7 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,inst
 
 	switch (instruction & 0x7f) {
 	case 0x6f:
-		inst_type = JAL;
+		inst_type = TraceDqr::INST_JAL;
 		is_branch = true;
 
 		t = MOVE_BIT(instruction,21,1);
@@ -4611,7 +5609,7 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,inst
 		break;
 	case 0x67:
 		if ((instruction & 0x7000) == 0x000) {
-			inst_type = JALR;
+			inst_type = TraceDqr::INST_JALR;
 			is_branch = true;
 
 			t = instruction >> 20;
@@ -4623,32 +5621,32 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,inst
 			immeadiate = t;
 		}
 		else {
-			inst_type = UNKNOWN;
+			inst_type = TraceDqr::INST_UNKNOWN;
 			is_branch = false;
 		}
 		break;
 	case 0x63:
 		switch ((instruction >> 12) & 0x7) {
 		case 0x0:
-			inst_type = BEQ;
+			inst_type = TraceDqr::INST_BEQ;
 			break;
 		case 0x1:
-			inst_type = BNE;
+			inst_type = TraceDqr::INST_BNE;
 			break;
 		case 0x4:
-			inst_type = BLT;
+			inst_type = TraceDqr::INST_BLT;
 			break;
 		case 0x5:
-			inst_type = BGE;
+			inst_type = TraceDqr::INST_BGE;
 			break;
 		case 0x6:
-			inst_type = BLTU;
+			inst_type = TraceDqr::INST_BLTU;
 			break;
 		case 0x7:
-			inst_type = BGEU;
+			inst_type = TraceDqr::INST_BGEU;
 			break;
 		default:
-			inst_type = UNKNOWN;
+			inst_type = TraceDqr::INST_UNKNOWN;
 			is_branch = false;
 			return 0;
 		}
@@ -4679,7 +5677,7 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,inst
 	return 0;
 }
 
-int Disassembler::decodeInstruction(uint32_t instruction,int &inst_size,instType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch)
 {
 	int rc;
 
@@ -4701,11 +5699,11 @@ int Disassembler::decodeInstruction(uint32_t instruction,int &inst_size,instType
 	return rc;
 }
 
-int Disassembler::getSrcLines(dqr::ADDRESS addr, const char **filename, const char **functionname, unsigned int *linenumber, const char **lineptr)
+int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, const char **functionname, unsigned int *linenumber, const char **lineptr)
 {
-	const char *file;
-	const char *function;
-	unsigned int line;
+	const char *file = nullptr;
+	const char *function = nullptr;
+	unsigned int line = 0;
 	unsigned int discrim;
 
 	// need to loop through all sections with code below and try to find one that succeeds
@@ -4731,28 +5729,56 @@ int Disassembler::getSrcLines(dqr::ADDRESS addr, const char **filename, const ch
 		return 0;
 	}
 
-	struct fileReader::fileList *fl;
-
-	*filename = file;
-	*functionname = function;
 	*linenumber = line;
 
 	if (file == nullptr) {
 		return 0;
 	}
 
+	struct fileReader::fileList *fl;
+
 	fl = fileReader->findFile(file);
-	if (fl == nullptr) {
-		*lineptr = nullptr;
+	assert(fl != nullptr);
+
+	*filename = fl->name;
+
+	if (function != nullptr) {
+		// find the function name in fncList
+
+		struct fileReader::funcList *funcLst;
+
+		for (funcLst = fl->funcs; (funcLst != nullptr) && (strcmp(funcLst->func,function) != 0); funcLst = funcLst->next) {
+			// empty
+		}
+
+		if (funcLst == nullptr) {
+			// add function to the list
+
+			int len = strlen(function)+1;
+			char *fname = new char[len];
+			strcpy(fname,function);
+
+			funcLst = new fileReader::funcList;
+			funcLst->func = fname;
+			funcLst->next = fl->funcs;
+			fl->funcs = funcLst;
+		}
+
+		// at this point fl->funcs should point to this function (if it was just added or not)
+
+		*functionname = fl->funcs->func;
 	}
-	else {
+
+	// line numbers start at 1
+
+	if ((line >= 1) && (line <= fl->lineCount)) {
 		*lineptr = fl->lines[line-1];
 	}
 
 	return 1;
 }
 
-int Disassembler::Disassemble(dqr::ADDRESS addr)
+int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 {
 	assert(disassemble_func != nullptr);
 

@@ -1,6 +1,6 @@
-TOPTARGETS := all clean
+TOPTARGETS := all clean install
 
-SUBDIRS := Debug Release
+SUBDIRS := Debug Release lib
 
 CONFIG := Debug
 
@@ -8,11 +8,14 @@ CROSSPREFIX :=
 
 $(TOPTARGETS): $(CONFIG)
 
-$(CONFIG):
+$(CONFIG): libs
 	$(MAKE) -C $@ $(MAKECMDGOALS)
 
-Release:
+Release: libs
 	$(MAKE) -C Release $(MAKECMDGOALS)
+
+libs:
+	$(MAKE) -C lib NEWLIBPATH=$(NEWLIBPATH) $(MAKECMDGOALS)
 
 clean-all:
 	$(MAKE) -C Debug clean

@@ -5,8 +5,14 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <metal/machine/platform.h>
 
-#define	baseAddress	0x20007000
+#ifndef METAL_SIFIVE_TRACE_0_BASE_ADDRESS
+#error METAL_SIFIVE_TRACE_0_BASE_ADDRESS is not defined.  Does this target have trace?
+#endif
+#define baseAddress METAL_SIFIVE_TRACE_0_BASE_ADDRESS
+
+#include "itc_utils.h"
 
 // Register Offsets
 
@@ -52,39 +58,150 @@
 #define	atbSink			((uint32_t*)(baseAddress+Offset_atbSink))
 #define pibSink			((uint32_t*)(baseAddress+Offset_pibSink))
 
-int itc_puts(const char *f);
+static int itc_channel_set = 0;
+static int itc_print_channel = 0;
 
-static int enable_itc(int reg)
+static int itc_enable(int channel)
 {
-	if ((reg < 0) || (reg > 31)) {
+	if ((channel < 0) || (channel > 31)) {
 		return 1;
 	}
 
-	*itcTraceEnable |= (1 << reg);
+	*itcTraceEnable |= (1 << channel);
 
 	return 0;
 }
 
-static int init_itc(int reg)
+static inline void itc_write_uint32(uint32_t data)
 {
-	return enable_itc(reg);
+	itcStimulus[itc_print_channel] = data;
 }
 
-static inline void write_itc(uint32_t data)
+static inline void itc_write_uint8(uint8_t data)
 {
-	itcStimulus[0] = data;
-}
-
-static inline void write_itc_uint8(uint8_t data)
-{
-	uint8_t *itc_uint8 = (uint8_t*)&itcStimulus[0];
+	uint8_t *itc_uint8 = (uint8_t*)&itcStimulus[itc_print_channel];
 	itc_uint8[3] = data;
 }
 
-static inline void write_itc_uint16(uint16_t data)
+static inline void itc_write_uint16(uint16_t data)
 {
-	uint16_t *itc_uint16 = (uint16_t*)&itcStimulus[0];
+	uint16_t *itc_uint16 = (uint16_t*)&itcStimulus[itc_print_channel];
 	itc_uint16[1] = data;
+}
+
+// itc_fputs(): like itc_puts(), but no \n at end of text. Internal use only
+
+static int itc_fputs(const char *f)
+{
+	int rc;
+
+	if (itc_channel_set == 0) {
+		rc = itc_set_channel(0);
+		if (rc != 0) {
+			return 0;
+		}
+	}
+
+	rc = strlen(f);
+
+	int words = (rc/4)*4;
+	int bytes = rc & 0x03;
+	int i;
+	uint16_t a;
+
+    for (i = 0; i < words; i += 4) {
+		itc_write_uint32(*(uint32_t*)(f+i));
+	}
+
+    switch (bytes) {
+    case 0:
+    	break;
+    case 1:
+    	itc_write_uint8(*(uint8_t*)(f+i));
+    	break;
+    case 2:
+    	itc_write_uint16(*(uint16_t*)(f+i));
+    	break;
+    case 3:
+    	a = *(uint16_t*)(f+i);
+    	itc_write_uint16(a);
+
+    	a = ((uint16_t)(*(uint8_t*)(f+i+2)));
+    	itc_write_uint8((uint8_t)a);
+    	break;
+    }
+
+	return rc;
+}
+
+int itc_set_channel(int channel)
+{
+	static uint32_t inited_mask = 0;
+
+	if (inited_mask & (1 << channel) == 0) {
+		int rc = itc_enable(channel);
+		if (rc == 0) {
+			inited_mask |= (1 << channel);
+			itc_print_channel = channel;
+		}
+
+		itc_channel_set = 1;
+
+		return rc;
+	}
+
+	return 0;
+}
+
+// itc_puts(): like C puts(), includes \n at end of text
+
+int itc_puts(const char *f)
+{
+	int rc;
+
+	if (itc_channel_set == 0) {
+		rc = itc_set_channel(0);
+		if (rc != 0) {
+			return 0;
+		}
+	}
+
+	rc = strlen(f);
+
+	int words = (rc/4)*4;
+	int bytes = rc & 0x03;
+	int i;
+	uint16_t a;
+
+    for (i = 0; i < words; i += 4) {
+		itc_write_uint32(*(uint32_t*)(f+i));
+	}
+
+    // we actually have one more byte to send than bytes, because we need to append
+    // a \n to the end
+
+    switch (bytes) {
+    case 0:
+    	itc_write_uint8('\n');
+    	break;
+    case 1:
+    	a = *(uint8_t*)(f+i);
+    	itc_write_uint16(('\n' << 8) | a);
+    	break;
+    case 2:
+    	itc_write_uint16(*(uint16_t*)(f+i));
+    	itc_write_uint8('\n');
+    	break;
+    case 3:
+    	a = *(uint16_t*)(f+i);
+    	itc_write_uint16(a);
+
+    	a = ((uint16_t)(*(uint8_t*)(f+i+2)));
+    	itc_write_uint16(('\n' << 8) | a);
+    	break;
+    }
+
+	return rc+1;
 }
 
 int itc_printf(const char *f, ... )
@@ -97,53 +214,6 @@ int itc_printf(const char *f, ... )
 	rc = vsnprintf(buffer,sizeof buffer, f, args);
 	va_end(args);
 
-	itc_puts(buffer);
-	return rc;
-}
-
-int itc_puts(const char *f)
-{
-	static int inited = 0;
-
-	if (inited == 0) {
-		int rc;
-
-		rc = init_itc(0);
-		if (rc != 0) {
-			return 0;
-		}
-
-		inited = 1;
-	}
-
-	unsigned int rc = strlen(f);
-
-	int words = (rc/4)*4;
-	int bytes = rc & 0x03;
-	int i;
-	uint16_t a;
-
-    for (i = 0; i < words; i += 4) {
-		write_itc(*(uint32_t*)(f+i));
-	}
-
-    switch (bytes) {
-    case 0:
-    	break;
-    case 1:
-    	write_itc_uint8(*(uint8_t*)(f+i));
-    	break;
-    case 2:
-    	write_itc_uint16(*(uint16_t*)(f+i));
-    	break;
-    case 3:
-    	a = *(uint16_t*)(f+i);
-    	write_itc_uint16(a);
-
-    	a = ((uint16_t)(*(uint8_t*)(f+i+2)));
-    	write_itc_uint8((uint8_t)a);
-    	break;
-    }
-
+	itc_fputs(buffer);
 	return rc;
 }
