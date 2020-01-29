@@ -52,5 +52,4 @@ zlib:
 clean:
 
 # Other Targets
-
-.PHONY: all libs clean dependents
+.PHONY: all libs clean dependents install
