@@ -1,7 +1,3 @@
-################################################################################
-# Automatically-generated file. Do not edit!
-################################################################################
-
 -include ../makefile.init
 
 RM := rm -rf
@@ -23,7 +19,7 @@ $(EXECUTABLE): $(OBJS)
 $(SWIGLIB): $(SWIGLIBOBJS)
 	@echo 'Building swig library: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	$(CROSSPREFIX)g++ -shared -L$(LIBPATH) $(SWIGLIBOBJS) $(LIBS) -o $(SWIGLIB)
+	$(CROSSPREFIX)g++ -shared -L$(LIBPATH)/picbfd -L$(LIBPATH)/picopcodes -L$(LIBPATH)/picliberty -L$(LIBPATH) $(SWIGLIBOBJS) $(LIBS) -o $(SWIGLIB)
 	@echo 'Finished building swig library: $@'
 	@echo ' '
 
@@ -45,7 +41,7 @@ $(SWIGCPP): $(INCLUDES) $(SWIGINCLUDES)
 
 # Other Targets
 clean:
-	-$(RM) *.d $(OBJS) $(EXECUTABLE) $(SWIGCPP) $(SWIGOBJ) $(SWIGLIB) com/sifive/trace/*.java com/sifive/trace/*.class  TraceDecoder.jar
+	-$(RM) *.d $(OBJS) $(EXECUTABLE) $(SWIGCPP) $(SWIGOBJ) $(SWIGLIB) com/sifive/trace/*.java com/sifive/trace/*.class TraceDecoder.jar
 	-@echo ' '
 
 install:
