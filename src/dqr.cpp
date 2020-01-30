@@ -1002,16 +1002,16 @@ int ITCPrint::roomInITCPrintQ(uint8_t core)
 	return buffSize-1;
 }
 
-void ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data)
+bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 {
 	if (core >= numCores) {
-		return;
+		return false;
 	}
 
 	if ((addr < (uint32_t)printChannel*4) || (addr >= (((uint32_t)printChannel+1)*4))) {
 		// not writing to this itc channel
 
-		return;
+		return false;
 	}
 
 	char *p = (char *)&data;
@@ -1047,6 +1047,8 @@ void ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 	}
 
 	pbuff[core][pbi[core]] = 0; // make sure always null terminated
+
+	return true;
 }
 
 void ITCPrint::haveITCPrintData(int numMsgs[], bool havePrintData[])
@@ -2941,23 +2943,27 @@ uint32_t NexusMessage::getProcess()
 	return 0;
 }
 
-void NexusMessage::processITCPrintData(ITCPrint *itcPrint)
+bool NexusMessage::processITCPrintData(ITCPrint *itcPrint)
 {
+	bool rc = false;
+
 	// need to only do this once per message! Set a flag so we know we have done it.
 	// if flag set, return string (or null if none)
 
 	if (itcPrint != nullptr) {
 		switch (tcode) {
 		case TraceDqr::TCODE_DATA_ACQUISITION:
-			itcPrint->print(coreId,dataAcquisition.idTag,dataAcquisition.data);
+			rc = itcPrint->print(coreId,dataAcquisition.idTag,dataAcquisition.data);
 			break;
 		case TraceDqr::TCODE_AUXACCESS_WRITE:
-			itcPrint->print(coreId,auxAccessWrite.addr,auxAccessWrite.data);
+			rc = itcPrint->print(coreId,auxAccessWrite.addr,auxAccessWrite.data);
 			break;
 		default:
 			break;
 		}
 	}
+
+	return rc;
 }
 
 std::string NexusMessage::messageToString(int detailLevel)
@@ -2982,8 +2988,6 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 	// level = 0, itcprint (always process itc print info
 	// level = 1, timestamp + target + itcprint
 	// level = 2, message info + timestamp + target + itcprint
-
-//	processITCPrintData();
 
 	if (level <= 0) {
 		dst[0] = 0;

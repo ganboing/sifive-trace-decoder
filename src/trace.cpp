@@ -813,12 +813,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				messageInfo.currentAddress = currentAddress[currentCore];
 				messageInfo.time = lastTime[currentCore];
 
-				messageInfo.processITCPrintData(itcPrint);
+				if (messageInfo.processITCPrintData(itcPrint) == false) {
+					*msgInfo = &messageInfo;
 
-				*msgInfo = &messageInfo;
-
-				status = TraceDqr::DQERR_OK;
-				return status;
+					status = TraceDqr::DQERR_OK;
+					return status;
+				}
 			}
 			break;
 		case TRACE_STATE_GETFIRSTYNCMSG:
@@ -893,9 +893,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				messageInfo.currentAddress = currentAddress[currentCore];
 				messageInfo.time = lastTime[currentCore];
 
-				messageInfo.processITCPrintData(itcPrint);
-
-				*msgInfo = &messageInfo;
+				if (messageInfo.processITCPrintData(itcPrint) == false) {
+					*msgInfo = &messageInfo;
+				}
 			}
 
 			status = TraceDqr::DQERR_OK;
@@ -961,9 +961,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData(itcPrint);
-
-					*msgInfo = &messageInfo;
+					if (messageInfo.processITCPrintData(itcPrint) == false) {
+						*msgInfo = &messageInfo;
+					}
 				}
 
 				readNewTraceMessage = true;
@@ -994,9 +994,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData(itcPrint);
-
-					*msgInfo = &messageInfo;
+					if (messageInfo.processITCPrintData(itcPrint) == false) {
+						*msgInfo = &messageInfo;
+					}
 				}
 
 				readNewTraceMessage = true;
@@ -1014,9 +1014,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData(itcPrint);
-
-					*msgInfo = &messageInfo;
+					if (messageInfo.processITCPrintData(itcPrint) == false) {
+						*msgInfo = &messageInfo;
+					}
 				}
 
 				readNewTraceMessage = true;
@@ -1034,9 +1034,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData(itcPrint);
-
-					*msgInfo = &messageInfo;
+					if (messageInfo.processITCPrintData(itcPrint) == false) {
+						*msgInfo = &messageInfo;
+					}
 				}
 
 				readNewTraceMessage = true;
@@ -1071,9 +1071,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						messageInfo.time = lastTime[currentCore];
 						messageInfo.currentAddress = currentAddress[currentCore];
 
-						messageInfo.processITCPrintData(itcPrint);
-
-						*msgInfo = &messageInfo;
+						if (messageInfo.processITCPrintData(itcPrint) == false) {
+							*msgInfo = &messageInfo;
+						}
 					}
 
 					// Do not return info yet. Cycle again untill we fill in
@@ -1104,9 +1104,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData(itcPrint);
-
-					*msgInfo = &messageInfo;
+					if (messageInfo.processITCPrintData(itcPrint) == false) {
+						*msgInfo = &messageInfo;
+					}
 				}
 
 				readNewTraceMessage = true;
@@ -1128,9 +1128,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //					messageInfo.currentAddress = currentAddress;
 					messageInfo.currentAddress = lastFaddr[currentCore] + nm.correlation.i_cnt*2;
 
-					messageInfo.processITCPrintData(itcPrint);
-
-					*msgInfo = &messageInfo;
+					if (messageInfo.processITCPrintData(itcPrint) == false) {
+						*msgInfo = &messageInfo;
+					}
 				}
 
 				readNewTraceMessage = true;
@@ -1208,9 +1208,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					messageInfo.processITCPrintData(itcPrint);
-
-					*msgInfo = &messageInfo;
+					if (messageInfo.processITCPrintData(itcPrint) == false) {
+						*msgInfo = &messageInfo;
+					}
 				}
 
 				// leave state along. Need to get another message with an i-cnt!

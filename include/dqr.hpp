@@ -232,7 +232,7 @@ private:
 class NexusMessage {
 public:
 	NexusMessage();
-	void processITCPrintData(class ITCPrint *itcPrint);
+	bool processITCPrintData(class ITCPrint *itcPrint);
 	void messageToText(char *dst,size_t dst_len,int level);
 	std::string messageToString(int detailLevel);
 	double seconds();
