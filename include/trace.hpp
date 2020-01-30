@@ -134,7 +134,7 @@ class ITCPrint {
 public:
 	ITCPrint(int numCores,int buffSize,int channel);
 	~ITCPrint();
-	void print(uint8_t core, uint32_t address, uint32_t data);
+	bool print(uint8_t core, uint32_t address, uint32_t data);
 	void haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES]);
 	bool getITCPrintMsg(uint8_t core, char *dst, int dstLen);
 	bool flushITCPrintMsg(uint8_t core, char *dst, int dstLen);
