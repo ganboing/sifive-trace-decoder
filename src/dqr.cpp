@@ -3101,6 +3101,9 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 			case TraceDqr::SYNC_NONE:
 				sr = "None";
 				break;
+			case TraceDqr::SYNC_ONLY_MODE:
+				sr = "Sync-only Mode";
+				break;
 			default:
 				sr = "Bad Sync Reason";
 				break;
@@ -3150,6 +3153,9 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 			case TraceDqr::SYNC_NONE:
 				sr = "None";
 				break;
+			case TraceDqr::SYNC_ONLY_MODE:
+				sr = "Sync-only Mode";
+				break;
 			default:
 				sr = "Bad Sync Reason";
 				break;
@@ -3195,6 +3201,9 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 				break;
 			case TraceDqr::SYNC_NONE:
 				sr = "None";
+				break;
+			case TraceDqr::SYNC_ONLY_MODE:
+				sr = "Sync-only Mode";
 				break;
 			default:
 				sr = "Bad Sync Reason";

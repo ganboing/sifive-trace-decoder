@@ -813,7 +813,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				messageInfo.currentAddress = currentAddress[currentCore];
 				messageInfo.time = lastTime[currentCore];
 
-				if (messageInfo.processITCPrintData(itcPrint) == false) {
+				bool isPrintData = messageInfo.processITCPrintData(itcPrint);
+ 				if (isPrintData == false) {
 					*msgInfo = &messageInfo;
 
 					status = TraceDqr::DQERR_OK;
@@ -893,7 +894,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				messageInfo.currentAddress = currentAddress[currentCore];
 				messageInfo.time = lastTime[currentCore];
 
-				if (messageInfo.processITCPrintData(itcPrint) == false) {
+				bool isPrintData = messageInfo.processITCPrintData(itcPrint);
+ 				if (isPrintData == false) {
 					*msgInfo = &messageInfo;
 				}
 			}
@@ -961,7 +963,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					bool isPrintData = messageInfo.processITCPrintData(itcPrint);
+	 				if (isPrintData == false) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -994,7 +997,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					bool isPrintData = messageInfo.processITCPrintData(itcPrint);
+	 				if (isPrintData == false) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -1014,7 +1018,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					bool isPrintData = messageInfo.processITCPrintData(itcPrint);
+	 				if (isPrintData == false) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -1034,7 +1039,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					bool isPrintData = messageInfo.processITCPrintData(itcPrint);
+	 				if (isPrintData == false) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -1071,7 +1077,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						messageInfo.time = lastTime[currentCore];
 						messageInfo.currentAddress = currentAddress[currentCore];
 
-						if (messageInfo.processITCPrintData(itcPrint) == false) {
+						bool isPrintData = messageInfo.processITCPrintData(itcPrint);
+		 				if (isPrintData == false) {
 							*msgInfo = &messageInfo;
 						}
 					}
@@ -1104,7 +1111,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					bool isPrintData = messageInfo.processITCPrintData(itcPrint);
+	 				if (isPrintData == false) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -1128,7 +1136,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //					messageInfo.currentAddress = currentAddress;
 					messageInfo.currentAddress = lastFaddr[currentCore] + nm.correlation.i_cnt*2;
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					bool isPrintData = messageInfo.processITCPrintData(itcPrint);
+	 				if (isPrintData == false) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -1208,7 +1217,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					bool isPrintData = messageInfo.processITCPrintData(itcPrint);
+	 				if (isPrintData == false) {
 						*msgInfo = &messageInfo;
 					}
 				}

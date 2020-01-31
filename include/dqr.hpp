@@ -128,6 +128,7 @@ public:
   	SYNC_FIFO_OVERRUN       = 7,
   	SYNC_EXIT_POWERDOWN     = 9,
   	SYNC_MESSAGE_CONTENTION = 11,
+	SYNC_ONLY_MODE          = 15,
   	SYNC_NONE
   } SyncReason;
 
