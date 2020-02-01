@@ -880,12 +880,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				readNewTraceMessage = true;
 
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = lastTime[currentCore] ^ nm.timestamp;
-				}
+//				if (nm.haveTimestamp) {
+//					lastTime[currentCore] = lastTime[currentCore] ^ nm.timestamp;
+//				}
 
-//				nm.timestamp = 0;
-//				lastTime[currentCore] = 0;
+				nm.timestamp = 0;
+				lastTime[currentCore] = 0;
 				break;
 			}
 
