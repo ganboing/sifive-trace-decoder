@@ -2598,7 +2598,7 @@ proc init {} {
     set num_cores $core
 
     if {($traceFunnelAddress != 0x00000000) && ($traceFunnelAddress != "")} {
-      set traceBaseAddrArray("funnel") $trceFunnelAddress
+      set traceBaseAddrArray("funnel") $traceFunnelAddress
       set has_funnel 1
       setSink "funnel" "SRAM"
     } else {
