@@ -270,7 +270,10 @@ proc resetTrace {core} {
   global te_control_offset
 
   mww [expr $traceBaseAddrArray($core) + $te_control_offset] 0
-  mww [expr $traceBaseAddrArray($core) + $te_control_offset] 1
+  set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+  set t [expr $t & ~0x00000001]
+  set t [expr $t | 0x00000001]
+  mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
 }
 
 proc getSinkError {core} {
