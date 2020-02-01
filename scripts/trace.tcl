@@ -744,6 +744,65 @@ proc srcbits {} {
 
 # global functions intended to be called from command line or from freedom studio
 
+proc getTeVersion {core} {
+  global te_impl_offset
+  global traceBaseAddresses
+
+  set version [expr [word [expr [lindex $traceBaseAddresses 0] + $te_impl_offset]] & 7]
+  return $version
+}
+
+proc teversion {{cores "all"} {opt ""}} {
+  global te_impl_offset
+  global traceBaseAddresses
+
+  set coreList [parseCoreList $cores]
+
+  if {$coreList == "error"} {
+    if {$opt == ""} {
+      set opt $cores
+      set cores "all"
+
+      set coreList [parseCoreList $cores]
+    }
+
+    if {$coreList == "error"} {
+      echo {Error: Usage: teversion [corelist] [help]]}
+      return "error"
+    }
+  }
+
+  if {$opt == ""} {
+    # display current status of ts enable
+    set rv ""
+
+    foreach core $coreList {
+      set tev "core $core: "
+
+      lappend tev [getTeVersion $core]
+
+      if {$rv != ""} {
+        append rv "; "
+      }
+
+      append rv $tev
+    }
+
+    return $rv
+  } elseif {$opt == "help"} {
+    echo "teversion: display trace encoder version"
+    echo {Usage: teversion [corelist] [help]}
+    echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is"
+    echo "            equivalent to all"
+    echo "  help:     Display this message"
+    echo ""
+    echo "teversion with no arguments will display the trace encoder version for all cores"
+    echo ""
+  } else {
+    echo {Usage: teversion [corelist] [help]}
+  }
+}
+
 proc ts {{cores "all"} {opt ""}} {
   global ts_control_offset
 
@@ -2539,6 +2598,7 @@ proc init {} {
     set num_cores $core
 
     if {($traceFunnelAddress != 0x00000000) && ($traceFunnelAddress != "")} {
+      set traceBaseAddrArray("funnel") $trceFunnelAddress
       set has_funnel 1
       setSink "funnel" "SRAM"
     } else {
