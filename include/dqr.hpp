@@ -128,7 +128,6 @@ public:
   	SYNC_FIFO_OVERRUN       = 7,
   	SYNC_EXIT_POWERDOWN     = 9,
   	SYNC_MESSAGE_CONTENTION = 11,
-	SYNC_ONLY_MODE          = 15,
   	SYNC_NONE
   } SyncReason;
 
@@ -398,8 +397,8 @@ private:
 
 #ifdef SWIG
 	%ignore Trace::NextInstruction(Instruction **instInfo,NexusMessage **msgInfo,Source **srcInfo);
-	%ignore Trace::getITCPrintMsg(int core,char *dst,int dstLen);
-	%ignore Trace::flushITCPrintMsg(int core,char *dst,int dstLen);
+	%ignore Trace::getITCPrintMsg(int core,char *dst,int dstLen,TraceDqr::TIMESTAMP &startTime,TraceDqr::TIMESTAMP &endTime);
+	%ignore Trace::flushITCPrintMsg(int core,char *dst,int dstLen,TraceDqr::TIMESTAMP &startTime,TraceDqr::TIMESTAMP &endTime);
 	%ignore Trace::analyticsToText(char *dst,int dst_len,int detailLevel);
 #endif // SWIG
 
@@ -422,10 +421,13 @@ public:
 	TraceDqr::DQErr NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags);
 
 	TraceDqr::DQErr haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES]);
-	bool        getITCPrintMsg(int core,char *dst, int dstLen);
-	bool        flushITCPrintMsg(int core,char *dst, int dstLen);
-	std::string getITCPrintStr(int core, bool &haveData);
-	std::string flushITCPrintStr(int core, bool &haveData);
+	bool        getITCPrintMsg(int core,char *dst, int dstLen,TraceDqr::TIMESTAMP &startTime,TraceDqr::TIMESTAMP &endTime);
+	bool        flushITCPrintMsg(int core,char *dst, int dstLen,TraceDqr::TIMESTAMP &startTime,TraceDqr::TIMESTAMP &endTime);
+	std::string getITCPrintStr(int core, bool &haveData,TraceDqr::TIMESTAMP &startTime,TraceDqr::TIMESTAMP &endTime);
+	std::string flushITCPrintStr(int core, bool &haveData,TraceDqr::TIMESTAMP &startTime,TraceDqr::TIMESTAMP &endTime);
+
+	std::string getITCPrintStr(int core, bool &haveData,double &startTime,double &endTime);
+	std::string flushITCPrintStr(int core, bool &haveData,double &startTime,double &endTime);
 
 	const char *getSymbolByAddress(TraceDqr::ADDRESS addr);
 	const char *getNextSymbolByAddress();

@@ -484,6 +484,7 @@ int main(int argc, char *argv[])
 	int lastInstSize = 0;
 	bool firstPrint = true;
 	uint32_t core_mask = 0;
+	TraceDqr::TIMESTAMP startTime, endTime;
 
 	do {
 		ec = trace->NextInstruction(&instInfo,&msgInfo,&srcInfo);
@@ -602,7 +603,7 @@ int main(int argc, char *argv[])
 					std::string s;
 					bool haveStr;
 
-					s = trace->getITCPrintStr(msgInfo->coreId,haveStr);
+					s = trace->getITCPrintStr(msgInfo->coreId,haveStr,startTime,endTime);
 					while (haveStr != false) {
 						if (firstPrint == false) {
 							printf("\n");
@@ -612,11 +613,17 @@ int main(int argc, char *argv[])
 							printf("[%d] ",msgInfo->coreId);
 						}
 
-						std::cout << "ITC Print: " << s;
+						std::cout << "ITC Print: ";
+
+						if ((startTime != 0) || (endTime != 0)) {
+							std::cout << "Msg Tics: <" << startTime << "-" << endTime << "> ";
+						}
+
+						std::cout << s;
 
 						firstPrint = false;
 
-						s = trace->getITCPrintStr(msgInfo->coreId,haveStr);
+						s = trace->getITCPrintStr(msgInfo->coreId,haveStr,startTime,endTime);
 					}
 				}
 			}
@@ -629,7 +636,7 @@ int main(int argc, char *argv[])
 
 		for (int core = 0; core_mask != 0; core++) {
 			if (core_mask & 1) {
-				s = trace->flushITCPrintStr(core,haveStr);
+				s = trace->flushITCPrintStr(core,haveStr,startTime,endTime);
 				while (haveStr != false) {
 					if (firstPrint == false) {
 						printf("\n");
@@ -639,11 +646,17 @@ int main(int argc, char *argv[])
 						printf("[%d] ",core);
 					}
 
-					std::cout << "ITC Print: " << s;
+					std::cout << "ITC Print: ";
+
+					if ((startTime != 0) || (endTime != 0)) {
+						std::cout << "Msg Tics: <" << startTime << "-" << endTime << "> ";
+					}
+
+					std::cout << s;
 
 					firstPrint = false;
 
-					s = trace->flushITCPrintStr(core,haveStr);
+					s = trace->flushITCPrintStr(core,haveStr,startTime,endTime);
 				}
 			}
 			core_mask >>= 1;

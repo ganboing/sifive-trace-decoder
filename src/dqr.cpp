@@ -35,7 +35,7 @@
 
 //#define DQR_MAXCORES	8
 
-const char * const DQR_VERSION = "0.6";
+const char * const DQR_VERSION = "0.7";
 
 // static C type helper functions
 
@@ -922,6 +922,21 @@ Symtab *ElfReader::getSymtab()
 	return symtab;
 }
 
+TsList::TsList()
+{
+	prev = nullptr;
+	next = nullptr;
+	message = nullptr;
+	terminated = false;
+
+	startTime = (TraceDqr::TIMESTAMP)0;
+	endTime = (TraceDqr::TIMESTAMP)0;
+}
+
+TsList::~TsList()
+{
+}
+
 ITCPrint::ITCPrint(int numCores, int buffSize,int channel)
 {
 	assert((numCores > 0) && (buffSize > 0));
@@ -953,6 +968,14 @@ ITCPrint::ITCPrint(int numCores, int buffSize,int channel)
 	for (int i=0; i< numCores; i++) {
 		pbo[i] = 0;
 	}
+
+	freeList = nullptr;
+
+	tsList = new TsList *[numCores];
+
+	for (int i = 0; i < numCores; i++) {
+		tsList[i] = nullptr;
+	}
 }
 
 ITCPrint::~ITCPrint()
@@ -983,6 +1006,28 @@ ITCPrint::~ITCPrint()
 		delete [] pbo;
 		pbo = nullptr;
 	}
+
+	if (freeList != nullptr) {
+		TsList *tl = freeList;
+		while (tl != nullptr) {
+			TsList *tln = tl->next;
+			delete tl;
+			tl = tln;
+		}
+		freeList = nullptr;
+	}
+
+	if (tsList != nullptr) {
+		for (int i = 0; i < numCores; i++) {
+			TsList *tl = tsList[i];
+			while (tl != nullptr) {
+				TsList *tln = tl->next;
+				delete tl;
+				tl = tln;
+			}
+		}
+		tsList = nullptr;
+	}
 }
 
 int ITCPrint::roomInITCPrintQ(uint8_t core)
@@ -1002,7 +1047,7 @@ int ITCPrint::roomInITCPrintQ(uint8_t core)
 	return buffSize-1;
 }
 
-bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data)
+bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMESTAMP tstamp)
 {
 	if (core >= numCores) {
 		return false;
@@ -1013,6 +1058,49 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 
 		return false;
 	}
+
+	TsList *tlp;
+	tlp = tsList[core];
+	TsList *workingtlp;
+
+    if ((tlp == nullptr) || tlp->terminated == true) {
+		// see if there is one on the free list before making a new one
+
+		if(freeList != nullptr) {
+			workingtlp = freeList;
+			freeList = workingtlp->next;
+
+			workingtlp->terminated = false;
+			workingtlp->message = nullptr;
+		}
+		else {
+			workingtlp = new TsList();
+		}
+
+		if (tlp == nullptr) {
+			workingtlp->next = workingtlp;
+			workingtlp->prev = workingtlp;
+		}
+		else {
+			workingtlp->next = tlp;
+			workingtlp->prev = tlp->prev;
+
+			tlp->prev = workingtlp;
+			workingtlp->prev->next = workingtlp;
+		}
+
+		workingtlp->startTime = tstamp;
+		workingtlp->message = &pbuff[core][pbi[core]];
+
+		tsList[core] = workingtlp;
+	}
+    else {
+    	workingtlp = tlp;
+    }
+
+	// workingtlp now points to unterminated TSList object (in progress)
+
+    workingtlp->endTime = tstamp;
 
 	char *p = (char *)&data;
 	int room = roomInITCPrintQ(core);
@@ -1029,6 +1117,8 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 			switch (p[i]) {
 			case 0:
 				numMsgs[core] += 1;
+
+				workingtlp->terminated = true;
 				break;
 			case '\n':
 			case '\r':
@@ -1039,6 +1129,8 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 				}
 				room -= 1;
 				numMsgs[core] += 1;
+
+				workingtlp->terminated = true;
 				break;
 			default:
 				break;
@@ -1046,7 +1138,7 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data)
 		}
 	}
 
-	pbuff[core][pbi[core]] = 0; // make sure always null terminated
+	pbuff[core][pbi[core]] = 0; // make sure always null terminated. This may be a temporary null termination
 
 	return true;
 }
@@ -1066,7 +1158,82 @@ void ITCPrint::haveITCPrintData(int numMsgs[], bool havePrintData[])
 	}
 }
 
-bool ITCPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen)
+TsList *ITCPrint::consumeTerminatedTsList(int core)
+{
+	TsList *rv = nullptr;
+
+	if (numMsgs[core] > 0) { // have stuff in the Q
+		TsList *tsl = tsList[core];
+
+		// tsl now points to the newest tslist object. We want the oldest, which will be tsl->prev
+
+		if (tsl != nullptr) {
+			tsl = tsl->prev;
+
+			if (tsl->terminated == true) {
+				rv = tsl;
+
+				// unlink tsl (consume it)
+
+				if (tsl->next == tsl) {
+					// was the only one in list
+
+					tsList[core] = nullptr;
+				}
+				else {
+					tsList[core]->prev = tsl->prev;
+
+					if (tsList[core]->next == tsl) {
+						tsList[core]->next = tsl->next;
+					}
+				}
+
+				tsl->next = freeList;
+				freeList = tsl;
+			}
+		}
+	}
+
+	return rv;
+}
+
+TsList *ITCPrint::consumeOldestTsList(int core)
+{
+	TsList *rv;
+
+	rv = consumeTerminatedTsList(core);
+	if (rv == nullptr) {
+		// no terminated itc prints. Look for one in progress
+
+		TsList *tsl = tsList[core];
+
+		if (tsl != nullptr) {
+			// this must be an unterminated tsl. unlink tsl (consume it)
+
+			rv = tsl;
+
+			if (tsl->next == tsl) {
+				// was the only one in the list!
+
+				tsList[core] = nullptr;
+			}
+			else {
+				tsList[core]->prev = tsl->prev;
+
+				if (tsList[core]->next == tsl) {
+					tsList[core]->next = tsl->next;
+				}
+			}
+
+			tsl->next = freeList;
+			freeList = tsl;
+		}
+	}
+
+	return rv;
+}
+
+bool ITCPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen, TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime)
 {
 	bool rc = false;
 
@@ -1077,6 +1244,16 @@ bool ITCPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen)
 	assert((dst != nullptr) && (dstLen > 0));
 
 	if (numMsgs[core] > 0) {
+		TsList *tsl = consumeTerminatedTsList(core);
+
+		if (tsl != nullptr) {
+			startTime = tsl->startTime;
+			endTime = tsl->endTime;
+		}
+		else {
+			assert (tsl != nullptr);
+		}
+
 		rc = true;
 		numMsgs[core] -= 1;
 
@@ -1103,7 +1280,7 @@ bool ITCPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen)
 	return rc;
 }
 
-bool ITCPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen)
+bool ITCPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen, TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime)
 {
 	if (core >= numCores) {
 		return false;
@@ -1112,10 +1289,18 @@ bool ITCPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen)
 	assert((dst != nullptr) && (dstLen > 0));
 
 	if (numMsgs[core] > 0) {
-		return getITCPrintMsg(core,dst,dstLen);
+		return getITCPrintMsg(core,dst,dstLen,startTime,endTime);
 	}
 
 	if (pbo[core] != pbi[core]) {
+		TsList *tsl = consumeOldestTsList(core);
+
+		assert (tsl != nullptr);
+		assert (tsl->terminated == false);
+
+		startTime = tsl->startTime;
+		endTime = tsl->endTime;
+
 		while (pbuff[core][pbo[core]] && (dstLen > 1)) {
 			*dst++ = pbuff[core][pbo[core]];
 			dstLen -= 1;
@@ -1131,7 +1316,7 @@ bool ITCPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen)
 	return false;
 }
 
-bool ITCPrint::getITCPrintStr(uint8_t core, std::string &s)
+bool ITCPrint::getITCPrintStr(uint8_t core, std::string &s,TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime)
 {
 	if (core >= numCores) {
 		return false;
@@ -1141,6 +1326,14 @@ bool ITCPrint::getITCPrintStr(uint8_t core, std::string &s)
 
 	if (numMsgs[core] > 0) { // stuff in the Q
 		rc = true;
+
+		TsList *tsl = consumeTerminatedTsList(core);
+
+		assert (tsl != nullptr);
+
+		startTime = tsl->startTime;
+		endTime = tsl->endTime;
+
 		numMsgs[core] -= 1;
 
 		while (pbuff[core][pbo[core]]) {
@@ -1161,17 +1354,25 @@ bool ITCPrint::getITCPrintStr(uint8_t core, std::string &s)
 	return rc;
 }
 
-bool ITCPrint::flushITCPrintStr(uint8_t core, std::string &s)
+bool ITCPrint::flushITCPrintStr(uint8_t core, std::string &s, TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime)
 {
 	if (core >= numCores) {
 		return false;
 	}
 
 	if (numMsgs[core] > 0) {
-		return getITCPrintStr(core,s);
+		return getITCPrintStr(core,s,startTime,endTime);
 	}
 
 	if (pbo[core] != pbi[core]) {
+		TsList *tsl = consumeOldestTsList(core);
+
+		assert (tsl != nullptr);
+		assert (tsl->terminated == false);
+
+		startTime = tsl->startTime;
+		endTime = tsl->endTime;
+
 		s = "";
 		while (pbuff[core][pbo[core]]) {
 			s += pbuff[core][pbo[core]];
@@ -2953,10 +3154,10 @@ bool NexusMessage::processITCPrintData(ITCPrint *itcPrint)
 	if (itcPrint != nullptr) {
 		switch (tcode) {
 		case TraceDqr::TCODE_DATA_ACQUISITION:
-			rc = itcPrint->print(coreId,dataAcquisition.idTag,dataAcquisition.data);
+			rc = itcPrint->print(coreId,dataAcquisition.idTag,dataAcquisition.data,time);
 			break;
 		case TraceDqr::TCODE_AUXACCESS_WRITE:
-			rc = itcPrint->print(coreId,auxAccessWrite.addr,auxAccessWrite.data);
+			rc = itcPrint->print(coreId,auxAccessWrite.addr,auxAccessWrite.data,time);
 			break;
 		default:
 			break;
@@ -3101,9 +3302,6 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 			case TraceDqr::SYNC_NONE:
 				sr = "None";
 				break;
-			case TraceDqr::SYNC_ONLY_MODE:
-				sr = "Sync-only Mode";
-				break;
 			default:
 				sr = "Bad Sync Reason";
 				break;
@@ -3153,9 +3351,6 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 			case TraceDqr::SYNC_NONE:
 				sr = "None";
 				break;
-			case TraceDqr::SYNC_ONLY_MODE:
-				sr = "Sync-only Mode";
-				break;
 			default:
 				sr = "Bad Sync Reason";
 				break;
@@ -3201,9 +3396,6 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 				break;
 			case TraceDqr::SYNC_NONE:
 				sr = "None";
-				break;
-			case TraceDqr::SYNC_ONLY_MODE:
-				sr = "Sync-only Mode";
 				break;
 			default:
 				sr = "Bad Sync Reason";

@@ -130,19 +130,35 @@ private:
 	Symtab     *symtab;
 };
 
+class TsList {
+public:
+	TsList();
+	~TsList();
+
+	class TsList *prev;
+	class TsList *next;
+	bool terminated;
+	TraceDqr::TIMESTAMP startTime;
+	TraceDqr::TIMESTAMP endTime;
+	char *message;
+};
+
 class ITCPrint {
 public:
 	ITCPrint(int numCores,int buffSize,int channel);
 	~ITCPrint();
 	bool print(uint8_t core, uint32_t address, uint32_t data);
+	bool print(uint8_t core, uint32_t address, uint32_t data, TraceDqr::TIMESTAMP tstamp);
 	void haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES]);
-	bool getITCPrintMsg(uint8_t core, char *dst, int dstLen);
-	bool flushITCPrintMsg(uint8_t core, char *dst, int dstLen);
-	bool getITCPrintStr(uint8_t core, std::string &s);
-	bool flushITCPrintStr(uint8_t core, std::string &s);
+	bool getITCPrintMsg(uint8_t core, char *dst, int dstLen, TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime);
+	bool flushITCPrintMsg(uint8_t core, char *dst, int dstLen, TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime);
+	bool getITCPrintStr(uint8_t core, std::string &s, TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime);
+	bool flushITCPrintStr(uint8_t core, std::string &s, TraceDqr::TIMESTAMP &starTime, TraceDqr::TIMESTAMP &endTime);
 
 private:
 	int  roomInITCPrintQ(uint8_t core);
+	TsList *consumeTerminatedTsList(int core);
+	TsList *consumeOldestTsList(int core);
 
 	int numCores;
 	int buffSize;
@@ -151,6 +167,8 @@ private:
 	int *pbi;
 	int *pbo;
 	int *numMsgs;
+	class TsList **tsList;
+	class TsList *freeList;
 };
 
 #ifdef foo
