@@ -33,11 +33,23 @@ ifeq ($(OS),Windows_NT)
         SWIGLIB := 
         JNIINCLUDEPATHS :=
     else
-        ifndef JNIINCLUDE
+        ifeq ($(JNIINCLUDE),)
+            JAVAC = $(shell which javac 2> /dev/null)
+            ifeq ($(JAVAC),)
+                $(info javac not found; skipping swig and the dqr shared library build)
+                SWIGLIB :=
+                JNIINCLUDE :=
+                JNIINCLUDEPATH :=
+            else
+                JNIINCLUDE := $(patsubst %/bin/javac,%/include,$(realpath $(JAVAC)))
+            endif
+        endif
+        ifeq ($(JNIINCLUDE),)
             $(info JNIINCLUDE not defined; skipping swig and dqr shared library build)
             SWIGLIB :=
             JNIINCLUDEPATHS :=
         else
+            $(info using $(JNIINCLUDE) for JNIINCLUDE path)
             SWIGLIB := dqr.dll
             $(info building swig $(SWIGLIB))
             JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)\win32"
@@ -179,13 +191,26 @@ else
         ifeq ($(SWIG),)
             $(info swig not found; skipping swig and dqr shared library build)
             SWIGLIB := 
+            JNIINCLUDE :=
             JNIINCLUDEPATHS :=
         else
-            ifndef JNIINCLUDE
+            ifeq ($(JNIINCLUDE),)
+                JAVAC = $(shell which javac 2> /dev/null)
+                ifeq ($(JAVAC),)
+                    $(info javac not found; skipping swig and the dqr shared library build)
+                    SWIGLIB :=
+                    JNIINCLUDE :=
+                    JNIINCLUDEPATH :=
+                else
+                    JNIINCLUDE := $(patsubst %/bin/javac,%/include,$(realpath $(JAVAC)))
+                endif
+            endif
+            ifeq ($(JNIINCLUDE),)
                 $(info JNIINCLUDE not defined; skipping swig and dqr shared library build)
                 SWIGLIB := 
                 JNIINCLUDEPATHS :=
             else
+                $(info using $(JNIINCLUDE) for JNIINCLUDE path)
                 SWIGLIB := libdqr.so
                 JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)/linux"
             endif
@@ -251,8 +276,19 @@ else
             SWIGLIB := 
             JNIINCLUDEPATHS :=
         else
-           ifndef JNIINCLUDE
-                $(info JNIINCLUDE not defined; skipping swig and dqr shared library build)
+            ifeq ($(JNIINCLUE),)
+                JAVAC = $(shell which javac 2> /dev/null)
+                ifeq ($(JAVAC),)
+                    $(info javac not found; skipping swig and the dqr shared library build)
+                    SWIGLIB :=
+                    JNIINCLUDE :=
+                    JNIINCLUDEPATH :=
+                else
+                    JNIINCLUDE := $(patsubst %/bin/javac,%/include,$(realpath $(JAVAC)))
+                endif
+            endif
+            ifeq ($(JNIINCLUDE),)
+                $(info using $(JNIINCLUDE) for JNIINCLUDE path)
                 SWIGLIB :=
                 JNIINCLUDEPATHS :=
             else
