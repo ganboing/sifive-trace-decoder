@@ -8,6 +8,7 @@ import com.sifive.trace.Source;
 import com.sifive.trace.TraceDecoder;
 import com.sifive.trace.SWIGTYPE_p_int;
 import com.sifive.trace.SWIGTYPE_p_bool;
+import com.sifive.trace.SWIGTYPE_p_double;
 
 public class jdqr {
   static {
@@ -15,7 +16,7 @@ public class jdqr {
   }
 
   public static void main(String argv[]) {
-    Trace t = new Trace("brad_trace.rtd",true,"brad_hello.elf",32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
+    Trace t = new Trace("trace.rtd",true,"prime.elf",32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
     if (t == null) {
       System.out.println("t is null");
       System.exit(1);
@@ -176,7 +177,13 @@ public class jdqr {
 
 			TraceDecoder.boolp_assign(haveStr,false);
 			
-			printStr = t.getITCPrintStr(core,haveStr);
+			SWIGTYPE_p_double starttime = TraceDecoder.new_doublep();
+			SWIGTYPE_p_double endtime = TraceDecoder.new_doublep();
+			
+			TraceDecoder.doublep_assign(starttime,0);
+			TraceDecoder.doublep_assign(endtime,0);
+			
+			printStr = t.getITCPrintStr(core,haveStr,starttime,endtime);
 			while (TraceDecoder.boolp_value(haveStr) != false) {
 				if (firstPrint == false) {
 					System.out.printf("\n");
@@ -186,10 +193,16 @@ public class jdqr {
 					System.out.printf("[%d] ",core);
 				}
 
-				System.out.printf("ITC Print: %s",printStr);
+				System.out.printf("ITC Print: ");
+
+				if((TraceDecoder.doublep_value(starttime) != 0) || (TraceDecoder.doublep_value(endtime) != 0)) {
+					System.out.printf("<%f-%f> ",TraceDecoder.doublep_value(starttime),TraceDecoder.doublep_value(endtime));
+				}
+				
+				System.out.printf("%s",printStr);
 				firstPrint = false;
 
-				printStr = t.getITCPrintStr(core,haveStr);
+				printStr = t.getITCPrintStr(core,haveStr,starttime,endtime);
 			}
           }
         }
@@ -202,9 +215,15 @@ public class jdqr {
 
 		TraceDecoder.boolp_assign(haveStr,false);
 		
+	    SWIGTYPE_p_double starttime = TraceDecoder.new_doublep();
+		SWIGTYPE_p_double endtime = TraceDecoder.new_doublep();
+		
+		TraceDecoder.doublep_assign(starttime,0);
+		TraceDecoder.doublep_assign(endtime,0);
+		
 		for (int core = 0; coreMask != 0; core++) {
 			if ((coreMask & 1) != 0) {
-				printStr = t.flushITCPrintStr(core,haveStr);
+				printStr = t.flushITCPrintStr(core,haveStr,starttime,endtime);
 				while (TraceDecoder.boolp_value(haveStr) != false) {
 					if (firstPrint == false) {
 						System.out.printf("\n");
@@ -214,11 +233,17 @@ public class jdqr {
 						System.out.printf("[%d] ",core);
 					}
 
-					System.out.printf("ITC Print: %s",printStr);
+					System.out.printf("ITC Print: ");
+
+					if((TraceDecoder.doublep_value(starttime) != 0) || (TraceDecoder.doublep_value(endtime) != 0)) {
+						System.out.printf("<%f-%f> ",TraceDecoder.doublep_value(starttime),TraceDecoder.doublep_value(endtime));
+					}
+					
+					System.out.printf("%s",printStr);
 
 					firstPrint = false;
 
-					printStr = t.flushITCPrintStr(core,haveStr);
+					printStr = t.flushITCPrintStr(core,haveStr,starttime,endtime);
 				}
 			}
 			coreMask >>>= 1;

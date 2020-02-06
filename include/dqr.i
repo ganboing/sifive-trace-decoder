@@ -11,6 +11,7 @@
 
 %pointer_functions(int, intp);
 %pointer_functions(bool, boolp);
+%pointer_functions(double, doublep);
 
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
