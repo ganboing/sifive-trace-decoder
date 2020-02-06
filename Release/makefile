@@ -19,7 +19,7 @@ $(EXECUTABLE): $(OBJS)
 $(SWIGLIB): $(SWIGLIBOBJS)
 	@echo 'Building swig library: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	$(CROSSPREFIX)g++ -shared -L$(LIBPATH)/picbfd -L$(LIBPATH)/picopcodes -L$(LIBPATH)/picliberty -L$(LIBPATH) $(SWIGLIBOBJS) $(LIBS) -o $(SWIGLIB)
+	$(CROSSPREFIX)g++ -shared $(PICLIBFLAGS) -L$(LIBPATH) $(SWIGLIBOBJS) $(LIBS) -o $(SWIGLIB)
 	@echo 'Finished building swig library: $@'
 	@echo ' '
 

@@ -58,6 +58,7 @@ ifeq ($(OS),Windows_NT)
     CFLAGS += -D WINDOWS -std=c++11
     SWIGCFLAGS += -D WINDOWS -std=c++11
     LIBPATH = ../lib/windows
+    PICLIBFLAGS :=
     LNFLAGS = -static
     LIBS := -lbfd -lopcodes -lintl -liberty -lz
     EXECUTABLE := dqr.exe
@@ -221,7 +222,8 @@ else
             SWIGCFLAGS += -D LINUX -std=c++11 -fPIC -DPIC
             LIBPATH = ../lib/linux
             LIBS := -lbfd -lopcodes -liberty -lz -ldl
-            LNFLAGS =
+            PICLIBFLAGS := -L$(LIBPATH)/picbfd -L$(LIBPATH)/picopcodes -L$(LIBPATH)/picliberty
+            LNFLAGS :=
             EXECUTABLE := dqr
         else
             ifeq ($(CROSSPREFIX),x86_64-w64-mingw32-)
@@ -242,6 +244,7 @@ else
                 CFLAGS += -D WINDOWS -std=c++11
                 SWIGCFLAGS += -D WINDOWS -std=c++11
                 LIBPATH = ../lib/windows
+                PICLIBFLAGS :=
                 LNFLAGS = -static
                 LIBS := -lbfd -lopcodes -lintl -liberty -lz
                 EXECUTABLE := dqr.exe
@@ -249,6 +252,7 @@ else
                 CFLAGS += -D LINUX -std=c++11 -fPIC -DPIC
                 SWIGCFLAGS += -D LINUX -std=c++11 -fPIC -DPIC
                 LIBPATH = ../lib/linux
+                PICLIBFLAGS := -L$(LIBPATH)/picbfd -L$(LIBPATH)/picopcodes -L$(LIBPATH)/picliberty
                 LIBS := -lbfd -lopcodes -liberty -lz -ldl
                 LNFLAGS = -static
                 EXECUTABLE := dqr
@@ -276,7 +280,7 @@ else
             SWIGLIB := 
             JNIINCLUDEPATHS :=
         else
-            ifeq ($(JNIINCLUE),)
+            ifeq ($(JNIINCLUDE),)
                 JAVAC = $(shell which javac 2> /dev/null)
                 ifeq ($(JAVAC),)
                     $(info javac not found; skipping swig and the dqr shared library build)
@@ -284,7 +288,11 @@ else
                     JNIINCLUDE :=
                     JNIINCLUDEPATH :=
                 else
-                    JNIINCLUDE := $(patsubst %/bin/javac,%/include,$(realpath $(JAVAC)))
+                    JPATH := $(dir $(realpath $(JAVAC)))
+                    $(info JPATH $(JPATH))
+                    JHOME := $(shell $(JPATH)java_home 2> /dev/null)
+                    $(info JHOME $(JHOME))
+                    JNIINCLUDE := $(JHOME)/include
                 endif
             endif
             ifeq ($(JNIINCLUDE),)
@@ -300,6 +308,7 @@ else
         CFLAGS += -D OSX -std=c++11
         SWIGCFLAGS += -D OSX -std=c++11
         LIBPATH = ../lib/macos
+        PICLIBFLAGS :=
         LIBS := -lbfd -lopcodes -liberty -lz -lintl -liconv
         LNFLAGS =
         EXECUTABLE := dqr
