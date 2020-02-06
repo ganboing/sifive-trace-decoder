@@ -300,7 +300,8 @@ private:
 	int decodeRV32Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
 };
 
-struct NexusMessageSync {
+class NexusMessageSync {
+public:
 	NexusMessageSync();
 	int          firstMsgNum;
 	int          lastMsgNum;

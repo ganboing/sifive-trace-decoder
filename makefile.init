@@ -288,10 +288,11 @@ else
                 endif
             endif
             ifeq ($(JNIINCLUDE),)
-                $(info using $(JNIINCLUDE) for JNIINCLUDE path)
+                $(info JNIINCLUDE not defined; skipping swig and dqr shared library build)
                 SWIGLIB :=
                 JNIINCLUDEPATHS :=
             else
+                $(info using $(JNIINCLUDE) for JNIINCLUDE path)
                 SWIGLIB := libdqr.so
                 JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)/darwin"
             endif

@@ -1337,7 +1337,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				break;
 			default:
 				printf("Error: unsupported instruction size: %d\n",inst_size);
-				state[currentCore = TRACE_STATE_ERROR];
+				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
 				return status;
 			}
