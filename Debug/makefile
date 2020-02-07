@@ -48,6 +48,17 @@ clean:
 	-@echo ' '
 
 install:
+ifdef SWIGLIB
+	mkdir -p "$(INSTALLPATH)/lib/$(PLATFORM)"
+	cp -rp $(SWIGLIB) "$(INSTALLPATH)/lib/$(PLATFORM)"
+	cp -rp TraceDecoder.jar "$(INSTALLPATH)/lib/$(PLATFORM)"
+endif
+ifdef EXECUTABLE
+	mkdir -p "$(INSTALLPATH)/bin/$(PLATFORM)"
+	cp -rp $(EXECUTABLE) "$(INSTALLPATH)/bin/$(PLATFORM)"
+endif
+
+install-dev:
 ifndef FS_DEV_TRACE_PLUGIN_FOLDER
 	$(error FS_DEV_TRACE_PLUGIN_FOLDER is undefined)
 endif
@@ -58,4 +69,4 @@ endif
 	cp $(SWIGLIB) $(FS_DEV_TRACE_PLUGIN_FOLDER)/os/win32/x86_64
 	cp ../scripts/trace.tcl $(FS_DEV_TRACE_SCRIPT_FOLDER)
 
-.PHONY: all clean dependents
+.PHONY: all clean dependents install install-dev

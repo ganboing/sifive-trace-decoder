@@ -48,6 +48,7 @@ opcodes:
 zlib:
 	cp $(NEWLIBPATH)/zlib/libz.a $(PLATFORM)
 
+install:
 
 clean:
 
