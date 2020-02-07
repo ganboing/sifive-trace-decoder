@@ -14,7 +14,7 @@ SWIGOBJ += ./dqr_wrap.o
 
 ifeq ($(OS),Windows_NT)
     PLATFORM = windows
-    ifeq ($(NEWLIBPATH),)
+    ifeq ($(BINUTILSPATH),)
         PICLIBS :=
         STATICLIBS :=
         LIBBFDOBJS :=
@@ -66,7 +66,7 @@ else
     UNAME_S := $(shell uname -s)
     ifeq ($(UNAME_S),Linux)
         PLATFORM = linux
-        ifeq ($(NEWLIBPATH),)
+        ifeq ($(BINUTILSPATH),)
             PICLIBS :=
             STATICLIBS :=
             LIBBFDOBJS :=
@@ -228,7 +228,7 @@ else
         else
             ifeq ($(CROSSPREFIX),x86_64-w64-mingw32-)
                 PLATFORM := windows
-                ifeq ($(NEWLIBPATH),)
+                ifeq ($(BINUTILSPATH),)
                     PICLIBS :=
                     STATICLIBS :=
                     LIBBFDOBJS :=
@@ -261,7 +261,7 @@ else
     endif
     ifeq ($(UNAME_S),Darwin)
         PLATFORM = macos
-        ifeq ($(NEWLIBPATH),)
+        ifeq ($(BINUTILSPATH),)
             PICLIBS :=
             STATICLIBS :=
             LIBBFDOBJS :=

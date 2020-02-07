@@ -23,7 +23,7 @@ Release: libs
 	$(MAKE) -C Release $(MAKECMDGOALS) INSTALLPATH="$(INSTALLABSPATH)"
 
 libs:
-	$(MAKE) -C lib NEWLIBPATH=$(NEWLIBPATH) $(MAKECMDGOALS) INSTALLPATH="$(INSTALLABSPATH)"
+	$(MAKE) -C lib BINUTILSPATH=$(BINUTILSPATH) $(MAKECMDGOALS) INSTALLPATH="$(INSTALLABSPATH)"
 
 install: install-include install-examples install-scripts
 
