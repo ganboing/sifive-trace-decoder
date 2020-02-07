@@ -46,13 +46,13 @@ clean:
 
 install:
 ifdef SWIGLIB
-	mkdir -p "$(INSTALLPATH)/lib/$(PLATFORM)"
-	cp -rp $(SWIGLIB) "$(INSTALLPATH)/lib/$(PLATFORM)"
-	cp -rp TraceDecoder.jar "$(INSTALLPATH)/lib/$(PLATFORM)"
+	mkdir -p "$(INSTALLPATH)/lib"
+	cp -rp $(SWIGLIB) "$(INSTALLPATH)/lib"
+	cp -rp TraceDecoder.jar "$(INSTALLPATH)/lib"
 endif
 ifdef EXECUTABLE
-	mkdir -p "$(INSTALLPATH)/bin/$(PLATFORM)"
-	cp -rp $(EXECUTABLE) "$(INSTALLPATH)/bin/$(PLATFORM)"
+	mkdir -p "$(INSTALLPATH)/bin"
+	cp -rp $(EXECUTABLE) "$(INSTALLPATH)/bin"
 endif
 
 install-dev:
