@@ -1,10 +1,9 @@
 
 ifeq ($(INSTALLPATH),)
-	INSTALLABSPATH := $(realpath ./install)
+        INSTALLABSPATH := $(realpath ./.)/install
 else
-	INSTALLABSPATH := $(realpath $(INSTALLPATH))
-        $(info installpath: $(INSTALLPATH))
-        $(info realpath: $(realpath $(INSTALLPATH)))
+        $(shell (mkdir -p "$(INSTALLPATH)"))
+        INSTALLABSPATH := $(realpath $(INSTALLPATH))
 endif
 
 TOPTARGETS := all clean install
