@@ -6,6 +6,11 @@ ifneq ($(MINGWLIBS),)
         $(info LIBSEARCHPATH: $(LIBSEARCHPATH))
         $(info MINGWLIBS: $(MINGWLIBS))
         $(info COPYFILES: $(COPYFILES))
+	ifeq ($(COPYFILES),)
+	    $(info Cannot find needed dlls on your system: $(MINGWLIBS))
+	    MINGWLIBS =
+        endif
+	    MINGWLIBS =
 endif
 
 RM := rm -rf
