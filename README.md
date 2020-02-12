@@ -64,9 +64,11 @@ Windows:
 
 To build under windows, you will need to install both MinGW-W64 and MSYS.
 
-MinGW-w64 (with gcc 8.1.0:
+MinGW-w64 (with gcc 8.1.0):
 
 A working MinGW-w64 installer can be downloaded from [sourceforge](https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win32/Personal%20Builds/mingw-builds/installer/mingw-w64-install.exe). 
+
+When you run the installer, choose the *posix* threads, and *seh* exceptions.
 
 If you are planning on using eclipse, install MinGW-w64 in a folder with no spaces in the path (for example, do not install it in Program Files). Chose the x86-64 architecture when installing.
 
