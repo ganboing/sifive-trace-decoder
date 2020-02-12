@@ -10,7 +10,6 @@ ifneq ($(MINGWLIBS),)
 	    $(info Cannot find needed dlls on your system: $(MINGWLIBS))
 	    MINGWLIBS =
         endif
-	    MINGWLIBS =
 endif
 
 RM := rm -rf
