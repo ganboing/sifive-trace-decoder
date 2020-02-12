@@ -3,9 +3,9 @@
 ifneq ($(MINGWLIBS),)
         pathsearch = $(firstword $(wildcard $(addsuffix $(1),$(LIBSEARCHPATH))))
         COPYFILES = $(foreach file,$(MINGWLIBS),$(call pathsearch,$(file)))
-        $(info LIBSEARCHPATH: $(LIBSEARCHPATH))
-        $(info MINGWLIBS: $(MINGWLIBS))
-        $(info COPYFILES: $(COPYFILES))
+#        $(info LIBSEARCHPATH: $(LIBSEARCHPATH))
+#        $(info MINGWLIBS: $(MINGWLIBS))
+#        $(info COPYFILES: $(COPYFILES))
 	ifeq ($(COPYFILES),)
 	    $(info Cannot find needed dlls on your system: $(MINGWLIBS))
 	    MINGWLIBS =
