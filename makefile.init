@@ -33,8 +33,13 @@ ifeq ($(OS),Windows_NT)
         SWIGLIB := 
         JNIINCLUDEPATHS :=
     else
+        LIBSEARCHPATH := $(shell $(CROSSPREFIX)gcc -print-search-dirs | grep -i "libraries: =" 2> /dev/null)
+        LIBSEARCHPATH := $(patsubst libraries:%,%,$(LIBSEARCHPATH))
+        LIBSEARCHPATH := $(patsubst =%,%,$(LIBSEARCHPATH))
+        LIBSEARCHPATH := $(subst ;, ,$(LIBSEARCHPATH))
+        MINGWLIBS := libgcc_s_seh*.dll libstdc++*.dll libwinpthread*.dll
         ifeq ($(JNIINCLUDE),)
-            JAVAC = $(shell which javac 2> /dev/null)
+            JAVAC = $(shell which javac 2> nul)
             ifeq ($(JAVAC),)
                 $(info javac not found; skipping swig and the dqr shared library build)
                 SWIGLIB :=
@@ -248,6 +253,11 @@ else
                 LNFLAGS = -static
                 LIBS := -lbfd -lopcodes -lintl -liberty -lz
                 EXECUTABLE := dqr.exe
+                LIBSEARCHPATH := $(shell $(CROSSPREFIX)gcc -print-search-dirs | grep -i "libraries: =" 2> /dev/null)
+                LIBSEARCHPATH := $(patsubst libraries:%,%,$(LIBSEARCHPATH))
+                LIBSEARCHPATH := $(patsubst =%,%,$(LIBSEARCHPATH))
+                LIBSEARCHPATH := $(subst :, ,$(LIBSEARCHPATH))
+                MINGWLIBS := libgcc_s_seh*.dll libstdc++*.dll libwinpthread*.dll
             else
                 CFLAGS += -D LINUX -std=c++11 -fPIC -DPIC
                 SWIGCFLAGS += -D LINUX -std=c++11 -fPIC -DPIC

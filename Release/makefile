@@ -1,5 +1,10 @@
 -include ../makefile.init
 
+ifneq ($(MINGWLIBS),)
+        pathsearch = $(firstword $(wildcard $(addsuffix $(1),$(LIBSEARCHPATH))))
+        COPYFILES = $(foreach file,$(MINGWLIBS),$(call pathsearch,$(file)))
+endif
+
 RM := rm -rf
 
 CFLAGS += -O3 -Wall -Wformat=0
@@ -49,6 +54,9 @@ ifdef SWIGLIB
 	mkdir -p "$(INSTALLPATH)/lib"
 	cp -rp $(SWIGLIB) "$(INSTALLPATH)/lib"
 	cp -rp TraceDecoder.jar "$(INSTALLPATH)/lib"
+ifdef MINGWLIBS
+	cp -p $(COPYFILES) "$(INSTALLPATH)/lib"
+endif
 endif
 ifdef EXECUTABLE
 	mkdir -p "$(INSTALLPATH)/bin"
