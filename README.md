@@ -1,7 +1,7 @@
 # trace-decoder
 SiFive implementation of the Nexus trace decoder
 
-The trace-decoder is a stand-alone program that reads Nexus 2001 traces for the RISC-V architecture as implemented by SiFive and reconstructs the instruction stream that generated the trace. Instruction traces can be used for debugging and performance analysis. Currently, Windows, Linux, and OS X are supported.
+The trace-decoder is a stand-alone program that reads Nexus 5001 traces for the RISC-V architecture as implemented by SiFive and reconstructs the instruction stream that generated the trace. Instruction traces can be used for debugging and performance analysis. Currently, Windows, Linux, and OS X are supported.
 
 The process to create/capture a trace file is not covered here; only how to build and use the trace-decoder tool to reconstruct the program execution that generated the trace. Usage of the trace-decoder assumes you already have or know how to create trace files.
 
