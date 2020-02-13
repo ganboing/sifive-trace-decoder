@@ -42,7 +42,6 @@ ifeq ($(OS),Windows_NT)
             JAVAC = $(shell which javac 2> nul)
             ifeq ($(JAVAC),)
                 $(info javac not found; skipping swig and the dqr shared library build)
-                SWIGLIB :=
                 JNIINCLUDE :=
                 JNIINCLUDEPATH :=
             else
@@ -204,7 +203,6 @@ else
                 JAVAC = $(shell which javac 2> /dev/null)
                 ifeq ($(JAVAC),)
                     $(info javac not found; skipping swig and the dqr shared library build)
-                    SWIGLIB :=
                     JNIINCLUDE :=
                     JNIINCLUDEPATH :=
                 else
@@ -258,6 +256,9 @@ else
                 LIBSEARCHPATH := $(patsubst =%,%,$(LIBSEARCHPATH))
                 LIBSEARCHPATH := $(subst :, ,$(LIBSEARCHPATH))
                 MINGWLIBS := libgcc_s_seh*.dll libstdc++*.dll libwinpthread*.dll
+                ifneq ($(SWIGLIB),)
+                    SWIGLIB := dqr.dll
+                endif
             else
                 CFLAGS += -D LINUX -std=c++11 -fPIC -DPIC
                 SWIGCFLAGS += -D LINUX -std=c++11 -fPIC -DPIC
@@ -294,7 +295,6 @@ else
                 JAVAC = $(shell which javac 2> /dev/null)
                 ifeq ($(JAVAC),)
                     $(info javac not found; skipping swig and the dqr shared library build)
-                    SWIGLIB :=
                     JNIINCLUDE :=
                     JNIINCLUDEPATH :=
                 else
