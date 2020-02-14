@@ -1,0 +1,58 @@
+
+To build the dqr executable and the dqr shared library (currently needed for using the dqr directly from
+Java) are described below. These libraries are required because the dqr uses Risc-V versions of libbfd,
+libibtery, and libopcodes.
+
+The libraries to build the dqr executable and library are different on different platforms
+windows, Linux, and Mac OS X). Below, what is needed for each platform is listed.
+
+Windows:
+
+The Windows static libraries are in the windows subfolder. They are built when freedom-tools is built, and
+will be coppied into the trace-decoder\lib\windows folder that is built at the same time. Pre-built versions
+of the libraries are provided with the trace-decoder, but they may be an older version (but should still
+work). The static libraries needed by the windows version of the dqr are:
+
+libbfd.a
+libiberty.a
+libintl.a
+libopcodes.a
+libz.a
+
+Linux:
+
+Building on Linux requries the static libraries below:
+
+libbfd.a
+libiberty.a
+libopcodes.a
+libz.a
+
+Pre-built versions are provided, but they are also built when doing a freedom-tools build.
+
+Some additional libraries are required to build the shared dqr library on Linux. This is because by default
+Linux does not compile the libraries using the -fPIC option, which is needed to make the dqr dynamic library
+when using the dqr from a Java application.
+
+When building freedom-tools on Linux, it will build versions of the libaries needed for the dqr executable, and
+the dqr shared (dynamic) libraries. The versions for creating the shared dqr library will be placed in the
+picbfd, picliberty, and picopcodes folders in the freedom-tools obj/x86_64-linux-ubuntu14/build/trace-decoder/trace-decoder/lib/linux folder.
+
+Prebuilt versions are provided for building both the dqr executable and the dqr shared library.
+
+Mac OS X:
+
+Building on Mac OS X requries the static libraries below:
+
+libbfd.a
+libiberty.a
+libopcodes.a
+libz.a
+
+These libraries are built by freedom-tools using the -fPIC options, so they are all that is needed.
+
+Include files:
+
+Include files for the libraries are in the trace-decoder/include folder (ansidecl.h, bfd.h, config.h,
+dis-asm.h, and symcat.h).
+
