@@ -16,7 +16,13 @@ public class jdqr {
   }
 
   public static void main(String argv[]) {
-    Trace t = new Trace("trace.rtd",true,"prime.elf",32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
+    System.out.printf("%d elements in argv[]\n",argv.length);
+    if (argv.length != 2) {
+	    System.out.println("Usage: java jdqr <trace-file-name> <elf-file-name>");
+	    System.exit(1);
+    }
+
+    Trace t = new Trace(argv[0],true,argv[1],32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
     if (t == null) {
       System.out.println("t is null");
       System.exit(1);
