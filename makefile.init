@@ -311,7 +311,7 @@ else
                 JNIINCLUDEPATHS :=
             else
                 $(info using $(JNIINCLUDE) for JNIINCLUDE path)
-                SWIGLIB := libdqr.so
+                SWIGLIB := libdqr.dylib
                 JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)/darwin"
             endif
         endif
