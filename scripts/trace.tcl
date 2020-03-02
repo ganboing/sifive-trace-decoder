@@ -357,6 +357,13 @@ proc getTsDebug {core} {
   return "off"
 }
 
+proc getTsLower {core} {
+  global traceBaseAddrArray
+  global ts_lower_offset
+
+  return [format 0x%08x [word [expr $traceBaseAddrArray($core) + $ts_lower_offset]]]
+}
+
 proc enableTsDebug {core} {
   global traceBaseAddrArray
   global ts_control_offset
