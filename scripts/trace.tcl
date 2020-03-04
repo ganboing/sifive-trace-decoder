@@ -1808,16 +1808,16 @@ proc getSink {core} {
     set t [expr ($t >> 28) & 0x0f]
 
     switch $t {
-    0 { set t [word [expr $traceBaseAddrArray($core) + $te_impl_offset]]
-	set t [expr ($t >> 4) & 0x1f]
-	switch $t {
-	0x01    { return "SRAM" }
-	0x02    { return "ATB"  }
-	0x04    { return "PIB"  }
-	0x08    { return "SBA"  }
-	0x10    { return "Funnel" }
-	default { return "Reserved" }
-	}
+      0 { set t [word [expr $traceBaseAddrArray($core) + $te_impl_offset]]
+        set t [expr ($t >> 4) & 0x1f]
+        switch $t {
+          1    { return "SRAM" }
+          2    { return "ATB"  }
+          4    { return "PIB"  }
+          8    { return "SBA"  }
+          16   { return "Funnel" }
+          default { return "Reserved" }
+        }
       }
     4 { return "SRAM"   }
     5 { return "ATB"    }
