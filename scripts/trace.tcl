@@ -78,7 +78,7 @@ proc getAllCoreFunnelList {} {
   }
 
   if {$traceFunnelAddress != "0x00000000" && $traceFunnelAddress != ""} {
-    lappend cores "funnel"
+    lappend cores funnel
   }
 
   return $cores
@@ -117,7 +117,7 @@ proc parseCoreFunnelList {cores} {
 
   foreach core $t {
     if {$core == "funnel"} {
-      # only accept "funnel" if one is present
+      # only accept funnel if one is present
 
       if {$has_funnel == 0} {
         return "error"
@@ -192,12 +192,12 @@ proc setTraceBufferWidth {} {
     global trace_buffer_width
 
     if {$has_funnel != 0} {
-      set impl [word [expr $traceBaseAddrArray("funnel") + $te_impl_offset]]
+      set impl [word [expr $traceBaseAddrArray(funnel) + $te_impl_offset]]
       if {($impl & (1 << 7))} {
-        set t [word [expr $traceBaseAddrArray("funnel") + $te_sinkbase_offset]]
-        mww [expr $traceBAseAddrArray("funnel") + $te_sinkbase_offset] 0xffffffff
-        set w [word [expr $traceBaseAddrArray("funnel") + $te_sinkbase_offset]]
-        mww [expr $traceBAseAddrArray("funnel") + $te_sinkbase_offset] $t
+        set t [word [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset]]
+        mww [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset] 0xffffffff
+        set w [word [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset]]
+        mww [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset] $t
 
         if {$w == 0} {
 	  set trace_buffer_width 0
@@ -1724,11 +1724,11 @@ proc wtb {{file "trace.rtd"}} {
   global has_funnel
   global num_cores
 
-  if {$has_funnel} {
-    set s [getSink "funnel"]
+  if {$has_funnel != 0} {
+    set s [getSink funnel]
     switch [string toupper $s] {
-      "SRAM" { set f [writeSRAM "funnel" $file]}
-      "SBA" { set f [writeSBA "funnel" $file]}
+      "SRAM" { set f [writeSRAM funnel $file]}
+      "SBA" { set f [writeSBA funnel $file]}
     }
   } else {
     set coreList [parseCoreList "all"]
@@ -2024,10 +2024,12 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
 	 set sink [getSink $core]
 
 	 if {$teSink != ""} {
-             set teSink $teSink "; "
+#             set teSink "$teSink; "
+             append teSink "; "
 	 }
 
-	 set teSink "$teSink core: $core $sink"
+#	 set teSink "$teSink core: $core $sink"
+	 append teSink " core: $core $sink"
 
 	 switch [string toupper $sink] {
 	 "SRAM"  { # get size of SRAM
@@ -2075,13 +2077,13 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
         if {$cores == "all"} {
           if {$has_funnel != 0} {
             foreach core $coreList {
-              set rc [setSink $core "funnel"]
+              set rc [setSink $core funnel]
 	      if {$rc != ""} {
                 return $rc
               }
             }
 
-            set rc [setSink "funnel" "atb"]
+            set rc [setSink funnel "atb"]
             if {$rc != ""} {
               return $rc
             }
@@ -2105,13 +2107,13 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
         if {$cores == "all"} {
           if {$has_funnel != 0} {
             foreach core $coreList {
-              set rc [setSink $core "funnel"]
+              set rc [setSink $core funnel]
 	      if {$rc != ""} {
                 return $rc
               }
             }
 
-            set rc [setSink "funnel" "pib"]
+            set rc [setSink funnel "pib"]
             if {$rc != ""} {
               return $rc
             }
@@ -2135,18 +2137,18 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
         if {$cores == "all"} {
           if {$has_funnel != 0} {
             foreach core $coreList {
-              set rc [setSink $core "funnel"]
+              set rc [setSink $core funnel]
 	      if {$rc != ""} {
                 return $rc
               }
               cleartrace $core
             }
 
-            set rc [setSink "funnel" "sram"]
+            set rc [setSink funnel "sram"]
             if {$rc != ""} {
               return $rc
             }
-            cleartrace "funnel"
+            cleartrace funnel
           } else {
             foreach core $coreList {
               set rc [setSink $core "sram"]
@@ -2171,18 +2173,18 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
         if {$cores == "all"} {
           if {$has_funnel != 0} {
             foreach core $coreList {
-              set rc [setSink $core "funnel"]
+              set rc [setSink $core funnel]
               if {$rc != ""} {
                 return $rc
               }
               cleartrace $core
             }
 
-            set rc [setSink "funnel" "sba" $addr $size]
+            set rc [setSink funnel "sba" $addr $size]
             if {$rc != ""} {
               return $rc
             }
-            cleartrace "funnel"
+            cleartrace funnel
           } else {
             foreach core $coreList {
               set rc [setSink $core "sba" $addr $size]
@@ -2201,13 +2203,13 @@ proc tracedst {{cores ""} {dst ""} {addr ""} {size ""}} {
             cleartrace $core
           }
         }
-    } elseif {[string compare -nocase $dst "funnel"] == 0} {
+    } elseif {[string compare -nocase $dst funnel] == 0} {
       if {$has_funnel == 0} {
         return "Error: funnel not present"
       }
 
       foreach $core $coreList {
-        set rc [setSink $core "funnel"]
+        set rc [setSink $core funnel]
         if {$rc != ""} {
           echo $rc
           return $rc
@@ -2647,9 +2649,9 @@ proc init {} {
     set num_cores $core
 
     if {($traceFunnelAddress != 0x00000000) && ($traceFunnelAddress != "")} {
-      set traceBaseAddrArray("funnel") $traceFunnelAddress
+      set traceBaseAddrArray(funnel) $traceFunnelAddress
       set has_funnel 1
-      setSink "funnel" "SRAM"
+      setSink funnel "SRAM"
     } else {
       set has_funnel 0
     }
