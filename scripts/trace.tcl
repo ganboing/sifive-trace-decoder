@@ -2432,7 +2432,7 @@ proc get_num_external_trigger_inputs {core} {
 # and return it
 
 proc regval {name} {
-    set displayval [ocd_reg $name]
+    set displayval [reg $name]
     set splitval [split $displayval ':']
     set val [lindex $splitval 1]
     return [string trim $val]
