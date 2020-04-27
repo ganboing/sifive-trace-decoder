@@ -2,7 +2,6 @@
 # Scripts for trace using OpenOCD
 #
 
-# riscv set_prefer_sba on
 
 #set traceBaseAddresses {0x20007000 0x20008000}
 #set traceFunnelAddress 0x20009000
@@ -1633,7 +1632,6 @@ proc writeSRAM {core file} {
 	    }
 	}
 
-	riscv set_prefer_sba off
 
 	return $f
     } else {
@@ -1688,7 +1686,6 @@ proc writeSRAM {core file} {
 	}
 
 	close $fp
-	riscv set_prefer_sba off
     }
 }
 
@@ -1752,11 +1749,9 @@ proc writeSBA {core file} {
     }
 
     close $fp
-    riscv set_prefer_sba off
 }
 
 proc wtb {{file "trace.rtd"}} {
-    riscv set_prefer_sba on
     global has_funnel
     global num_cores
     global verbose
