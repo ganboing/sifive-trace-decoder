@@ -37,3 +37,8 @@ TraceDecoder.jar
 *.java
 nul
 dqr_wrap.cpp
+
+install/
+make.log
+packlist.txt
+.vs/
