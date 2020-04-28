@@ -4709,7 +4709,7 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 
 //	printf("parseVarField(): bitIndex:%d, i:%d, b:%d, width: %d\n",bitIndex,i,b,width);
 
-	v = msg[i] >> (b+2);
+	v = ((uint64_t)msg[i]) >> (b+2);
 
 	while ((msg[i] & 0x03) == TraceDqr::MSEO_NORMAL) {
 		i += 1;
@@ -4721,7 +4721,7 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 			return TraceDqr::DQERR_ERR;
 		}
 
-		v = v | ((msg[i] >> 2) << w);
+		v = v | ((((uint64_t)msg[i]) >> 2) << w);
 		w += 6;
 	}
 
