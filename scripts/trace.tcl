@@ -752,6 +752,24 @@ proc srcbits {} {
 
 # global functions intended to be called from command line or from freedom studio
 
+proc printtracebaseaddresses {} {
+    global traceBaseAddresses
+    global traceFunnelAddress
+
+    set core 0
+
+    foreach baseAddress $traceBaseAddresses {
+        echo "core $core: trace block at $baseAddress"
+        set core [expr $core + 1]
+    }
+
+    if {traceFunnelAddress != 0} {
+        echo "Funnele block at $traceFunnelAddress"
+    }
+
+    echo -n ""
+}
+
 proc getTeVersion {core} {
     global te_impl_offset
     global traceBaseAddresses
