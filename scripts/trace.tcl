@@ -159,6 +159,32 @@ proc cores {} {
     return [parseCoreFunnelList "all"]
 }
 
+proc havehtm {} {
+    global traceBaseAddresses
+    global te_control_offset
+
+    set baseAddress [lindex $traceBaseAddresses 0]
+    set tracectl [word [expr $baseAddress + $te_control_offset]]
+    set savedTeInstruction $tracectl
+    set tracectl [expr $tracectl & 0xffffff8f]
+    set tracectl [expr $tracectl | 0x00000070]
+    mww [expr $baseAddress + $te_control_offset] $tracectl
+    set teInstruction [word [expr $baseAddress + $te_control_offset]]
+
+    # restore te_control
+
+    mww [expr $baseAddress + $te_control_offset] $savedTeInstruction
+
+    if {(($teInstruction & 0x00000070) >> 4) == 0x7} {
+        echo "supports htm"
+        return 1
+    }
+
+    echo "does not support htm"
+
+    return 0
+}
+
 # ite = [i]s [t]race [e]nabled
 
 proc ite {} {
@@ -605,10 +631,19 @@ proc setTraceMode {core mode} {
     global te_control_offset
 
     switch $mode {
-	"none"  { set tm 0 }
-	"sync"  { set tm 1 }
-	"all"   { set tm 3 }
-	default { set tm 0 }
+       "none"  { set tm 0 }
+       "sync"  { set tm 1 }
+       "all"   { set htm [havehtm]
+	         if {htm == 1} {
+                     set tm 7
+	         } else {
+                     set tm 3
+                 }
+               }
+       "btm"   { set tm 3 }
+       "htmc"  { set tm 6 }
+       "htm"   { set tm 7 }
+       default { set tm 0 }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
@@ -625,10 +660,12 @@ proc getTraceMode {core} {
     set t [expr ($t >> 4) & 0x7]
 
     switch $t {
-	0       { return "none" }
-	1       { return "sync" }
-	3       { return "all"  }
-	default { return "reserved" }
+       0       { return "none" }
+       1       { return "sync" }
+       3       { return "btm+sync"  }
+       6       { return "htmc+sync" }
+       7       { return "htm+sync"  }
+       default { return "reserved" }
     }
 }
 
@@ -1294,56 +1331,60 @@ proc tracemode {{cores "all"} {opt ""}} {
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
-	if {$opt == ""} {
-	    set opt $cores
-	    set cores "all"
+        if {$opt == ""} {
+            set opt $cores
+            set cores "all"
 
-	    set coreList [parseCoreList $cores]
-	}
+            set coreList [parseCoreList $cores]
+        }
 
-	if {$coreList == "error"} {
-	    echo {Error: Usage: tracemode [corelist] [none | sync | all | help]}
-	    return "error"
-	}
+        if {$coreList == "error"} {
+            echo {Error: Usage: tracemode [corelist] [none | sync | all | btm | htm | htmc | help]}
+            return "error"
+        }
     }
 
     if {$opt == ""} {
-	# display current status of ts enable
-	set rv ""
+        # display current status of ts enable
+        set rv ""
 
-	foreach core $coreList {
-	    set tsd "core $core: "
+        foreach core $coreList {
+            set tsd "core $core: "
 
-	    lappend tsd [getTraceMode $core]
+            lappend tsd [getTraceMode $core]
 
-	    if {$rv != ""} {
-		append rv "; "
-	    }
+            if {$rv != ""} {
+                append rv "; "
+            }
 
-	    append rv $tsd
-	}
-	return $rv
+            append rv $tsd
+        }
+
+        return $rv
     }
 
     if {$opt == "help"} {
-	echo "tracemode: set or display trace type (sync, sync+btm)"
-	echo {Usage: tracemode [corelist] [sync | all | none | help]}
-	echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
-	echo "  sync:     Generate only sync trace messages"
-	echo "  all:      Generate both sync and btm trace messages"
-	echo "  none:     Do not generate sync or btm trace messages"
-	echo "  help:     Display this message"
-	echo ""
-	echo "tracemode with no arguments will display the current setting for the type"
-	echo "of messages to generate (none, sync, or all)"
-	echo ""
-    } elseif {($opt == "sync") || ($opt == "all") || ($opt == "none")} {
-	foreach core $coreList {
-	    setTraceMode $core $opt
-	}
-	echo -n ""
+        echo "tracemode: set or display trace type (sync, sync+btm)"
+        echo {Usage: tracemode [corelist] [sync | all | btm | htm | htmc | none | help]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "  sync:     Generate only sync trace messages"
+        echo "  btm:      Generate both sync and btm trace messages"
+        echo "  htm:      Generate sync and htm trace messages (with return stack optimization or repeat branch optimization)"
+        echo "  htmc      Generate sync and conservitive htm trace messages (without return stack optimization or repeat branch optimization)"
+        echo "  all:      Generate both sync and btm or htm trace messages (whichever is supported by hardware)"
+        echo "  none:     Do not generate sync or btm trace messages"
+        echo "  help:     Display this message"
+        echo ""
+        echo "tracemode with no arguments will display the current setting for the type"
+        echo "of messages to generate (none, sync, or all)"
+        echo ""
+    } elseif {($opt == "sync") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm") || ($opt == "htmc")} {
+        foreach core $coreList {
+            setTraceMode $core $opt
+        }
+        echo -n ""
     } else {
-	echo {Error: Usage: tracemode [corelist] [sync | all | none | help]}
+        echo {Error: Usage: tracemode [corelist] [sync | all | btm | htm | htmc | none | help]}
     }
 }
 
