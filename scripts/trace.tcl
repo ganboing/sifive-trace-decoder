@@ -1740,7 +1740,7 @@ proc writeSBA {core file} {
 			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
 		}
 
-		writeSBAdata $tracebegin $traceend $fp
+		writeSBAdataX $tracebegin $traceend $fp
 	} else {
 		if { $verbose > 1 } {
 			echo "Trace wrapped"
@@ -1753,7 +1753,7 @@ proc writeSBA {core file} {
 			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
 		}
 
-		writeSBAdata $tracebegin $traceend $fp
+		writeSBAdataX $tracebegin $traceend $fp
 
 		set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
 		set traceend [expr $tracewp & 0xfffffffe]
@@ -1762,15 +1762,34 @@ proc writeSBA {core file} {
 			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
 		}
 
-		writeSBAdata $tracebegin $traceend $fp
+		writeSBAdataX $tracebegin $traceend $fp
     }
     close $fp
 }
 
-proc writeSBAdata { tracebegin traceend fp } {
-	for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+proc test { len cs } {
+	set fp [open "tmp.rtd" wb]
+	set addr 0x82000000
+	writeSBAdataX $addr [expr $addr + $len] $cs $fp
+	close $fp
+}
+
+proc writeSBAdata { tb te fp } {
+	for {set i $tb} {$i < $te} {incr i 4} {
 	    pack w [word $i] -intle 32
 	    puts -nonewline $fp $w
+	}
+}
+
+proc writeSBAdataX { tb te fp } {
+	# read in 256 byte chunks
+	set cs 256
+	for {set i $tb} {$i < $te} {incr i [expr 4 * $cs]} {
+		mem2array x 32 $i $cs
+		for {set j 0} {$j < $cs} {incr j 1} {
+		    pack w $x($j) -intle 32
+		    puts -nonewline $fp $w
+		}
 	}
 }
 
