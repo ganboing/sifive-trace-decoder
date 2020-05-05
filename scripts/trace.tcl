@@ -719,6 +719,16 @@ proc getMaxIcnt {core} {
     return $t
 }
 
+proc findMaxICnt { core }  {
+	# Start at 15 and work down until one sticks.
+	for {set x 15} { $x > 0 } {set x [expr {$x - 1}]} {
+		setMaxIcnt $core $x
+		set y [getMaxIcnt $core]
+		if {$x == $y} {
+			return $x;
+		}
+	}
+}
 proc setMaxBTM {core maxicnt} {
     global traceBaseAddrArray
     global te_control_offset
@@ -1662,49 +1672,47 @@ proc writeSRAM {core file} {
 	    set traceend $tracewp
 
 	    if { $verbose > 1 } {
-		echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
+			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
 	    }
 	    setreadptr $core 0
 
-	    for {set i 0} {$i < $traceend} {incr i 4} {
-		pack w [eval readSRAMData $core] -intle 32
-		puts -nonewline $fp $w
-	    }
+	    writeSRAMdata $core $tracebegin $traceend $fp
 	} else {
 	    if { $verbose > 1 } {
-		echo "Trace wrapped"
+			echo "Trace wrapped"
 	    }
 
 	    set tracebegin [expr $tracewp & 0xfffffffe]
 	    set traceend [getTraceBufferSize $core]
 
 	    if { $verbose > 1 } {
-		echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
+			echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
 	    }
 
 	    setreadptr $core $tracebegin
 
-	    for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-		pack w [eval readSRAMData $core] -intle 32
-		puts -nonewline $fp $w
-	    }
+	    writeSRAMdata $core $tracebegin $traceend $fp
 
 	    set tracebegin 0
 	    set traceend [expr $tracewp & 0xfffffffe]
 
 	    if { $verbose > 1 } {
-		echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
 	    }
 	    setreadptr $core 0
 
-	    for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-		pack w [eval readSRAMData $core] -intle 32
-		puts -nonewline $fp $w
-	    }
+	    writeSRAMdata $core $tracebegin $traceend $fp
 	}
 
 	close $fp
     }
+}
+
+proc writeSRAMdata { core tracebegin traceend fp } {
+	for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+		pack w [eval readSRAMData $core] -intle 32
+		puts -nonewline $fp $w
+	}
 }
 
 proc writeSBA {core file} {
@@ -1714,7 +1722,7 @@ proc writeSBA {core file} {
     global te_sinklimit_offset
     global verbose
 
-    if sink is not a buffer, return
+    #if sink is not a buffer, return
 
     set fp [open "$file" wb]
 
@@ -1725,48 +1733,45 @@ proc writeSBA {core file} {
     }
 
     if {($tracewp & 1) == 0 } { ;# buffer has not wrapped
-	set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-	set traceend $tracewp
+		set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+		set traceend $tracewp
 
-	if { $verbose > 1 } {
-	    echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
-	}
+		if { $verbose > 1 } {
+			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
+		}
 
-	for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-	    pack w [word $i] -intle 32
-	    puts -nonewline $fp $w
-	}
-    } else {
-	if { $verbose > 1 } {
-	    echo "Trace wrapped"
-	}
+		writeSBAdata $tracebegin $traceend $fp
+	} else {
+		if { $verbose > 1 } {
+			echo "Trace wrapped"
+		}
 
-	set tracebegin [expr $tracewp & 0xfffffffe]
-	set traceend [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+		set tracebegin [expr $tracewp & 0xfffffffe]
+		set traceend [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
 
-	if { $verbose > 1 } {
-	    echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
-	}
+		if { $verbose > 1 } {
+			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+		}
 
-	for {set i $tracebegin} {$i <= $traceend} {incr i 4} {
-	    pack w [word $i] -intle 32
-	    puts -nonewline $fp $w
-	}
+		writeSBAdata $tracebegin $traceend $fp
 
-	set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-	set traceend [expr $tracewp & 0xfffffffe]
+		set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+		set traceend [expr $tracewp & 0xfffffffe]
 
-	if { $verbose > 1 } {
-	    echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
-	}
+		if { $verbose > 1 } {
+			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+		}
 
-	for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-	    pack w [word $i] -intle 32
-	    puts -nonewline $fp $w
-	}
+		writeSBAdata $tracebegin $traceend $fp
     }
-
     close $fp
+}
+
+proc writeSBAdata { tracebegin traceend fp } {
+	for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+	    pack w [word $i] -intle 32
+	    puts -nonewline $fp $w
+	}
 }
 
 proc wtb {{file "trace.rtd"}} {
@@ -1821,10 +1826,12 @@ proc clearTraceBuffer {core} {
 
     set s [getSink $core]
     switch [string toupper $s] {
-	"SRAM" { mww [expr $traceBaseAddrArray($core) + $te_sinkrp_offset] 0
+		"SRAM" { 
+			mww [expr $traceBaseAddrArray($core) + $te_sinkrp_offset] 0
 	    mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0
 	}
-	"SBA" { set t [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+		"SBA" { 
+			set t [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
 	    mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
 	}
     }
@@ -1919,6 +1926,7 @@ proc setSink {core type {base ""} {size ""}} {
     global te_sinkbasehigh_offset
     global te_sinklimit_offset
     global trace_buffer_width
+    global te_sinkwp_offset
 
     switch [string toupper $type] {
 	"SRAM"   { set b 4 }
@@ -1949,13 +1957,14 @@ proc setSink {core type {base ""} {size ""}} {
 	    set limit [expr $base + $size - $trace_buffer_width];
 
 	    if {($limit >> 32) != ($base >> 32)} {
-		return "Error: setSink(): buffer cann't span a 2^32 address boundry"
+	        return "Error: setSink(): buffer can't span a 2^32 address boundry"
 	    } else {
 		mww [expr $traceBaseAddrArray($core) + $te_sinkbase_offset] [expr $base & 0xffffffff]
 		set b [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
 		if {$b != [expr $base & 0xffffffff]} {
 		    return "Error: setSink(): invalid buffer address for SBA"
 		}
+		mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] [expr $base & 0xffffffff]
 
 		mww [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset] [expr $base >> 32]
 		set b [word [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
