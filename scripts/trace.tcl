@@ -1397,7 +1397,7 @@ proc tracemode {{cores "all"} {opt ""}} {
         foreach core $coreList {
             set tsd "core $core: "
 
-            lappend tsd [getTraceMode $core]
+            lappend tsd [getTargetTraceMode $core]
 
             if {$rv != ""} {
                 append rv "; "
@@ -1426,7 +1426,7 @@ proc tracemode {{cores "all"} {opt ""}} {
         echo ""
     } elseif {($opt == "sync") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm") || ($opt == "htmc")} {
         foreach core $coreList {
-            setTraceMode $core $opt
+            setTargetTraceMode $core $opt
         }
         echo -n ""
     } else {
