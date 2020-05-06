@@ -162,6 +162,7 @@ proc cores {} {
 proc havehtm {} {
     global traceBaseAddresses
     global te_control_offset
+	global verbose
 
     set baseAddress [lindex $traceBaseAddresses 0]
     set tracectl [word [expr $baseAddress + $te_control_offset]]
@@ -176,11 +177,15 @@ proc havehtm {} {
     mww [expr $baseAddress + $te_control_offset] $savedTeInstruction
 
     if {(($teInstruction & 0x00000070) >> 4) == 0x7} {
-        echo "supports htm"
+		if {$verbose > 0} {
+        	echo "supports htm"
+		}
         return 1
     }
 
-    echo "does not support htm"
+	if {$verbose > 0} {
+	    echo "does not support htm"
+	}
 
     return 0
 }
@@ -626,24 +631,41 @@ proc getTeStallEnable {core} {
     }
 }
 
-proc setTraceMode {core mode} {
+proc setTraceMode { core usermode } {
+	switch $usermode {
+		"off" 
+		{
+			setTargetTraceMode $core "none"
+		}
+		"instruction" 
+		{
+			set htm [havehtm]
+			if {$htm == 1} {
+				setTargetTraceMode $core "htm+sync"
+			} else {
+				setTargetTraceMode $core "btm+sync"
+			}
+		}
+		"sampling" 
+		{
+			setTargetTraceMode $core "sync"
+		}
+		#"events" {}
+	}
+}
+
+proc setTargetTraceMode {core mode} {
     global traceBaseAddrArray
     global te_control_offset
 
+	#echo "Setting target trace mode to $mode"
     switch $mode {
-       "none"  { set tm 0 }
-       "sync"  { set tm 1 }
-       "all"   { set htm [havehtm]
-	         if {htm == 1} {
-                     set tm 7
-	         } else {
-                     set tm 3
-                 }
-               }
-       "btm"   { set tm 3 }
-       "htmc"  { set tm 6 }
-       "htm"   { set tm 7 }
-       default { set tm 0 }
+       "none"  		{ set tm 0 }
+       "sync"  		{ set tm 1 }
+       "btm+sync"	{ set tm 3 }
+       "htmc+sync"  { set tm 6 }
+       "htm+sync"   { set tm 7 }
+       default 		{ set tm 0 }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
@@ -653,6 +675,18 @@ proc setTraceMode {core mode} {
 }
 
 proc getTraceMode {core} {
+	set tm [getTargetTraceMode $core]
+	switch $tm {
+       "none"       { return "off" }
+       "sync"       { return "sampling" }
+       "btm+sync"   { return "instruction" }
+       "htmc+sync"  { return "instruction" }
+       "htm+sync"  	{ return "instruction" }
+	}
+	return "off"
+}
+
+proc getTargetTraceMode {core} {
     global traceBaseAddrArray
     global te_control_offset
 
