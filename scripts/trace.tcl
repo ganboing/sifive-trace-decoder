@@ -1688,6 +1688,8 @@ proc writeSRAM {core file limit} {
         echo ""
     }
 
+	set stop_on_wrap [getTeStopOnWrap $core]
+
     if {$file == "stdout"} {
 		set tracewp [gettracewp $core]
 
@@ -1697,9 +1699,18 @@ proc writeSRAM {core file limit} {
 			set traceend $tracewp
 
 			if {$limit > 0} {
+				set stop_on_wrap [getTeStopOnWrap $core]
 				set length [expr $traceend - $tracebegin]
 				if {$length > $limit} {
-					set tracebegin [expr $traceend - $limit]
+					if (stop_on_wrap == "on") {
+						# use the beginning of the buffer by
+						# adjusting the end point.
+						set traceend [expr $tracebegin + $limit]
+					} else {
+						# use the end of the buffer by adjusting 
+						# the begin point
+						set tracebegin [expr $traceend - $limit]
+					}
 				}
 			}
 
@@ -1726,20 +1737,37 @@ proc writeSRAM {core file limit} {
 			set traceend [expr $tracewp & 0xfffffffe]
 
 			set do1 1
+			set do2 1
 
 			if {$limit > 0} {
-				echo "Limiting to $limit bytes"
+				set stop_on_wrap [getTeStopOnWrap $core]
 				set length1 [expr $traceend - $tracebegin]
 				set length2 [expr $traceend2 - $tracebegin2]
-				if { $length2 > $limit } {
-					# only need to do part 2
-					set tracebegin2 [expr $traceend2 - $limit]
-					set do1 0
+				if (stop_on_wrap == "on") {
+					#use the beginning of the buffer
+					if { $limit < $length1 } {
+						# everything is in part1, just need
+						# adjust the endpoint
+						set traceend [expr $tracebegin + $limit]
+						# don't do part 2
+						set do2 0
+					} else {
+						# need all of part 1, and part of part 2
+						set limit [expr $limit - $length1]
+						set traceend2 [expr $tracebegin2 + $limit]
+					}
 				} else {
-					# need to do the end of part 1 
-					# and all of part 2
-					set limit [expr $limit - $length2]
-					set tracebegin [expr $traceend - $limit]
+					#use the end of the buffer
+					if { $length2 > $limit } {
+						# only need to do part 2
+						set tracebegin2 [expr $traceend2 - $limit]
+						set do1 0
+					} else {
+						# need to do the end of part 1 
+						# and all of part 2
+						set limit [expr $limit - $length2]
+						set tracebegin [expr $traceend - $limit]
+					}
 				}
 			}
 
@@ -1758,15 +1786,17 @@ proc writeSRAM {core file limit} {
 				}
 			}
 
-			if { $verbose > 1 } {
-				echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
-			}
+			if {$do2 == 1} {
+				if { $verbose > 1 } {
+					echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+				}
 
-			setreadptr $core 0
+				setreadptr $core 0
 
-			for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-				set w [format %08x [eval readSRAMData $core]]
-				append f $w
+				for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+					set w [format %08x [eval readSRAMData $core]]
+					append f $w
+				}
 			}
 		}
 
@@ -1781,10 +1811,20 @@ proc writeSRAM {core file limit} {
 			# buffer has not wrapped
 			set tracebegin 0
 			set traceend $tracewp
+
 			if {$limit > 0} {
+				set stop_on_wrap [getTeStopOnWrap $core]
 				set length [expr $traceend - $tracebegin]
 				if {$length > $limit} {
-					set tracebegin [expr $traceend - $limit]
+					if {$stop_on_wrap == "on"} {
+						# use the beginning of the buffer by
+						# adjusting the end point.
+						set traceend [expr $tracebegin + $limit]
+					} else {
+						# use the end of the buffer by adjusting 
+						# the begin point
+						set tracebegin [expr $traceend - $limit]
+					}
 				}
 			}
 
@@ -1808,18 +1848,34 @@ proc writeSRAM {core file limit} {
 			set do1 1
 
 			if {$limit > 0} {
-				echo "Limiting to $limit bytes"
+				set stop_on_wrap [getTeStopOnWrap $core]
 				set length1 [expr $traceend - $tracebegin]
 				set length2 [expr $traceend2 - $tracebegin2]
-				if { $length2 > $limit } {
-					# only need to do part 2
-					set tracebegin2 [expr $traceend2 - $limit]
-					set do1 0
+				if {$stop_on_wrap == "on"} {
+					#use the beginning of the buffer
+					if { $limit < $length1 } {
+						# everything is in part1, just need
+						# adjust the endpoint
+						set traceend [expr $tracebegin + $limit]
+						# don't do part 2
+						set do2 0
+					} else {
+						# need all of part 1, and part of part 2
+						set limit [expr $limit - $length1]
+						set traceend2 [expr $tracebegin2 + $limit]
+					}
 				} else {
-					# need to do the end of part 1 
-					# and all of part 2
-					set limit [expr $limit - $length2]
-					set tracebegin [expr $traceend - $limit]
+					#use the end of the buffer
+					if { $length2 > $limit } {
+						# only need to do part 2
+						set tracebegin2 [expr $traceend2 - $limit]
+						set do1 0
+					} else {
+						# need to do the end of part 1 
+						# and all of part 2
+						set limit [expr $limit - $length2]
+						set tracebegin [expr $traceend - $limit]
+					}
 				}
 			}
 
@@ -1832,11 +1888,14 @@ proc writeSRAM {core file limit} {
 				writeSRAMdata $core $tracebegin $traceend $fp
 			}
 
-			if { $verbose > 1 } {
-				echo "Trace from [format 0x%08x $tracebegin2] to [format 0x%08x $traceend2], [expr $traceend2 - $tracebegin2] bytes"
+
+			if {$do2 == 1} {
+				if { $verbose > 1 } {
+					echo "Trace from [format 0x%08x $tracebegin2] to [format 0x%08x $traceend2], [expr $traceend2 - $tracebegin2] bytes"
+				}
+				setreadptr $core 0
+				writeSRAMdata $core $tracebegin2 $traceend2 $fp
 			}
-			setreadptr $core 0
-			writeSRAMdata $core $tracebegin2 $traceend2 $fp
 		}
 
 		close $fp
@@ -1919,9 +1978,19 @@ proc writeSBA {core file limit} {
 		set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
 		set traceend $tracewp
 		if {$limit > 0} {
+			set stop_on_wrap [getTeStopOnWrap $core]
 			set length [expr $traceend - $tracebegin]
 			if {$length > $limit} {
-				set tracebegin [expr $traceend - $limit]
+				if {$stop_on_wrap == "on"} {
+					echo "stop on wrap applies"
+					# use the beginning of the buffer by
+					# adjusting the end point.
+					set traceend [expr $tracebegin + $limit]
+				} else {
+					# use the end of the buffer by adjusting 
+					# the begin point
+					set tracebegin [expr $traceend - $limit]
+				}
 			}
 		}
 
@@ -1942,22 +2011,38 @@ proc writeSBA {core file limit} {
 		set traceend2 [expr $tracewp & 0xfffffffe]
 
 		set do1 1
+		set do2 1
 
 		if {$limit > 0} {
-			if { $verbose > 1 } {
-				echo "Limiting to $limit bytes"
-			}
+			set stop_on_wrap [getTeStopOnWrap $core]
 			set length1 [expr $traceend - $tracebegin]
 			set length2 [expr $traceend2 - $tracebegin2]
-			if { $length2 > $limit } {
-				# only need to do part 2
-				set tracebegin2 [expr $traceend2 - $limit]
-				set do1 0
+			if  {$stop_on_wrap == "on"} {
+				echo "stop on wrap applies"
+				# use the beginning of the buffer
+				if { $limit < $length1 } {
+					# everything is in part1, just need
+					# adjust the endpoint
+					set traceend [expr $tracebegin + $limit]
+					# don't do part 2
+					set do2 0
+				} else {
+					# need all of part 1, and part of part 2
+					set limit [expr $limit - $length1]
+					set traceend2 [expr $tracebegin2 + $limit]
+				}
 			} else {
-				# need to do the end of part 1 
-				# and all of part 2
-				set limit [expr $limit - $length2]
-				set tracebegin [expr $traceend - $limit]
+				# use the end of the buffer
+				if { $length2 > $limit } {
+					# only need to do part 2
+					set tracebegin2 [expr $traceend2 - $limit]
+					set do1 0
+				} else {
+					# need to do the end of part 1 
+					# and all of part 2
+					set limit [expr $limit - $length2]
+					set tracebegin [expr $traceend - $limit]
+				}
 			}
 		}
 
@@ -1969,11 +2054,13 @@ proc writeSBA {core file limit} {
 			writeSBAdataX $tracebegin $traceend $fp
 		}
 
-		if { $verbose > 1 } {
-			echo "Trace from [format 0x%08x $tracebegin2] to [format 0x%08x $traceend2], [expr $traceend2 - $tracebegin2] bytes"
-		}
+		if {$do2 == 1} {
+			if { $verbose > 1 } {
+				echo "Trace from [format 0x%08x $tracebegin2] to [format 0x%08x $traceend2], [expr $traceend2 - $tracebegin2] bytes"
+			}
 
-		writeSBAdataX $tracebegin2 $traceend2 $fp
+			writeSBAdataX $tracebegin2 $traceend2 $fp
+		}
     }
     close $fp
 }
