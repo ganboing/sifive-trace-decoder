@@ -1944,7 +1944,9 @@ proc writeSBA {core file limit} {
 		set do1 1
 
 		if {$limit > 0} {
-			echo "Limiting to $limit bytes"
+			if { $verbose > 1 } {
+				echo "Limiting to $limit bytes"
+			}
 			set length1 [expr $traceend - $tracebegin]
 			set length2 [expr $traceend2 - $tracebegin2]
 			if { $length2 > $limit } {
