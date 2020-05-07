@@ -667,12 +667,15 @@ proc setTargetTraceMode {core mode} {
 
 	#echo "Setting target trace mode to $mode"
     switch $mode {
-       "none"  		{ set tm 0 }
-       "sync"  		{ set tm 1 }
-       "btm+sync"	{ set tm 3 }
+       "none"       { set tm 0 }
+       "sync"       { set tm 1 }
+       "btm+sync"   { set tm 3 }
+       "btm"        { set tm 3 }
        "htmc+sync"  { set tm 6 }
+       "htmc"       { set tm 6 }
        "htm+sync"   { set tm 7 }
-       default 		{ set tm 0 }
+       "htm"        { set tm 7 }
+       default      { set tm 0 }
     }
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
@@ -1429,7 +1432,7 @@ proc tracemode {{cores "all"} {opt ""}} {
         echo "tracemode with no arguments will display the current setting for the type"
         echo "of messages to generate (none, sync, or all)"
         echo ""
-    } elseif {($opt == "sync") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm") || ($opt == "htmc")} {
+    } elseif {($opt == "sync") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm") || ($opt == "htmc") || ($opt == "btm+sync") || ($opt == "htm+sync") || ($opt == "htmc+sync")} {
         foreach core $coreList {
             setTargetTraceMode $core $opt
         }
