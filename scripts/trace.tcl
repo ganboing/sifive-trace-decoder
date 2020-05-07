@@ -279,6 +279,11 @@ proc getTraceEnable {core} {
     return "off"
 }
 
+proc clearAndEnableTrace { core } {
+	cleartrace $core
+	enableTrace $core
+}
+
 proc enableTrace {core} {
     global traceBaseAddrArray
     global te_control_offset
@@ -1676,7 +1681,7 @@ proc readSRAMData {core} {
     return [word [expr $traceBaseAddrArray($core) + $te_sinkdata_offset]]
 }
 
-proc writeSRAM {core file} {
+proc writeSRAM {core file limit} {
     global verbose
 	
     if { $verbose > 1 } {
@@ -1686,9 +1691,17 @@ proc writeSRAM {core file} {
     if {$file == "stdout"} {
 		set tracewp [gettracewp $core]
 
-		if {($tracewp & 1) == 0 } { ;# buffer has not wrapped
+		if {($tracewp & 1) == 0 } { 
+			# buffer has not wrapped
 			set tracebegin 0
 			set traceend $tracewp
+
+			if {$limit > 0} {
+				set length [expr $traceend - $tracebegin]
+				if {$length > $limit} {
+					set tracebegin [expr $traceend - $limit]
+				}
+			}
 
 			if { $verbose > 1 } {
 				echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
@@ -1709,21 +1722,41 @@ proc writeSRAM {core file} {
 			set tracebegin [expr $tracewp & 0xfffffffe]
 			set traceend [getTraceBufferSize $core]
 
-			if { $verbose > 1 } {
-				echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
-			}
-
-			setreadptr $core $tracebegin
-
-			set f ""
-
-			for {set i $tracebegin} {$i < $traceend} {incr i 4} {
-				set w [format %08x [eval readSRAMData $core]]
-				append f $w
-			}
-
 			set tracebegin 0
 			set traceend [expr $tracewp & 0xfffffffe]
+
+			set do1 1
+
+			if {$limit > 0} {
+				echo "Limiting to $limit bytes"
+				set length1 [expr $traceend - $tracebegin]
+				set length2 [expr $traceend2 - $tracebegin2]
+				if { $length2 > $limit } {
+					# only need to do part 2
+					set tracebegin2 [expr $traceend2 - $limit]
+					set do1 0
+				} else {
+					# need to do the end of part 1 
+					# and all of part 2
+					set limit [expr $limit - $length2]
+					set tracebegin [expr $traceend - $limit]
+				}
+			}
+
+			if {$do1 == 1} {
+				if { $verbose > 1 } {
+					echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
+				}
+
+				setreadptr $core $tracebegin
+
+				set f ""
+
+				for {set i $tracebegin} {$i < $traceend} {incr i 4} {
+					set w [format %08x [eval readSRAMData $core]]
+					append f $w
+				}
+			}
 
 			if { $verbose > 1 } {
 				echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
@@ -1744,9 +1777,16 @@ proc writeSRAM {core file} {
 
 		set tracewp [gettracewp $core]
 
-		if {($tracewp & 1) == 0 } { ;# buffer has not wrapped
+		if {($tracewp & 1) == 0 } { 
+			# buffer has not wrapped
 			set tracebegin 0
 			set traceend $tracewp
+			if {$limit > 0} {
+				set length [expr $traceend - $tracebegin]
+				if {$length > $limit} {
+					set tracebegin [expr $traceend - $limit]
+				}
+			}
 
 			if { $verbose > 1 } {
 				echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
@@ -1762,23 +1802,41 @@ proc writeSRAM {core file} {
 			set tracebegin [expr $tracewp & 0xfffffffe]
 			set traceend [getTraceBufferSize $core]
 
-			if { $verbose > 1 } {
-				echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
+			set tracebegin2 0
+			set traceend2 [expr $tracewp & 0xfffffffe]
+
+			set do1 1
+
+			if {$limit > 0} {
+				echo "Limiting to $limit bytes"
+				set length1 [expr $traceend - $tracebegin]
+				set length2 [expr $traceend2 - $tracebegin2]
+				if { $length2 > $limit } {
+					# only need to do part 2
+					set tracebegin2 [expr $traceend2 - $limit]
+					set do1 0
+				} else {
+					# need to do the end of part 1 
+					# and all of part 2
+					set limit [expr $limit - $length2]
+					set tracebegin [expr $traceend - $limit]
+				}
 			}
 
-			setreadptr $core $tracebegin
+			if {$do1 == 1} {
+				if { $verbose > 1 } {
+					echo "Trace from [format 0x%08x $tracebegin] to [format %08x $traceend], [expr $traceend - $tracebegin] bytes"
+				}
 
-			writeSRAMdata $core $tracebegin $traceend $fp
-
-			set tracebegin 0
-			set traceend [expr $tracewp & 0xfffffffe]
+				setreadptr $core $tracebegin
+				writeSRAMdata $core $tracebegin $traceend $fp
+			}
 
 			if { $verbose > 1 } {
-				echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+				echo "Trace from [format 0x%08x $tracebegin2] to [format 0x%08x $traceend2], [expr $traceend2 - $tracebegin2] bytes"
 			}
 			setreadptr $core 0
-
-			writeSRAMdata $core $tracebegin $traceend $fp
+			writeSRAMdata $core $tracebegin2 $traceend2 $fp
 		}
 
 		close $fp
@@ -1839,7 +1897,7 @@ proc getTraceBufferSizeSBA {core} {
 	return [getTraceBufferSize $core]
 }
 
-proc writeSBA {core file} {
+proc writeSBA {core file limit} {
     global traceBaseAddrArray
     global tracedBufferSizeArray
     global te_sinkbase_offset
@@ -1856,9 +1914,16 @@ proc writeSBA {core file} {
         echo ""
     }
 
-    if {($tracewp & 1) == 0 } { ;# buffer has not wrapped
+    if {($tracewp & 1) == 0 } { 
+		# buffer has not wrapped
 		set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
 		set traceend $tracewp
+		if {$limit > 0} {
+			set length [expr $traceend - $tracebegin]
+			if {$length > $limit} {
+				set tracebegin [expr $traceend - $limit]
+			}
+		}
 
 		if { $verbose > 1 } {
 			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], nowrap, [expr $traceend - $tracebegin] bytes"
@@ -1873,20 +1938,40 @@ proc writeSBA {core file} {
 		set tracebegin [expr $tracewp & 0xfffffffe]
 		set traceend [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
 
-		if { $verbose > 1 } {
-			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+		set tracebegin2 [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+		set traceend2 [expr $tracewp & 0xfffffffe]
+
+		set do1 1
+
+		if {$limit > 0} {
+			echo "Limiting to $limit bytes"
+			set length1 [expr $traceend - $tracebegin]
+			set length2 [expr $traceend2 - $tracebegin2]
+			if { $length2 > $limit } {
+				# only need to do part 2
+				set tracebegin2 [expr $traceend2 - $limit]
+				set do1 0
+			} else {
+				# need to do the end of part 1 
+				# and all of part 2
+				set limit [expr $limit - $length2]
+				set tracebegin [expr $traceend - $limit]
+			}
 		}
 
-		writeSBAdataX $tracebegin $traceend $fp
+		if {$do1 == 1} {
+			if { $verbose > 1 } {
+				echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+			}
 
-		set tracebegin [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
-		set traceend [expr $tracewp & 0xfffffffe]
-
-		if { $verbose > 1 } {
-			echo "Trace from [format 0x%08x $tracebegin] to [format 0x%08x $traceend], [expr $traceend - $tracebegin] bytes"
+			writeSBAdataX $tracebegin $traceend $fp
 		}
 
-		writeSBAdataX $tracebegin $traceend $fp
+		if { $verbose > 1 } {
+			echo "Trace from [format 0x%08x $tracebegin2] to [format 0x%08x $traceend2], [expr $traceend2 - $tracebegin2] bytes"
+		}
+
+		writeSBAdataX $tracebegin2 $traceend2 $fp
     }
     close $fp
 }
@@ -1968,7 +2053,7 @@ proc writeSBAdataX { tb te fp } {
 
 }
 
-proc wtb {{file "trace.rtd"}} {
+proc wtb {{file "trace.rtd"} {limit 0}} {
     global has_funnel
     global num_cores
     global verbose
@@ -1980,8 +2065,8 @@ proc wtb {{file "trace.rtd"}} {
     if {$has_funnel != 0} {
 		set s [getSink funnel]
 		switch [string toupper $s] {
-			"SRAM" { set f [writeSRAM funnel $file]}
-			"SBA" { set f [writeSBA funnel $file]}
+			"SRAM" { set f [writeSRAM funnel $file $limit]}
+			"SBA" { set f [writeSBA funnel $file $limit]}
 		}
 		if { $verbose > 0 } {
 			echo "done."
@@ -1999,8 +2084,8 @@ proc wtb {{file "trace.rtd"}} {
 			}
 
 			switch [string toupper $s] {
-				"SRAM" { set f [writeSRAM $core $fn]}
-				"SBA" { set f [writeSBA $core $fn]}
+				"SRAM" { set f [writeSRAM $core $fn $limit]}
+				"SBA" { set f [writeSBA $core $fn $limit]}
 				}
 			if { $verbose > 0 } {
 				echo "done."
