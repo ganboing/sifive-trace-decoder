@@ -1982,7 +1982,6 @@ proc writeSBA {core file limit} {
 			set length [expr $traceend - $tracebegin]
 			if {$length > $limit} {
 				if {$stop_on_wrap == "on"} {
-					echo "stop on wrap applies"
 					# use the beginning of the buffer by
 					# adjusting the end point.
 					set traceend [expr $tracebegin + $limit]
@@ -2018,7 +2017,6 @@ proc writeSBA {core file limit} {
 			set length1 [expr $traceend - $tracebegin]
 			set length2 [expr $traceend2 - $tracebegin2]
 			if  {$stop_on_wrap == "on"} {
-				echo "stop on wrap applies"
 				# use the beginning of the buffer
 				if { $limit < $length1 } {
 					# everything is in part1, just need
