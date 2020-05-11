@@ -1849,6 +1849,7 @@ proc writeSRAM {core file limit} {
 			set traceend2 [expr $tracewp & 0xfffffffe]
 
 			set do1 1
+			set do2 1
 
 			if {$limit > 0} {
 				set stop_on_wrap [getTeStopOnWrap $core]
@@ -2093,11 +2094,8 @@ proc writeSBAdataXcs { tb te cs fp } {
 		echo "Chunks: $chunks @ $cs bytes/ea with $extra remaining byte"
 	}
 
+	set elems [expr $cs >> 2]
 	for {set i $tb} {$i < $extra_start} {incr i $cs} {
-		set elems [expr $cs >> 2]
-		if {$verbose > 1} {
-			echo [format "mem2array x 32 0x%08X %d" $i $elems]
-		}
 		mem2array x 32 $i $elems
 		for {set j 0} {$j < $elems} {incr j 1} {
 			pack w $x($j) -intle 32
