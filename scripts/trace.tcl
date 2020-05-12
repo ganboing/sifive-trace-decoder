@@ -3318,6 +3318,183 @@ proc qitctriggerenable {{cores "all"}} {
     return $rv
 }
 
+# following routines are used for debugging
+
+# dump trace registers (at least some of them)
+
+proc dtr {{cores "all"}} {
+    global traceBaseAddrArray
+    global te_control_offset
+    global te_impl_offset
+    global te_sinkbase_offset
+    global te_sinkbasehigh_offset
+    global te_sinklimit_offset
+    global te_sinkwp_offset
+    global te_sinkrp_offset
+    global te_sinkdata_offset
+
+    set coreList [parseCoreList $cores]
+
+    if {$coreList == "error"} {
+		echo "Error: Usage: dtr [corelist]"
+		return "error"
+    }
+
+    # display current status of teenable
+  
+    set rv "teControl: "
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_control_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+
+    set rv "teImpl:"
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_impl_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+
+    set rv "te_sinkBase:"
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+
+    set rv "te_sinkBaseHigh:"
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkbasehigh_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+
+    set rv "te_sinkLimit:"
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+
+    set rv "te_sinkwp:"
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+
+    set rv "te_sinkrp:"
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $te_sinkrp_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+}
+
+# program chip to collect a trace in the sba buffer
+
+proc sba {{addr ""} {size ""}} {
+	if {($addr == "") || ($size == "")} {
+		echo "Useage: sba addr size"
+	} else {
+		global verbose
+		set verbose 2
+		stoponwrap 0 on
+		setTeStallEnable 0 on
+		set htm [checkHaveHTM]
+		if {$htm != 0} {
+			tracemode 0 htm
+		} else {
+			tracemode 0 btm
+		}
+		tracedst 0 sba $addr $size
+		cleartrace
+		trace on
+	}
+}
+
+# program chip to collect a trace in the sram buffer
+
+proc sram {} {
+	global verbose
+	set verbose 2
+	stoponwrap 0 on
+	setTeStallEnable 0 on
+	set htm [checkHaveHTM]
+	if {$htm != 0} {
+		tracemode 0 htm
+	} else {
+		tracemode 0 btm
+	}
+	tracedst 0 sram
+	cleartrace
+	trace on
+}
+
 init
 tracedst
 echo -n ""
