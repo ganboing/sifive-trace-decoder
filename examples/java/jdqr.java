@@ -120,7 +120,7 @@ public class jdqr {
             }
 
             if (address != (lastAddress + lastInstSize / 8)) {
-              String addressLabel = instInfo.getAddressLabel();
+              String addressLabel = instInfo.addressLabelToString();
               if (addressLabel != null && addressLabel.length() != 0) {
                 System.out.printf("<%s",addressLabel);
                 if (instInfo.getAddressLabelOffset() != 0) {
@@ -149,6 +149,57 @@ public class jdqr {
 
           dst = instInfo.instructionToString(instLevel);
           System.out.printf("  %s",dst);
+
+	  int brFlag = instInfo.getBrFlags();
+
+	  if (brFlag == TraceDqr.BranchFlags.BRFLAG_taken.swigValue()) {
+              System.out.print(" [t]");
+	  }
+	  else if (brFlag == TraceDqr.BranchFlags.BRFLAG_notTaken.swigValue()) {
+              System.out.print(" [nt]");
+	  }
+	  else if (brFlag == TraceDqr.BranchFlags.BRFLAG_unknown.swigValue()) {
+              System.out.print(" [u]");
+	  }
+
+	  int crFlag = instInfo.getCRFlag();
+	  String format = "%s";
+
+	  if (crFlag != TraceDqr.CallReturnFlag.isNone.swigValue()) {
+		System.out.print(" [");
+
+	  	if ((crFlag & TraceDqr.CallReturnFlag.isCall.swigValue()) != 0) {
+          		System.out.printf(format,"call");
+			format = ",%s";
+		}
+
+		if ((crFlag & TraceDqr.CallReturnFlag.isReturn.swigValue()) != 0) {
+          		System.out.printf(format,"return");
+			format = ",%s";
+		}
+
+		if ((crFlag & TraceDqr.CallReturnFlag.isInterrupt.swigValue()) != 0) {
+			System.out.printf(format,"interrupt");
+			format = ",%s";
+		}
+
+		if ((crFlag & TraceDqr.CallReturnFlag.isSwap.swigValue()) != 0) {
+			System.out.printf(format,"swap");
+			format = ",%s";
+		}
+
+		if ((crFlag & TraceDqr.CallReturnFlag.isException.swigValue()) != 0) {
+       			System.out.printf(format,"execption");
+			format = ",%s";
+		}
+
+		if ((crFlag & TraceDqr.CallReturnFlag.isExceptionReturn.swigValue()) != 0) {
+       			System.out.printf(format,"exception return");
+			format = ",%s";
+		}
+
+	  	System.out.print("]");
+	  }
 
           System.out.printf("%n");
 
@@ -256,6 +307,10 @@ public class jdqr {
 		}
 	}
 
-    t.analyticsToString(1);
+	System.out.println("End of Trace File");
+
+        System.out.print(t.analyticsToString(2));
+
+	t.cleanUp();
   }
 }

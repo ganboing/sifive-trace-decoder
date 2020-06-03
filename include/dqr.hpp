@@ -52,6 +52,7 @@ public:
 
   typedef uint64_t ADDRESS;
   typedef uint64_t TIMESTAMP;
+  typedef int RCode;
 
   enum {
 	TRACE_HAVE_INSTINFO = 0x01,
@@ -99,12 +100,12 @@ public:
   	TCODE_AUXACCESS_READNEXT      = 24,
   	TCODE_AUXACCESS_WRITENEXT     = 25,
   	TCODE_AUXACCESS_RESPONSE      = 26,
-  	TCODE_RESURCEFULL             = 27,
-  	TCODE_INDIRECTBRANCHHISOTRY   = 28,
-  	TCODE_INDIRECTBRANCHHISORY_WS = 29,
+  	TCODE_RESOURCEFULL             = 27,
+  	TCODE_INDIRECTBRANCHHISTORY   = 28,
+  	TCODE_INDIRECTBRANCHHISTORY_WS = 29,
   	TCODE_REPEATBRANCH            = 30,
-  	TCODE_REPEATINSTRUCITON       = 31,
-  	TCODE_REPEATSINSTURCIONT_WS   = 32,
+  	TCODE_REPEATINSTRUCTION       = 31,
+  	TCODE_REPEATINSTRUCTION_WS   = 32,
   	TCODE_CORRELATION             = 33,
   	TCODE_INCIRCUITTRACE          = 34,
 
@@ -160,6 +161,79 @@ public:
 		INST_C_JALR,
 		INST_C_BEQZ,
 		INST_C_BNEZ,
+		INST_EBREAK,
+		INST_C_EBREAK,
+		INST_ECALL,
+		INST_MRET,
+		INST_SRET,
+		INST_URET,
+	};
+
+	enum CountType{
+		COUNTTYPE_none,
+		COUNTTYPE_i_cnt,
+		COUNTTYPE_history,
+		COUNTTYPE_taken,
+		COUNTTYPE_notTaken
+	};
+
+	enum Reg {
+		REG_0 = 0,
+		REG_1 = 1,
+		REG_2 = 2,
+		REG_3 = 3,
+		REG_4 = 4,
+		REG_5 = 5,
+		REG_6 = 6,
+		REG_7 = 7,
+		REG_8 = 8,
+		REG_9 = 9,
+		REG_10 = 10,
+		REG_11 = 11,
+		REG_12 = 12,
+		REG_13 = 13,
+		REG_14 = 14,
+		REG_15 = 15,
+		REG_16 = 16,
+		REG_17 = 17,
+		REG_18 = 18,
+		REG_19 = 19,
+		REG_20 = 20,
+		REG_21 = 21,
+		REG_22 = 22,
+		REG_23 = 23,
+		REG_24 = 24,
+		REG_25 = 25,
+		REG_26 = 26,
+		REG_27 = 27,
+		REG_28 = 28,
+		REG_29 = 29,
+		REG_30 = 30,
+		REG_31 = 31,
+		REG_unknown,
+	};
+
+	enum TraceType {
+		TRACETYPE_unknown = 0,
+		TRACETYPE_BTM,
+		TRACETYPE_HTM,
+	};
+
+	enum CallReturnFlag {
+		isNone            = 0,
+		isCall            = (1<<0),
+		isReturn          = (1<<1),
+		isSwap            = (1<<2),
+		isInterrupt       = (1<<3),
+		isException       = (1<<4),
+		isExceptionReturn = (1<<5),
+	 };
+
+	enum BranchFlags {
+		BRFLAG_none = 0,
+		BRFLAG_unknown,
+		BRFLAG_taken,
+		BRFLAG_notTaken,
 	};
 };
 
@@ -168,19 +242,26 @@ public:
 #ifdef SWIG
 	%ignore Instruction::addressToText(char *dst,size_t len,int labelLevel);
 	%ignore Instruction::instructionToText(char *dst,size_t len,int labelLevel);
+	%ignore Instruction::addressLabel;
+	%ignore Instruction::operandLabel;
 #endif // SWIG
 
 class Instruction {
 public:
 	void addressToText(char *dst,size_t len,int labelLevel);
 	std::string addressToString(int labelLevel);
+	std::string addressLabelToString();
+	std::string operandLabelToString();
 //	void opcodeToText();
 	void instructionToText(char *dst,size_t len,int labelLevel);
 	std::string instructionToString(int labelLevel);
 
+	int               CRFlag;
+
 	uint8_t           coreId;
-	TraceDqr::ADDRESS      address;
-	TraceDqr::RV_INST      instruction;
+	TraceDqr::ADDRESS address;
+	TraceDqr::RV_INST instruction;
+	int               brFlags; // this is an int instead of TraceDqr::BancheFlags because it is easier to work with in java
 	char              instructionText[64];
 	int               instSize;
 	static int        addrSize;
@@ -192,7 +273,7 @@ public:
 	const char       *addressLabel;
 	int               addressLabelOffset;
 	bool              haveOperandAddress;
-	TraceDqr::ADDRESS      operandAddress;
+	TraceDqr::ADDRESS operandAddress;
 #ifdef SWIG
 	%immutable		operandLabel;
 #endif // SWIG
@@ -201,6 +282,12 @@ public:
 };
 
 // class Source: Helper class for source code information for an address
+
+#ifdef SWIG
+	%ignore Source::sourceFile;
+	%ignore Source::sourceFunction;
+	%ignore Source::sourceLine;
+#endif // SWIG
 
 class Source {
 public:
@@ -241,14 +328,14 @@ public:
 
 	static uint32_t targetFrequency;
 
-	int        	   msgNum;
+	int                 msgNum;
 	TraceDqr::TCode     tcode;
-    bool       	   haveTimestamp;
+    bool       	        haveTimestamp;
     TraceDqr::TIMESTAMP timestamp;
     TraceDqr::ADDRESS   currentAddress;
     TraceDqr::TIMESTAMP time;
 
-    uint8_t        coreId;
+    uint8_t             coreId;
 
     union {
     	struct {
@@ -272,6 +359,28 @@ public:
     	} indirectBranchWS;
     	struct {
     		int             i_cnt;
+    		TraceDqr::ADDRESS    u_addr;
+    		TraceDqr::BType      b_type;
+    		uint64_t		history;
+    	} indirectHistory;
+    	struct {
+    		int             i_cnt;
+    		TraceDqr::ADDRESS    f_addr;
+    		TraceDqr::BType      b_type;
+    		uint64_t		history;
+    		TraceDqr::SyncReason sync;
+    	} indirectHistoryWS;
+    	struct {
+    		TraceDqr::RCode rCode;
+    		union {
+    			int i_cnt;
+    			uint64_t history;
+    			int takenCount;
+    			int notTakenCount;
+    		};
+    	} resourceFull;
+    	struct {
+    		int             i_cnt;
     		TraceDqr::ADDRESS    f_addr;
     		TraceDqr::SyncReason sync;
     	} sync;
@@ -279,6 +388,7 @@ public:
     		uint8_t etype;
     	} error;
     	struct {
+    		uint64_t history;
     		int     i_cnt;
     		uint8_t cdf;
     		uint8_t evcode;
@@ -308,6 +418,9 @@ public:
 	uint32_t getAddr();
 	uint32_t getIdTag();
 	uint32_t getProcess();
+	uint32_t getRCode();
+	uint64_t getRData();
+	uint64_t getHistory();
 };
 
 #ifdef SWIG
@@ -317,8 +430,10 @@ public:
 class Analytics {
 public:
 	Analytics();
-	TraceDqr::DQErr updateTraceInfo(uint32_t core_id,TraceDqr::TCode tcode,uint32_t bits,uint32_t meso_bits,uint32_t ts_bits,uint32_t addr_bits);
-	TraceDqr::DQErr updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize);
+	~Analytics();
+
+	TraceDqr::DQErr updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32_t meso_bits,uint32_t ts_bits,uint32_t addr_bits);
+	TraceDqr::DQErr updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize,int crFlags,TraceDqr::BranchFlags brFlags);
 	int currentTraceMsgNum() { return num_trace_msgs_all_cores; }
 	void setSrcBits(int sbits) { srcBits = sbits; }
 	void toText(char *dst,int dst_len,int detailLevel);
@@ -326,6 +441,10 @@ public:
 
 private:
 	TraceDqr::DQErr status;
+#ifdef DO_TIMES
+	class Timer *etimer;
+#endif // DO_TIMES
+
 	uint32_t cores;
 
 	int srcBits;
@@ -354,6 +473,10 @@ private:
 		uint32_t num_trace_dataacq;
 		uint32_t num_trace_dbranchws;
 		uint32_t num_trace_ibranchws;
+		uint32_t num_trace_ihistory;
+		uint32_t num_trace_ihistoryws;
+		uint32_t num_trace_takenhistory;
+		uint32_t num_trace_resourcefull;
 		uint32_t num_trace_correlation;
 		uint32_t num_trace_auxaccesswrite;
 		uint32_t num_trace_ownership;
@@ -364,12 +487,22 @@ private:
 		uint32_t trace_bits_min;
 		uint32_t trace_bits_mseo;
 
+		uint32_t max_hist_bits;
+		uint32_t min_hist_bits;
+		uint32_t max_notTakenCount;
+		uint32_t min_notTakenCount;
+		uint32_t max_takenCount;
+		uint32_t min_takenCount;
+
 		uint32_t trace_bits_sync;
 		uint32_t trace_bits_dbranch;
 		uint32_t trace_bits_ibranch;
 		uint32_t trace_bits_dataacq;
 		uint32_t trace_bits_dbranchws;
 		uint32_t trace_bits_ibranchws;
+		uint32_t trace_bits_ihistory;
+		uint32_t trace_bits_ihistoryws;
+		uint32_t trace_bits_resourcefull;
 		uint32_t trace_bits_correlation;
 		uint32_t trace_bits_auxaccesswrite;
 		uint32_t trace_bits_ownership;
@@ -378,6 +511,23 @@ private:
 		uint32_t num_trace_ts;
 		uint32_t num_trace_uaddr;
 		uint32_t num_trace_faddr;
+		uint32_t num_trace_ihistory_taken_branches;
+		uint32_t num_trace_ihistory_nottaken_branches;
+		uint32_t num_trace_resourcefull_i_cnt;
+		uint32_t num_trace_resourcefull_hist;
+		uint32_t num_trace_resourcefull_takenCount;
+		uint32_t num_trace_resourcefull_notTakenCount;
+		uint32_t num_trace_resourcefull_taken_branches;
+		uint32_t num_trace_resourcefull_nottaken_branches;
+
+		uint32_t num_taken_branches;
+		uint32_t num_notTaken_branches;
+		uint32_t num_calls;
+		uint32_t num_returns;
+		uint32_t num_swaps;
+		uint32_t num_exceptions;
+		uint32_t num_exception_returns;
+		uint32_t num_interrupts;
 
 		uint32_t trace_bits_ts;
 		uint32_t trace_bits_ts_max;
@@ -390,6 +540,8 @@ private:
 		uint32_t trace_bits_faddr;
 		uint32_t trace_bits_faddr_max;
 		uint32_t trace_bits_faddr_min;
+
+		uint32_t trace_bits_hist;
 	} core[DQR_MAXCORES];
 };
 
@@ -408,6 +560,7 @@ class Trace {
 public:
     Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
     ~Trace();
+    void cleanUp();
 	TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
 	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
 
@@ -441,7 +594,7 @@ public:
 
 private:
 	enum state {
-		TRACE_STATE_GETFIRSTYNCMSG,
+		TRACE_STATE_GETFIRSTSYNCMSG,
 		TRACE_STATE_GETSECONDMSG,
 		TRACE_STATE_GETSTARTTRACEMSG,
 		TRACE_STATE_COMPUTESTARTINGADDRESS,
@@ -452,20 +605,23 @@ private:
 		TRACE_STATE_ERROR
 	};
 
-	TraceDqr::DQErr       status;
+	TraceDqr::DQErr        status;
+	TraceDqr::TraceType	   traceType;
 	class SliceFileParser *sfp;
 	class ElfReader       *elfReader;
 	class Symtab          *symtab;
 	class Disassembler    *disassembler;
 	class ITCPrint        *itcPrint;
-	TraceDqr::ADDRESS     currentAddress[DQR_MAXCORES];
-	TraceDqr::ADDRESS	 lastFaddr[DQR_MAXCORES];
-	TraceDqr::TIMESTAMP   lastTime[DQR_MAXCORES];
+	TraceDqr::ADDRESS      currentAddress[DQR_MAXCORES];
+	TraceDqr::ADDRESS	   lastFaddr[DQR_MAXCORES];
+	TraceDqr::TIMESTAMP    lastTime[DQR_MAXCORES];
+	class Count           *counts;
 	enum state       state[DQR_MAXCORES];
 	bool             readNewTraceMessage;
 	int              currentCore;
 	int              srcbits;
 	bool             bufferItc;
+	int              enterISR;
 
 	int              startMessageNum;
 	int              endMessageNum;
@@ -482,20 +638,22 @@ private:
 
 	//	or maybe have this stuff in the nexus messages??
 
-	int i_cnt[DQR_MAXCORES];
+//	should this stuff be local? Do we need to remmember it?
 
-	uint32_t                inst = -1;
-	int                     inst_size = -1;
-	TraceDqr::InstType inst_type = TraceDqr::InstType::INST_UNKNOWN;
-	int32_t                 immeadiate = -1;
-	bool                    is_branch = false;
+//	uint32_t                inst = -1;
+//	int                     inst_size = -1;
+//	TraceDqr::InstType inst_type = TraceDqr::InstType::INST_UNKNOWN;
+//	int32_t                 immediate = -1;
+//	bool                    is_branch = false;
 
 	class NexusMessageSync *messageSync[DQR_MAXCORES];
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
-	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
+	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag);
 
 	TraceDqr::ADDRESS computeAddress();
+	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts);
 };
 
 #endif /* DQR_HPP_ */

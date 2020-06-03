@@ -42,11 +42,27 @@
 #include <cstdint>
 #include <cassert>
 
+#ifdef DO_TIMES
+class Timer {
+public:
+	Timer();
+	~Timer();
+
+	double start();
+	double etime();
+
+private:
+	double startTime;
+};
+#endif // DO_TIMES
+
 // class section: work with elf file sections using libbfd
 
 class section {
 public:
 	section();
+	~section();
+
 	section *initSection(section **head,asection *newsp);
 	section *getSectionByAddress(TraceDqr::ADDRESS addr);
 
@@ -76,6 +92,7 @@ public:
 	};
 
 	fileReader(/*paths?*/);
+	~fileReader();
 
 	fileList *findFile(const char *file);
 private:
@@ -234,6 +251,9 @@ private:
   TraceDqr::DQErr parseDataAcquisition(NexusMessage &nm,Analytics &analytics);
   TraceDqr::DQErr parseOwnershipTrace(NexusMessage &nm,Analytics &analytics);
   TraceDqr::DQErr parseError(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseIndirectHistory(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseIndirectHistoryWS(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseResourceFull(NexusMessage &nm,Analytics &analytics);
 };
 
 // class Disassembler: class to help in the dissasemblhy of instrucitons
@@ -241,12 +261,13 @@ private:
 class Disassembler {
 public:
 	      Disassembler(bfd *abfd);
+	      ~Disassembler();
 	int   Disassemble(TraceDqr::ADDRESS addr);
 
 	int   getSrcLines(TraceDqr::ADDRESS addr, const char **filename, const char **functionname, unsigned int *linenumber, const char **line);
 
 	int   decodeInstructionSize(uint32_t inst, int &inst_size);
-	int   decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
+	int   decodeInstruction(uint32_t instruction,int archSize,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
 
 	void  overridePrintAddress(bfd_vma addr, struct disassemble_info *info); // hmm.. don't need info - part of object!
 
@@ -266,10 +287,13 @@ private:
 	disassembler_ftype disassemble_func;
 	TraceDqr::DQErr         status;
 
+	int               archSize;
+
 	bfd_vma           start_address;
 	long              number_of_syms;
 	asymbol         **symbol_table;
 	asymbol         **sorted_syms;
+
 	func_info_t      *func_info;
 	disassemble_info *info;
 	section	         *codeSectionLst;
@@ -283,9 +307,6 @@ private:
 
 	class fileReader *fileReader;
 
-	const char  *lastFileName;
-	unsigned int lastLineNumber;
-
 	void print_address(bfd_vma vma);
 	void print_address_and_instruction(bfd_vma vma);
 	void setInstructionAddress(bfd_vma vma);
@@ -294,10 +315,29 @@ private:
 	int lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size);
 //	int get_ins(bfd_vma vma,uint32_t *ins,int *ins_size);
 
-	int decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
-	int decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
-	int decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
-	int decodeRV32Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch);
+	int decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+	int decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+	int decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+	int decodeRV32Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+
+	int decodeRV64Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+	int decodeRV64Q1Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+	int decodeRV64Q2Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+	int decodeRV64Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+};
+
+class AddrStack {
+public:
+	AddrStack(int size = 1024);
+	~AddrStack();
+	void reset();
+	int push(TraceDqr::ADDRESS addr);
+	TraceDqr::ADDRESS pop();
+
+private:
+	int stackSize;
+	int sp;
+	TraceDqr::ADDRESS *stack;
 };
 
 class NexusMessageSync {
@@ -307,6 +347,47 @@ public:
 	int          lastMsgNum;
 	int          index;
 	NexusMessage msgs[512];
+};
+
+class Count {
+public:
+	Count();
+	~Count();
+
+	void resetCounts(int core);
+
+	TraceDqr::CountType getCurrentCountType(int core);
+	TraceDqr::DQErr setICnt(int core,int count);
+	TraceDqr::DQErr setHistory(int core,uint64_t hist);
+	TraceDqr::DQErr setHistory(int core,uint64_t hist,int count);
+	TraceDqr::DQErr setTakenCount(int core,int takenCnt);
+	TraceDqr::DQErr setNotTakenCount(int core,int notTakenCnt);
+	TraceDqr::DQErr setCounts(NexusMessage *nm);
+	int consumeICnt(int core,int numToConsume);
+	int consumeHistory(int core,bool &taken);
+	int consumeTakenCount(int core);
+	int consumeNotTakenCount(int core);
+
+	int getICnt(int core);
+
+	int push(int core,TraceDqr::ADDRESS addr) { return stack[core].push(addr); }
+	TraceDqr::ADDRESS pop(int core) { return stack[core].pop(); }
+	void resetStack(int core) { stack[core].reset(); }
+
+	void dumpCounts(int core);
+
+//	int getICnt(int core);
+//	int adjustICnt(int core,int delta);
+//	bool isHistory(int core);
+//	bool takenHistory(int core);
+
+private:
+	int i_cnt[DQR_MAXCORES];
+    uint64_t history[DQR_MAXCORES];
+    int histBit[DQR_MAXCORES];
+    int takenCount[DQR_MAXCORES];
+    int notTakenCount[DQR_MAXCORES];
+    AddrStack stack[DQR_MAXCORES];
 };
 
 #endif /* TRACE_HPP_ */

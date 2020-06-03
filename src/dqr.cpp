@@ -35,7 +35,7 @@
 
 //#define DQR_MAXCORES	8
 
-const char * const DQR_VERSION = "0.7.1";
+const char * const DQR_VERSION = "0.8.1";
 
 // static C type helper functions
 
@@ -230,6 +230,14 @@ section::section()
 	code      = nullptr;
 }
 
+section::~section()
+{
+	if (code != nullptr) {
+		delete [] code;
+		code = nullptr;
+	}
+}
+
 section *section::initSection(section **head, asection *newsp)
 {
 	next = *head;
@@ -373,6 +381,32 @@ void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 	}
 }
 
+std::string Instruction::addressLabelToString()
+{
+	std::string s = "";
+
+	if (addressLabel != nullptr) {
+		for (int i = 0; addressLabel[i] != 0; i++) {
+			s += addressLabel[i];
+		}
+	}
+
+	return s;
+}
+
+std::string Instruction::operandLabelToString()
+{
+	std::string s = "";
+
+	if (operandLabel != nullptr) {
+		for (int i = 0; operandLabel[i] != 0; i++) {
+			s += operandLabel[i];
+		}
+	}
+
+	return s;
+}
+
 const char *Source::stripPath(const char *path)
 {
 	if (path == nullptr) {
@@ -473,6 +507,40 @@ std::string Source::sourceFunctionToString()
 fileReader::fileReader(/*paths*/)
 {
 	lastFile = nullptr;
+	files = nullptr;
+}
+
+fileReader::~fileReader()
+{
+	for (fileList *fl = files; fl != nullptr;) {
+		fileList *nextFl = fl->next;
+
+		for (funcList *func = fl->funcs; func != nullptr;) {
+			funcList *nextFunc = func->next;
+			if (func->func != nullptr) {
+				delete [] func->func;
+				func->func = nullptr;
+			}
+			delete func;
+			func = nextFunc;
+		}
+
+		if (fl->name != nullptr) {
+			delete [] fl->name;
+			fl->name = nullptr;
+		}
+
+		if (fl->lines != nullptr) {
+			if (fl->lines[0] != nullptr) {
+				delete [] fl->lines[0];
+			}
+			delete fl->lines;
+			fl->lines = nullptr;
+		}
+
+		fl = nextFl;
+	}
+
 	files = nullptr;
 }
 
@@ -599,6 +667,9 @@ fileReader::fileList *fileReader::readFile(const char *file)
 		delete [] lines;
 		delete [] buffer;
 
+		fl->lineCount = 0;
+		fl->lines = nullptr;
+
 		printf("Error: readFile(): Error computing line count for file\n");
 
 		return nullptr;
@@ -678,6 +749,7 @@ Symtab::~Symtab()
 {
 	if (symbol_table != nullptr) {
 		delete[] symbol_table;
+		symbol_table = nullptr;
 	}
 }
 
@@ -838,6 +910,12 @@ ElfReader::~ElfReader()
 		symtab = nullptr;
 	}
 
+	while (codeSectionLst != nullptr) {
+		section *nextSection = codeSectionLst->next;
+		delete codeSectionLst;
+		codeSectionLst = nextSection;
+	}
+
 	if (abfd != nullptr) {
 		bfd_close(abfd);
 
@@ -852,6 +930,8 @@ TraceDqr::DQErr ElfReader::getInstructionByAddress(TraceDqr::ADDRESS addr,TraceD
 	// Address for code[0] is text->vma
 
 	//don't forget base!!'
+
+	// hmmm.. probably should cache section pointer, and not address/instruction! Or maybe not cache anything?
 
 	section *sp;
 	if (codeSectionLst == nullptr) {
@@ -1412,6 +1492,10 @@ Analytics::Analytics()
 		core[i].num_trace_syncs = 0;
 		core[i].num_trace_dbranch = 0;
 		core[i].num_trace_ibranch = 0;
+		core[i].num_trace_ihistory = 0;
+		core[i].num_trace_ihistoryws = 0;
+		core[i].num_trace_resourcefull = 0;
+
 		core[i].num_trace_dataacq = 0;
 		core[i].num_trace_dbranchws = 0;
 		core[i].num_trace_ibranchws = 0;
@@ -1420,10 +1504,29 @@ Analytics::Analytics()
 		core[i].num_trace_ownership = 0;
 		core[i].num_trace_error = 0;
 
+		core[i].num_trace_ts = 0;
+		core[i].num_trace_uaddr = 0;
+		core[i].num_trace_faddr = 0;
+		core[i].num_trace_ihistory_taken_branches = 0;
+		core[i].num_trace_ihistory_nottaken_branches = 0;
+		core[i].num_trace_resourcefull_i_cnt = 0;
+		core[i].num_trace_resourcefull_hist = 0;
+		core[i].num_trace_resourcefull_takenCount = 0;
+		core[i].num_trace_resourcefull_notTakenCount = 0;
+		core[i].num_trace_resourcefull_taken_branches = 0;
+		core[i].num_trace_resourcefull_nottaken_branches = 0;
+
 		core[i].trace_bits = 0;
 		core[i].trace_bits_max = 0;
 		core[i].trace_bits_min = 0;
 		core[i].trace_bits_mseo = 0;
+
+		core[i].max_hist_bits = 0;
+		core[i].min_hist_bits = 0;
+		core[i].max_notTakenCount = 0;
+		core[i].min_notTakenCount = 0;
+		core[i].max_takenCount = 0;
+		core[i].min_takenCount = 0;
 
 		core[i].trace_bits_sync = 0;
 		core[i].trace_bits_dbranch = 0;
@@ -1431,6 +1534,9 @@ Analytics::Analytics()
 		core[i].trace_bits_dataacq = 0;
 		core[i].trace_bits_dbranchws = 0;
 		core[i].trace_bits_ibranchws = 0;
+		core[i].trace_bits_ihistory = 0;
+		core[i].trace_bits_ihistoryws = 0;
+		core[i].trace_bits_resourcefull = 0;
 		core[i].trace_bits_correlation = 0;
 		core[i].trace_bits_auxaccesswrite = 0;
 		core[i].trace_bits_ownership = 0;
@@ -1447,12 +1553,37 @@ Analytics::Analytics()
 		core[i].trace_bits_faddr = 0;
 		core[i].trace_bits_faddr_max = 0;
 		core[i].trace_bits_faddr_min = 0;
+
+		core[i].trace_bits_hist = 0;
+
+		core[i].num_taken_branches = 0;
+		core[i].num_notTaken_branches = 0;
+		core[i].num_calls = 0;
+		core[i].num_returns = 0;
+		core[i].num_swaps = 0;
+		core[i].num_exceptions = 0;
+		core[i].num_exception_returns = 0;
+		core[i].num_interrupts = 0;
 	}
+
+#ifdef DO_TIMES
+	etimer = new Timer();
+#endif // DO_TIMES
 
 	status = TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,TraceDqr::TCode tcode,uint32_t bits,uint32_t mseo_bits,uint32_t ts_bits,uint32_t addr_bits)
+Analytics::~Analytics()
+{
+#ifdef DO_TIMES
+	if (etimer != nullptr) {
+		delete etimer;
+		etimer = nullptr;
+	}
+#endif // DO_TIMES
+}
+
+TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32_t mseo_bits,uint32_t ts_bits,uint32_t addr_bits)
 {
 	bool have_uaddr = false;
 	bool have_faddr = false;
@@ -1461,7 +1592,7 @@ TraceDqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,TraceDqr::TCode tcod
 	num_trace_bits_all_cores += bits;
 	num_trace_mseo_bits_all_cores += mseo_bits;
 
-	core[core_id].num_trace_msgs += 1;
+	core[nm.coreId].num_trace_msgs += 1;
 
 	if (bits > num_trace_bits_all_cores_max) {
 		num_trace_bits_all_cores_max = bits;
@@ -1471,84 +1602,252 @@ TraceDqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,TraceDqr::TCode tcod
 		num_trace_bits_all_cores_min = bits;
 	}
 
-	core[core_id].trace_bits_mseo += mseo_bits;
-	core[core_id].trace_bits += bits;
+	core[nm.coreId].trace_bits_mseo += mseo_bits;
+	core[nm.coreId].trace_bits += bits;
 
-	if (bits > core[core_id].trace_bits_max) {
-		core[core_id].trace_bits_max = bits;
+	if (bits > core[nm.coreId].trace_bits_max) {
+		core[nm.coreId].trace_bits_max = bits;
 	}
 
-	if ((core[core_id].trace_bits_min == 0) || (bits < core[core_id].trace_bits_min)) {
-		core[core_id].trace_bits_min = bits;
+	if ((core[nm.coreId].trace_bits_min == 0) || (bits < core[nm.coreId].trace_bits_min)) {
+		core[nm.coreId].trace_bits_min = bits;
 	}
 
-	cores |= (1 << core_id);
+	cores |= (1 << nm.coreId);
 
 	if (ts_bits > 0) {
-		core[core_id].num_trace_ts += 1;
-		core[core_id].trace_bits_ts += ts_bits;
+		core[nm.coreId].num_trace_ts += 1;
+		core[nm.coreId].trace_bits_ts += ts_bits;
 
-		if (ts_bits > core[core_id].trace_bits_ts_max) {
-			core[core_id].trace_bits_ts_max = ts_bits;
+		if (ts_bits > core[nm.coreId].trace_bits_ts_max) {
+			core[nm.coreId].trace_bits_ts_max = ts_bits;
 		}
 
-		if ((core[core_id].trace_bits_ts_min == 0) || (ts_bits < core[core_id].trace_bits_ts_min)) {
-			core[core_id].trace_bits_ts_min = ts_bits;
+		if ((core[nm.coreId].trace_bits_ts_min == 0) || (ts_bits < core[nm.coreId].trace_bits_ts_min)) {
+			core[nm.coreId].trace_bits_ts_min = ts_bits;
 		}
 	}
 
-	switch (tcode) {
+	int msb;
+	uint64_t mask;
+	int taken;
+	int nottaken;
+
+	switch (nm.tcode) {
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
-		core[core_id].num_trace_ownership += 1;
-		core[core_id].trace_bits_ownership += bits;
+		core[nm.coreId].num_trace_ownership += 1;
+		core[nm.coreId].trace_bits_ownership += bits;
 		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH:
-		core[core_id].num_trace_dbranch += 1;
-		core[core_id].trace_bits_dbranch += bits;
+		core[nm.coreId].num_trace_dbranch += 1;
+		core[nm.coreId].trace_bits_dbranch += bits;
 		num_branches_all_cores += 1;
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH:
-		core[core_id].num_trace_ibranch += 1;
-		core[core_id].trace_bits_ibranch += bits;
+		core[nm.coreId].num_trace_ibranch += 1;
+		core[nm.coreId].trace_bits_ibranch += bits;
 		num_branches_all_cores += 1;
 
 		have_uaddr = true;
 		break;
 	case TraceDqr::TCODE_DATA_ACQUISITION:
-		core[core_id].num_trace_dataacq += 1;
-		core[core_id].trace_bits_dataacq += bits;
+		core[nm.coreId].num_trace_dataacq += 1;
+		core[nm.coreId].trace_bits_dataacq += bits;
 		break;
 	case TraceDqr::TCODE_ERROR:
-		core[core_id].num_trace_error += 1;
-		core[core_id].trace_bits_error += bits;
+		core[nm.coreId].num_trace_error += 1;
+		core[nm.coreId].trace_bits_error += bits;
 		break;
 	case TraceDqr::TCODE_SYNC:
-		core[core_id].num_trace_syncs += 1;
-		core[core_id].trace_bits_sync += bits;
+		core[nm.coreId].num_trace_syncs += 1;
+		core[nm.coreId].trace_bits_sync += bits;
 
 		have_faddr = true;
 		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-		core[core_id].num_trace_dbranchws += 1;
-		core[core_id].trace_bits_dbranchws += bits;
+		core[nm.coreId].num_trace_dbranchws += 1;
+		core[nm.coreId].trace_bits_dbranchws += bits;
 		num_branches_all_cores += 1;
 
 		have_faddr = true;
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-		core[core_id].num_trace_ibranchws += 1;
-		core[core_id].trace_bits_ibranchws += bits;
+		core[nm.coreId].num_trace_ibranchws += 1;
+		core[nm.coreId].trace_bits_ibranchws += bits;
 		num_branches_all_cores += 1;
 
 		have_faddr = true;
 		break;
 	case TraceDqr::TCODE_AUXACCESS_WRITE:
-		core[core_id].num_trace_auxaccesswrite += 1;
-		core[core_id].trace_bits_auxaccesswrite += bits;
+		core[nm.coreId].num_trace_auxaccesswrite += 1;
+		core[nm.coreId].trace_bits_auxaccesswrite += bits;
 		break;
 	case TraceDqr::TCODE_CORRELATION:
-		core[core_id].num_trace_correlation += 1;
-		core[core_id].trace_bits_ibranchws += bits;
+		core[nm.coreId].num_trace_correlation += 1;
+		core[nm.coreId].trace_bits_ibranchws += bits;
+		break;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		core[nm.coreId].num_trace_ihistory += 1;
+		core[nm.coreId].trace_bits_ihistory += bits;
+
+		// need to find msb = 1
+
+		msb = -1;
+		mask = nm.indirectHistory.history;
+		taken = -1;	// start at -1 to account for stop bit, which isn't a branch
+		nottaken = 0;
+
+		while (mask > 1) { // use > 1 because the most significant 1 is a stop bit which we don't want to count!
+			msb += 1;
+			if (mask & 1) {
+				taken += 1;
+			}
+			else {
+				nottaken += 1;
+			}
+			mask >>= 1;
+		}
+
+		core[nm.coreId].num_trace_ihistory_taken_branches += taken;
+		core[nm.coreId].num_trace_ihistory_nottaken_branches += nottaken;
+
+		if (msb >= 0) {
+			core[nm.coreId].trace_bits_hist += msb+1;
+
+			if (msb >= (int32_t)core[nm.coreId].max_hist_bits) {
+				core[nm.coreId].max_hist_bits = msb+1;
+			}
+		}
+
+		if ((msb+1) < (int32_t)core[nm.coreId].min_hist_bits) {
+			core[nm.coreId].min_hist_bits = msb+1;
+		}
+
+		num_branches_all_cores += 1 + taken + nottaken;
+
+		have_uaddr = true;
+		break;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+		core[nm.coreId].num_trace_ihistoryws += 1;
+		core[nm.coreId].trace_bits_ihistoryws += bits;
+
+		// need to find msb = 1
+
+		msb = -1;
+		mask = nm.indirectHistoryWS.history;
+		taken = -1;	// start at -1 to account for stop bit, which isn't a branch
+		nottaken = 0;
+
+		while (mask > 1) {
+			msb += 1;
+			if (mask & 1) {
+				taken += 1;
+			}
+			else {
+				nottaken += 1;
+			}
+			mask >>= 1;
+		}
+
+		core[nm.coreId].num_trace_ihistory_taken_branches += taken;
+		core[nm.coreId].num_trace_ihistory_nottaken_branches += nottaken;
+
+		if (msb >= 0) {
+			core[nm.coreId].trace_bits_hist += msb+1;
+
+			if (msb >= (int32_t)core[nm.coreId].max_hist_bits) {
+				core[nm.coreId].max_hist_bits = msb+1;
+			}
+		}
+
+		if ((msb+1) < (int32_t)core[nm.coreId].min_hist_bits) {
+			core[nm.coreId].min_hist_bits = msb+1;
+		}
+
+		num_branches_all_cores += 1 + taken + nottaken;
+
+		have_faddr = true;
+		break;
+	case TraceDqr::TCODE_RESOURCEFULL:
+		core[nm.coreId].num_trace_resourcefull += 1;
+		core[nm.coreId].trace_bits_resourcefull += bits;
+
+		switch (nm.resourceFull.rCode) {
+		case 0:
+			core[nm.coreId].num_trace_resourcefull += 1;
+			core[nm.coreId].num_trace_resourcefull_i_cnt += 1;
+			break;
+		case 1:
+			core[nm.coreId].num_trace_resourcefull_hist += 1;
+
+			// need to find msb = 1
+
+			msb = -1;
+			mask = nm.resourceFull.history;
+			taken = -1;	// start at -1 to account for stop bit, which isn't a branch
+			nottaken = 0;
+
+			while (mask > 1) {
+				msb += 1;
+				if (mask & 1) {
+					taken += 1;
+				}
+				else {
+					nottaken += 1;
+				}
+				mask >>= 1;
+			}
+
+			core[nm.coreId].num_trace_ihistory_taken_branches += taken;
+			core[nm.coreId].num_trace_ihistory_nottaken_branches += nottaken;
+
+			if (msb >= 0) {
+				core[nm.coreId].trace_bits_hist += msb+1;
+
+				if (msb >= (int32_t)core[nm.coreId].max_hist_bits) {
+					core[nm.coreId].max_hist_bits = msb+1;
+				}
+			}
+
+			if ((msb+1) < (int32_t)core[nm.coreId].min_hist_bits) {
+				core[nm.coreId].min_hist_bits = msb+1;
+			}
+
+			num_branches_all_cores += taken + nottaken;
+			break;
+		case 8:
+			core[nm.coreId].num_trace_resourcefull_notTakenCount += 1;
+			core[nm.coreId].num_trace_resourcefull_nottaken_branches += nm.resourceFull.notTakenCount;
+
+			// compute avg/max/min not taken count
+
+			if (nm.resourceFull.notTakenCount > (int32_t)core[nm.coreId].max_notTakenCount) {
+				core[nm.coreId].max_notTakenCount = nm.resourceFull.notTakenCount;
+			}
+
+			if ((core[nm.coreId].min_notTakenCount == 0) || (nm.resourceFull.notTakenCount < (int32_t)core[nm.coreId].min_notTakenCount)) {
+				core[nm.coreId].min_notTakenCount = nm.resourceFull.notTakenCount;
+			}
+			break;
+		case 9:
+			core[nm.coreId].num_trace_resourcefull_takenCount += 1;
+			core[nm.coreId].num_trace_resourcefull_taken_branches += nm.resourceFull.takenCount;
+
+			// compute avg/max/min taken count
+
+			if (nm.resourceFull.takenCount > (int32_t)core[nm.coreId].max_takenCount) {
+				core[nm.coreId].max_takenCount = nm.resourceFull.takenCount;
+			}
+
+			if ((core[nm.coreId].min_takenCount == 0) || (nm.resourceFull.takenCount < (int32_t)core[nm.coreId].min_takenCount)) {
+				core[nm.coreId].min_takenCount = nm.resourceFull.takenCount;
+			}
+			break;
+		default:
+			printf("Error: Analytics::updateTraceInfo(): ResoureFull: unknown RDode: %d\n",nm.resourceFull.rCode);
+			status = TraceDqr::DQERR_ERR;
+			return status;
+		}
 		break;
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
@@ -1564,12 +1863,9 @@ TraceDqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,TraceDqr::TCode tcod
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	default:
 		status = TraceDqr::DQERR_ERR;
@@ -1577,34 +1873,34 @@ TraceDqr::DQErr Analytics::updateTraceInfo(uint32_t core_id,TraceDqr::TCode tcod
 	}
 
 	if (have_uaddr) {
-		core[core_id].num_trace_uaddr += 1;
-		core[core_id].trace_bits_uaddr += addr_bits;
+		core[nm.coreId].num_trace_uaddr += 1;
+		core[nm.coreId].trace_bits_uaddr += addr_bits;
 
-		if (addr_bits > core[core_id].trace_bits_uaddr_max) {
-			core[core_id].trace_bits_uaddr_max = addr_bits;
+		if (addr_bits > core[nm.coreId].trace_bits_uaddr_max) {
+			core[nm.coreId].trace_bits_uaddr_max = addr_bits;
 		}
 
-		if ((core[core_id].trace_bits_uaddr_min == 0) || (addr_bits < core[core_id].trace_bits_uaddr_min)) {
-			core[core_id].trace_bits_uaddr_min = addr_bits;
+		if ((core[nm.coreId].trace_bits_uaddr_min == 0) || (addr_bits < core[nm.coreId].trace_bits_uaddr_min)) {
+			core[nm.coreId].trace_bits_uaddr_min = addr_bits;
 		}
 	}
 	else if (have_faddr) {
-		core[core_id].num_trace_faddr += 1;
-		core[core_id].trace_bits_faddr += addr_bits;
+		core[nm.coreId].num_trace_faddr += 1;
+		core[nm.coreId].trace_bits_faddr += addr_bits;
 
-		if (addr_bits > core[core_id].trace_bits_faddr_max) {
-			core[core_id].trace_bits_faddr_max = addr_bits;
+		if (addr_bits > core[nm.coreId].trace_bits_faddr_max) {
+			core[nm.coreId].trace_bits_faddr_max = addr_bits;
 		}
 
-		if ((core[core_id].trace_bits_faddr_min == 0) || (addr_bits < core[core_id].trace_bits_faddr_min)) {
-			core[core_id].trace_bits_faddr_min = addr_bits;
+		if ((core[nm.coreId].trace_bits_faddr_min == 0) || (addr_bits < core[nm.coreId].trace_bits_faddr_min)) {
+			core[nm.coreId].trace_bits_faddr_min = addr_bits;
 		}
 	}
 
 	return status;
 }
 
-TraceDqr::DQErr Analytics::updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize)
+TraceDqr::DQErr Analytics::updateInstructionInfo(uint32_t core_id,uint32_t inst,int instSize,int crFlags,TraceDqr::BranchFlags brFlags)
 {
 	num_inst_all_cores += 1;
 	core[core_id].num_inst += 1;
@@ -1620,6 +1916,37 @@ TraceDqr::DQErr Analytics::updateInstructionInfo(uint32_t core_id,uint32_t inst,
 		break;
 	default:
 		status = TraceDqr::DQERR_ERR;
+	}
+
+	switch (brFlags) {
+	case TraceDqr::BRFLAG_none:
+	case TraceDqr::BRFLAG_unknown:
+		break;
+	case TraceDqr::BRFLAG_taken:
+		core[core_id].num_taken_branches += 1;
+		break;
+	case TraceDqr::BRFLAG_notTaken:
+		core[core_id].num_notTaken_branches += 1;
+		break;
+	}
+
+	if (crFlags & TraceDqr::isCall) {
+		core[core_id].num_calls += 1;
+	}
+	if (crFlags & TraceDqr::isReturn) {
+		core[core_id].num_returns += 1;
+	}
+	if (crFlags & TraceDqr::isSwap) {
+		core[core_id].num_swaps += 1;
+	}
+	if (crFlags & TraceDqr::isInterrupt) {
+		core[core_id].num_interrupts += 1;
+	}
+	if (crFlags & TraceDqr::isException) {
+		core[core_id].num_exceptions += 1;
+	}
+	if (crFlags & TraceDqr::isExceptionReturn) {
+		core[core_id].num_exception_returns += 1;
 	}
 
 	return status;
@@ -1641,6 +1968,9 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 {
 	char tmp_dst[512];
 	int n;
+#ifdef DO_TIMES
+	double etime = etimer->etime();
+#endif // DO_TIMES
 
 	assert(dst != nullptr);
 
@@ -2062,6 +2392,138 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
 		updateDst(n,dst,dst_len);
 
+		position = sprintf(tmp_dst,"  IHistory");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ihistory,((float)core[i].num_trace_ihistory)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_ihistory;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  IHistory WS");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ihistoryws,((float)core[i].num_trace_ihistoryws)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_ihistoryws;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  RFull ICNT");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_i_cnt,((float)core[i].num_trace_resourcefull_i_cnt)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_resourcefull_i_cnt;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  RFull HIST");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_hist,((float)core[i].num_trace_resourcefull_hist)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_resourcefull_hist;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  RFull Taken");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_takenCount,((float)core[i].num_trace_resourcefull_takenCount)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_resourcefull_takenCount;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"  RFull NTaken");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_notTakenCount,((float)core[i].num_trace_resourcefull_notTakenCount)/core[i].num_trace_msgs*100.0);
+				t2 += core[i].num_trace_resourcefull_notTakenCount;
+				ts += 1;
+			}
+		}
+
+		if (srcBits > 0) {
+			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
 		position = sprintf(tmp_dst,"Trace Bits Total");
 
 		ts = 0;
@@ -2158,7 +2620,7 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/(core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws));
+				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/(core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws+core[i].num_trace_ihistory_taken_branches+core[i].num_trace_resourcefull_taken_branches));
 				t1 += core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws;
 				ts += 1;
 			}
@@ -2571,7 +3033,144 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
 		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Taken Branches");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_taken_branches);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Not Taken Branches");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_notTaken_branches);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Calls");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_calls);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Returns");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_returns);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Swaps");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_swaps);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Exceptions");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_exceptions);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Exception Returns");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_exception_returns);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
+
+		position = sprintf(tmp_dst,"Interrupts");
+
+		ts = 0;
+		t2 = 0;
+
+		for (int i = 0; i < DQR_MAXCORES; i++) {
+			if (cores & (1<<i)) {
+				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				position += sprintf(tmp_dst+position,"%10u",core[i].num_interrupts);
+				ts += 1;
+			}
+		}
+
+		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
+		updateDst(n,dst,dst_len);
 	}
+
+#ifdef DO_TIMES
+	n = snprintf(dst,dst_len,"\nTime %f seconds\n",etime);
+	updateDst(n,dst,dst_len);
+	n = snprintf(dst,dst_len,"Instructions decoded per second: %0.2f\n",num_inst_all_cores/etime);
+	updateDst(n,dst,dst_len);
+	n = snprintf(dst,dst_len,"Trace messages decoded per second: %0.2f\n",num_trace_msgs_all_cores/etime);
+	updateDst(n,dst,dst_len);
+#endif // DO_TIMES
 }
 
 std::string Analytics::toString(int detailLevel)
@@ -2619,6 +3218,15 @@ int NexusMessage::getI_Cnt()
 		return indirectBranchWS.i_cnt;
 	case TraceDqr::TCODE_CORRELATION:
 		return correlation.i_cnt;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		return indirectHistory.i_cnt;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+		return indirectHistoryWS.i_cnt;
+	case TraceDqr::TCODE_RESOURCEFULL:
+		if (resourceFull.rCode == 0) {
+			return resourceFull.i_cnt;
+		}
+		break;
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
@@ -2637,12 +3245,9 @@ int NexusMessage::getI_Cnt()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	case TraceDqr::TCODE_UNDEFINED:
 		break;
@@ -2658,6 +3263,8 @@ TraceDqr::ADDRESS NexusMessage::getU_Addr()
 	switch (tcode) {
 	case TraceDqr::TCODE_INDIRECT_BRANCH:
 		return indirectBranch.u_addr;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		return indirectHistory.u_addr;
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
@@ -2680,12 +3287,11 @@ TraceDqr::ADDRESS NexusMessage::getU_Addr()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_CORRELATION:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	case TraceDqr::TCODE_UNDEFINED:
@@ -2694,7 +3300,7 @@ TraceDqr::ADDRESS NexusMessage::getU_Addr()
 		break;
 	}
 
-	return 0;
+	return -1;
 }
 
 TraceDqr::ADDRESS NexusMessage::getF_Addr()
@@ -2706,6 +3312,8 @@ TraceDqr::ADDRESS NexusMessage::getF_Addr()
 		return indirectBranchWS.f_addr;
 	case TraceDqr::TCODE_SYNC:
 		return sync.f_addr;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+		return indirectHistoryWS.f_addr;
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
@@ -2726,12 +3334,11 @@ TraceDqr::ADDRESS NexusMessage::getF_Addr()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_CORRELATION:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	case TraceDqr::TCODE_UNDEFINED:
@@ -2740,7 +3347,7 @@ TraceDqr::ADDRESS NexusMessage::getF_Addr()
 		break;
 	}
 
-	return 0;
+	return -1;
 }
 
 TraceDqr::BType NexusMessage::getB_Type()
@@ -2750,6 +3357,10 @@ TraceDqr::BType NexusMessage::getB_Type()
 		return indirectBranch.b_type;
 	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 		return indirectBranchWS.b_type;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		return indirectHistory.b_type;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+		return indirectHistoryWS.b_type;
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
@@ -2771,12 +3382,10 @@ TraceDqr::BType NexusMessage::getB_Type()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_RESOURCEFULL:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_CORRELATION:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	case TraceDqr::TCODE_UNDEFINED:
@@ -2797,6 +3406,8 @@ TraceDqr::SyncReason NexusMessage::getSyncReason()
 		return directBranchWS.sync;
 	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 		return indirectBranchWS.sync;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+		return indirectHistoryWS.sync;
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
@@ -2817,12 +3428,11 @@ TraceDqr::SyncReason NexusMessage::getSyncReason()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_CORRELATION:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	case TraceDqr::TCODE_UNDEFINED:
@@ -2861,12 +3471,12 @@ uint8_t NexusMessage::getEType()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_CORRELATION:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	case TraceDqr::TCODE_UNDEFINED:
@@ -2906,12 +3516,12 @@ uint8_t NexusMessage::getCDF()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	case TraceDqr::TCODE_UNDEFINED:
 		break;
@@ -2950,12 +3560,12 @@ uint8_t NexusMessage::getEVCode()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 		break;
 	case TraceDqr::TCODE_UNDEFINED:
@@ -2995,12 +3605,12 @@ uint32_t NexusMessage::getData()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_CORRELATION:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	case TraceDqr::TCODE_UNDEFINED:
@@ -3039,12 +3649,12 @@ uint32_t NexusMessage::getAddr()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_CORRELATION:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	case TraceDqr::TCODE_UNDEFINED:
@@ -3083,12 +3693,12 @@ uint32_t NexusMessage::getIdTag()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_CORRELATION:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	case TraceDqr::TCODE_UNDEFINED:
@@ -3127,13 +3737,163 @@ uint32_t NexusMessage::getProcess()
 	case TraceDqr::TCODE_AUXACCESS_READNEXT:
 	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint32_t NexusMessage::getRCode()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_RESOURCEFULL:
+		return resourceFull.rCode;
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint64_t NexusMessage::getRData()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_RESOURCEFULL:
+		switch (resourceFull.rCode) {
+		case 0:
+			return (uint64_t)resourceFull.i_cnt;
+		case 1:
+			return resourceFull.history;
+		case 8:
+			return (uint64_t)resourceFull.notTakenCount;
+		case 9:
+			return (uint64_t)resourceFull.takenCount;
+		default:
+			break;
+		}
+		return 0;
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+uint64_t NexusMessage::getHistory()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_RESOURCEFULL:
+		if (resourceFull.rCode == 1) {
+			return resourceFull.history;
+		}
+		break;
+	case TraceDqr::TCODE_CORRELATION:
+		return correlation.history;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		return indirectHistory.history;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+		return indirectHistoryWS.history;
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 	case TraceDqr::TCODE_UNDEFINED:
 		break;
@@ -3486,29 +4246,137 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
 		snprintf(dst+n,dst_len-n,"AUXACCESS RESPOINSE (%d)",tcode);
 		break;
-	case TraceDqr::TCODE_RESURCEFULL:
-		snprintf(dst+n,dst_len-n,"RESOURCE FULL (%d)",tcode);
+	case TraceDqr::TCODE_RESOURCEFULL:
+		n += snprintf(dst+n,dst_len-n,"RESOURCE FULL (%d)",tcode);
+
+		if (level >= 2) { // here, if addr not on word boudry, have a partial write!
+			n += snprintf(dst+n,dst_len-n," RCode: %d",resourceFull.rCode);
+
+			switch (resourceFull.rCode) {
+			case 0:
+				snprintf(dst+n,dst_len-n," I-CNT: %d",resourceFull.i_cnt);
+				break;
+			case 1:
+				snprintf(dst+n,dst_len-n," History: 0x%08llx",resourceFull.history);
+				break;
+			case 8:
+				snprintf(dst+n,dst_len-n," Not Taken Count: %d",resourceFull.notTakenCount);
+				break;
+			case 9:
+				snprintf(dst+n,dst_len-n," Taken Count: %d",resourceFull.takenCount);
+				break;
+			default:
+				snprintf(dst+n,dst_len-n," Invalid rCode");
+				break;
+			}
+		}
 		break;
-	case TraceDqr::TCODE_INDIRECTBRANCHHISOTRY:
-		snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY (%d)",tcode);
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		n += snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY (%d)",tcode);
+
+		if (level >= 2) {
+			switch (indirectHistory.b_type) {
+			case TraceDqr::BTYPE_INDIRECT:
+				bt = "Indirect";
+				break;
+			case TraceDqr::BTYPE_EXCEPTION:
+				bt = "Exception";
+				break;
+			case TraceDqr::BTYPE_HARDWARE:
+				bt = "Hardware";
+				break;
+			case TraceDqr::BTYPE_UNDEFINED:
+				bt = "Undefined";
+				break;
+			default:
+				bt = "Bad Branch Type";
+				break;
+			}
+
+			snprintf(dst+n,dst_len-n," Branch Type: %s (%d) I-CNT: %d U-ADDR: 0x%08llx History: 0x%08llx",bt,indirectHistory.b_type,indirectHistory.i_cnt,indirectHistory.u_addr,indirectHistory.history);
+		}
 		break;
-	case TraceDqr::TCODE_INDIRECTBRANCHHISORY_WS:
-		snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY WS (%d)",tcode);
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+		n += snprintf(dst+n,dst_len-n,"INDIRECT BRANCH HISTORY WS (%d)",tcode);
+
+		if (level >= 2) {
+			switch (indirectHistoryWS.sync) {
+			case TraceDqr::SYNC_EVTI:
+				sr = "EVTI";
+				break;
+			case TraceDqr::SYNC_EXIT_RESET:
+				sr = "Exit Reset";
+				break;
+			case TraceDqr::SYNC_T_CNT:
+				sr = "T Count";
+				break;
+			case TraceDqr::SYNC_EXIT_DEBUG:
+				sr = "Exit Debug";
+				break;
+			case TraceDqr::SYNC_I_CNT_OVERFLOW:
+				sr = "I-Count Overflow";
+				break;
+			case TraceDqr::SYNC_TRACE_ENABLE:
+				sr = "Trace Enable";
+				break;
+			case TraceDqr::SYNC_WATCHPINT:
+				sr = "Watchpoint";
+				break;
+			case TraceDqr::SYNC_FIFO_OVERRUN:
+				sr = "FIFO Overrun";
+				break;
+			case TraceDqr::SYNC_EXIT_POWERDOWN:
+				sr = "Exit Powerdown";
+				break;
+			case TraceDqr::SYNC_MESSAGE_CONTENTION:
+				sr = "Message Contention";
+				break;
+			case TraceDqr::SYNC_NONE:
+				sr = "None";
+				break;
+			default:
+				sr = "Bad Sync Reason";
+				break;
+			}
+
+			switch (indirectHistoryWS.b_type) {
+			case TraceDqr::BTYPE_INDIRECT:
+				bt = "Indirect";
+				break;
+			case TraceDqr::BTYPE_EXCEPTION:
+				bt = "Exception";
+				break;
+			case TraceDqr::BTYPE_HARDWARE:
+				bt = "Hardware";
+				break;
+			case TraceDqr::BTYPE_UNDEFINED:
+				bt = "Undefined";
+				break;
+			default:
+				bt = "Bad Branch Type";
+				break;
+			}
+
+			snprintf(dst+n,dst_len-n," Reason: (%d) %s Branch Type %s (%d) I-CNT: %d F-Addr: 0x%08llx History: 0x%08llx",indirectHistoryWS.sync,sr,bt,indirectHistoryWS.b_type,indirectHistoryWS.i_cnt,indirectHistoryWS.f_addr,indirectHistoryWS.history);
+		}
 		break;
 	case TraceDqr::TCODE_REPEATBRANCH:
 		snprintf(dst+n,dst_len-n,"REPEAT BRANCH (%d)",tcode);
 		break;
-	case TraceDqr::TCODE_REPEATINSTRUCITON:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
 		snprintf(dst+n,dst_len-n,"REPEAT INSTRUCTION (%d)",tcode);
 		break;
-	case TraceDqr::TCODE_REPEATSINSTURCIONT_WS:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
 		snprintf(dst+n,dst_len-n,"REPEAT INSTRUCTIN WS (%d)",tcode);
 		break;
 	case TraceDqr::TCODE_CORRELATION:
 		n += snprintf(dst+n,dst_len-n,"CORRELATION (%d)",tcode);
 
 		if (level >= 2) {
-			snprintf(dst+n,dst_len-n," EVCODE: %d I-CNT: %d",correlation.evcode,correlation.i_cnt);
+			n += snprintf(dst+n,dst_len-n," EVCODE: %d CDF: %d I-CNT: %d",correlation.evcode,correlation.cdf,correlation.i_cnt);
+			if (correlation.cdf > 0) {
+				snprintf(dst+n,dst_len-n," History: 0x%08llx",correlation.history);
+			}
 		}
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE:
@@ -3609,6 +4477,337 @@ void NexusMessage::dump()
 	}
 }
 
+Count::Count()
+{
+	for (int i = 0; i < (int)(sizeof i_cnt / sizeof i_cnt[0]); i++) {
+		i_cnt[i] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof history / sizeof history[0]); i++) {
+		history[i] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof histBit / sizeof histBit[0]); i++) {
+		histBit[i] = -1;
+	}
+
+	for (int i = 0; i < (int)(sizeof takenCount / sizeof takenCount[0]); i++) {
+		takenCount[i] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof notTakenCount / sizeof notTakenCount[0]); i++) {
+		notTakenCount[i] = 0;
+	}
+}
+
+Count::~Count()
+{
+	// nothing to do here!
+}
+
+void Count::resetCounts(int core)
+{
+	i_cnt[core] = 0;
+	histBit[core] = -1;
+	takenCount[core] = 0;
+	notTakenCount[core] = 0;
+}
+
+TraceDqr::CountType Count::getCurrentCountType(int core)
+{
+	// types are prioritized! Order is important
+
+	if (histBit[core] >= 0) {
+		return TraceDqr::COUNTTYPE_history;
+	}
+
+	if (takenCount[core] > 0) {
+		return TraceDqr::COUNTTYPE_taken;
+	}
+
+	if (notTakenCount[core] > 0) {
+		return TraceDqr::COUNTTYPE_notTaken;
+	}
+
+	// i-cnt is the lowest priority
+
+	if (i_cnt[core] > 0) {
+		return TraceDqr::COUNTTYPE_i_cnt;
+	}
+
+	return TraceDqr::COUNTTYPE_none;
+}
+
+TraceDqr::DQErr Count::setICnt(int core,int count)
+{
+	i_cnt[core] += count;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Count::setHistory(int core,uint64_t hist)
+{
+	TraceDqr::DQErr rc = TraceDqr::DQERR_OK;
+
+	if (histBit[core] >= 0) {
+		rc = TraceDqr::DQERR_ERR;
+	}
+	else if (takenCount[core] != 0) {
+		rc = TraceDqr::DQERR_ERR;
+	}
+	else if (notTakenCount[core] != 0) {
+		rc = TraceDqr::DQERR_ERR;
+	}
+	else if (hist == 0) {
+		history[core] = 0;
+		histBit[core] = -1;
+	}
+	else {
+		history[core] = hist;
+
+		int i;
+
+		for (i = sizeof hist * 8 - 1; i >= 0; i -= 1) {
+			if (hist & (((uint64_t)1) << i)) {
+				histBit[core] = i-1;
+				break;
+			}
+		}
+
+		if (i < 0) {
+			histBit[core] = -1;
+		}
+	}
+
+	return rc;
+}
+
+TraceDqr::DQErr Count::setHistory(int core,uint64_t hist,int count)
+{
+	TraceDqr::DQErr rc;
+
+	rc = setICnt(core,count);
+	if (rc != TraceDqr::DQERR_OK) {
+		return rc;
+	}
+
+	rc = setHistory(core,hist);
+	if (rc != TraceDqr::DQERR_OK) {
+		return rc;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Count::setTakenCount(int core,int takenCnt)
+{
+	TraceDqr::DQErr rc;
+
+	if (histBit[core] >= 0) {
+		rc = TraceDqr::DQERR_ERR;
+	}
+	else if (takenCount[core] != 0) {
+		rc = TraceDqr::DQERR_ERR;
+	}
+	else if (notTakenCount[core] != 0) {
+		rc = TraceDqr::DQERR_ERR;
+	}
+	else {
+		takenCount[core] = takenCnt;
+		rc = TraceDqr::DQERR_OK;
+	}
+
+	return rc;
+}
+
+TraceDqr::DQErr Count::setNotTakenCount(int core,int notTakenCnt)
+{
+	TraceDqr::DQErr rc;
+
+	if (histBit[core] >= 0) {
+		rc = TraceDqr::DQERR_ERR;
+	}
+	else if (takenCount[core] != 0) {
+		rc = TraceDqr::DQERR_ERR;
+	}
+	else if (notTakenCount[core] != 0) {
+		rc = TraceDqr::DQERR_ERR;
+	}
+	else {
+		notTakenCount[core] = notTakenCnt;
+		rc = TraceDqr::DQERR_OK;
+	}
+
+	return rc;
+}
+
+TraceDqr::DQErr Count::setCounts(NexusMessage *nm)
+{
+	TraceDqr::DQErr rc;
+	int tmp_i_cnt = 0;
+	uint64_t tmp_history = 0;
+	int tmp_taken = 0;
+	int tmp_notTaken = 0;
+
+	switch (nm->tcode) {
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+		// no counts, do nothing
+		return TraceDqr::DQERR_OK;
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+		tmp_i_cnt = nm->directBranch.i_cnt;
+		break;
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+		tmp_i_cnt = nm->indirectBranch.i_cnt;
+		break;
+	case TraceDqr::TCODE_SYNC:
+		tmp_i_cnt = nm->sync.i_cnt;
+		break;
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+		tmp_i_cnt = nm->directBranchWS.i_cnt;
+		break;
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+		tmp_i_cnt = nm->indirectBranchWS.i_cnt;
+		break;
+	case TraceDqr::TCODE_RESOURCEFULL:
+		switch (nm->resourceFull.rCode) {
+		case 0:
+			tmp_i_cnt = nm->resourceFull.i_cnt;
+			break;
+		case 1:
+			tmp_history = nm->resourceFull.history;
+			break;
+		case 8:
+			tmp_notTaken = nm->resourceFull.notTakenCount;
+			break;
+		case 9:
+			tmp_taken = nm->resourceFull.takenCount;
+			break;
+		default:
+			printf("Error: Count::setCount(): invalid or unsupported rCode for reourceFull TCODE\n");
+
+			return TraceDqr::DQERR_ERR;
+		}
+		break;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		tmp_i_cnt = nm->indirectHistory.i_cnt;
+		tmp_history = nm->indirectHistory.history;
+		break;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+		tmp_i_cnt = nm->indirectHistoryWS.i_cnt;
+		tmp_history = nm->indirectHistoryWS.history;
+		break;
+	case TraceDqr::TCODE_CORRELATION:
+		tmp_i_cnt = nm->correlation.i_cnt;
+		if (nm->correlation.cdf == 1) {
+			tmp_history = nm->correlation.history;
+		}
+		break;
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+	case TraceDqr::TCODE_UNDEFINED:
+	default:
+		printf("Error: Count::setCount(): invalid or unsupported TCODE\n");
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	if (tmp_i_cnt != 0) {
+		rc = setICnt(nm->coreId,tmp_i_cnt);
+		if (rc != TraceDqr::DQERR_OK) {
+			return rc;
+		}
+	}
+
+	if (tmp_history != 0) {
+		rc = setHistory(nm->coreId,tmp_history);
+		if (rc != TraceDqr::DQERR_OK) {
+			return rc;
+		}
+	}
+
+	if (tmp_taken != 0) {
+		rc = setTakenCount(nm->coreId,tmp_taken);
+		if (rc != TraceDqr::DQERR_OK) {
+			return rc;
+		}
+	}
+
+	if (tmp_notTaken != 0) {
+		rc = setNotTakenCount(nm->coreId,tmp_notTaken);
+		if (rc != TraceDqr::DQERR_OK) {
+			return rc;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+int Count::consumeICnt(int core,int numToConsume)
+{
+	i_cnt[core] -= numToConsume;
+
+	return i_cnt[core];
+}
+
+int Count::consumeHistory(int core,bool &taken)
+{
+	if (histBit[core] < 0) {
+		return 1;
+	}
+
+	taken = (history[core] & (1 << histBit[core])) != 0;
+
+	histBit[core] -= 1;
+
+	return 0;
+}
+
+int Count::consumeTakenCount(int core)
+{
+	if (takenCount[core] <= 0) {
+		return 1;
+	}
+
+	takenCount[core] -= 1;
+
+	return 0;
+}
+
+int Count::consumeNotTakenCount(int core)
+{
+	if (notTakenCount[core] <= 0) {
+		return 1;
+	}
+
+	notTakenCount[core] -= 1;
+
+	return 0;
+}
+
+void Count::dumpCounts(int core)
+{
+	printf("Count::dumpCounts(): core: %d, i_cnt: %d, history: 0x%08llx, histBit: %d, takenCount: %d, notTakenCount: %d\n",core,i_cnt[core],history[core],histBit[core],takenCount[core],notTakenCount[core]);
+}
+
 SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 {
 	assert(filename != nullptr);
@@ -3667,6 +4866,355 @@ void SliceFileParser::dump()
 		std::cout << int(msg[i] & 1);
 		std::cout << std::endl;
 	}
+}
+
+TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics &analytics)
+{
+	TraceDqr::DQErr rc;
+	uint64_t   tmp;
+	int        width;
+	int        bits = 6;	// start bits at 6 to account for tcode
+	int        ts_bits = 0;
+	int        addr_bits;
+
+	nm.tcode = TraceDqr::TCODE_INDIRECTBRANCHHISTORY;
+
+	if (srcbits > 0) {
+        rc = parseFixedField(srcbits,&tmp);
+        if (rc != TraceDqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        bits += srcbits;
+
+        nm.coreId = (uint8_t)tmp;
+	}
+	else {
+		nm.coreId = 0;
+	}
+
+	// parse the two bit b-type
+
+	rc = parseFixedField(2,&tmp);
+	if (rc  != TraceDqr::DQERR_OK) {
+		status = rc;
+
+		return status;
+	}
+
+	bits += 2;
+
+	nm.indirectHistory.b_type = (TraceDqr::BType)tmp;
+
+	// parse the variable length the i-cnt
+
+	rc = parseVarField(&tmp,&width);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+
+		return status;
+	}
+
+	bits += width;
+
+    nm.indirectHistory.i_cnt = (int)tmp;
+
+    // parse the u-addr field
+
+    rc = parseVarField(&tmp,&width);
+    if (rc != TraceDqr::DQERR_OK) {
+    	status = rc;
+
+    	return status;
+    }
+
+    bits += width;
+	addr_bits = width;
+
+    nm.indirectHistory.u_addr = (TraceDqr::ADDRESS)tmp;
+
+    // parse the variable lenght history field
+
+    rc = parseVarField(&tmp,&width);
+    if (rc != TraceDqr::DQERR_OK) {
+    	status = rc;
+
+    	return status;
+    }
+
+    bits += width;
+
+    nm.indirectHistory.history = tmp;
+
+	if (eom == true) {
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
+	}
+	else {
+		rc = parseVarField(&tmp,&width); // this field is optional - check err
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+
+			return status;
+		}
+
+		bits += width;
+		ts_bits = width;
+
+		// check if entire message has been consumed
+
+		if (eom != true) {
+			status = TraceDqr::DQERR_BM;
+
+			return status;
+		}
+
+		nm.haveTimestamp = true;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
+	}
+
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+
+	nm.msgNum = analytics.currentTraceMsgNum();
+
+	return status;
+}
+
+TraceDqr::DQErr SliceFileParser::parseIndirectHistoryWS(NexusMessage &nm,Analytics &analytics)
+{
+	TraceDqr::DQErr rc;
+	uint64_t   tmp;
+	int        width;
+	int        bits = 6;	// start bits at 6 to account for tcode
+	int        ts_bits = 0;
+	int        addr_bits;
+
+	nm.tcode = TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS;
+
+	// if multicore, parse src field
+
+	if (srcbits > 0) {
+        rc = parseFixedField(srcbits,&tmp);
+        if (rc != TraceDqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        bits += srcbits;
+
+        nm.coreId = (uint8_t)tmp;
+	}
+	else {
+		nm.coreId = 0;
+	}
+
+	// parse the fixed length sync reason field
+
+	rc = parseFixedField(4,&tmp);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+
+		return status;
+	}
+
+	bits += 4;
+
+	nm.indirectHistoryWS.sync   = (TraceDqr::SyncReason)tmp;
+
+	// parse the two bit b-type
+
+	rc = parseFixedField(2,&tmp);
+	if (rc  != TraceDqr::DQERR_OK) {
+		status = rc;
+
+		return status;
+	}
+
+	bits += 2;
+
+	nm.indirectHistoryWS.b_type = (TraceDqr::BType)tmp;
+
+	// parse the variable length the i-cnt
+
+	rc = parseVarField(&tmp,&width);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+
+		return status;
+	}
+
+	bits += width;
+
+    nm.indirectHistoryWS.i_cnt = (int)tmp;
+
+    // parse the f-addr field
+
+    rc = parseVarField(&tmp,&width);
+    if (rc != TraceDqr::DQERR_OK) {
+    	status = rc;
+
+    	return status;
+    }
+
+    bits += width;
+	addr_bits = width;
+
+    nm.indirectHistoryWS.f_addr = (TraceDqr::ADDRESS)tmp;
+
+    // parse the variable length history field
+
+    rc = parseVarField(&tmp,&width);
+    if (rc != TraceDqr::DQERR_OK) {
+    	status = rc;
+
+    	return status;
+    }
+
+    bits += width;
+
+    nm.indirectHistoryWS.history = tmp;
+
+	if (eom == true) {
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
+	}
+	else {
+		rc = parseVarField(&tmp,&width); // this field is optional - check err
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+
+			return status;
+		}
+
+		bits += width;
+		ts_bits = width;
+
+		// check if entire message has been consumed
+
+		if (eom != true) {
+			status = TraceDqr::DQERR_BM;
+
+			return status;
+		}
+
+		nm.haveTimestamp = true;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
+	}
+
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+
+	nm.msgNum = analytics.currentTraceMsgNum();
+
+	return status;
+}
+
+TraceDqr::DQErr SliceFileParser::parseResourceFull(NexusMessage &nm,Analytics &analytics)
+{
+	TraceDqr::DQErr rc;
+	uint64_t   tmp;
+	int        width;
+	int        bits = 6;	// start bits at 6 to account for tcode
+	int        ts_bits = 0;
+
+	nm.tcode = TraceDqr::TCODE_RESOURCEFULL;
+
+	// if multicore, parse src field
+
+	if (srcbits > 0) {
+        rc = parseFixedField(srcbits,&tmp);
+        if (rc != TraceDqr::DQERR_OK) {
+            status = rc;
+
+            return status;
+        }
+
+        bits += srcbits;
+
+        nm.coreId = (uint8_t)tmp;
+	}
+	else {
+		nm.coreId = 0;
+	}
+
+	// parse the 4 bit RCODE
+
+	rc = parseFixedField(4,&tmp);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+
+		return status;
+	}
+
+	bits += 4;
+
+    nm.resourceFull.rCode = (int)tmp;
+
+    // parse the vairable length rdata field
+
+    rc = parseVarField(&tmp,&width);
+    if (rc != TraceDqr::DQERR_OK) {
+    	status = rc;
+
+    	return status;
+    }
+
+    bits += width;
+
+    switch (nm.resourceFull.rCode) {
+    case 0:
+    	nm.resourceFull.i_cnt = (int)tmp;
+    	break;
+    case 1:
+    	nm.resourceFull.history = tmp;
+    	break;
+    case 8:
+    	nm.resourceFull.notTakenCount = (int)tmp;
+    	break;
+    case 9:
+    	nm.resourceFull.takenCount = (int)tmp;
+    	break;
+    default:
+    	printf("Error: parseResourceFull(): unknown rCode: %d\n",nm.resourceFull.rCode);
+
+    	status = TraceDqr::DQERR_ERR;
+    	return status;
+    }
+
+	if (eom == true) {
+		nm.haveTimestamp = false;
+		nm.timestamp = 0;
+	}
+	else {
+		rc = parseVarField(&tmp,&width); // this field is optional - check err
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+
+			return status;
+		}
+
+		bits += width;
+		ts_bits = width;
+
+		// check if entire message has been consumed
+
+		if (eom != true) {
+			status = TraceDqr::DQERR_BM;
+
+			return status;
+		}
+
+		nm.haveTimestamp = true;
+		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
+	}
+
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+
+	nm.msgNum = analytics.currentTraceMsgNum();
+
+	return status;
 }
 
 TraceDqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &analytics)
@@ -3737,7 +5285,7 @@ TraceDqr::DQErr SliceFileParser::parseDirectBranch(NexusMessage &nm,Analytics &a
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_DIRECT_BRANCH,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -3838,7 +5386,7 @@ TraceDqr::DQErr SliceFileParser::parseDirectBranchWS(NexusMessage &nm,Analytics 
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_DIRECT_BRANCH_WS,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -3874,7 +5422,7 @@ TraceDqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics 
 		nm.coreId = 0;
 	}
 
-	// parse the fixed lenght b-type
+	// parse the fixed length b-type
 
 	rc = parseFixedField(2,&tmp);
 	if (rc != TraceDqr::DQERR_OK) {
@@ -3939,7 +5487,7 @@ TraceDqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics 
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_INDIRECT_BRANCH,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -4053,7 +5601,7 @@ TraceDqr::DQErr SliceFileParser::parseIndirectBranchWS(NexusMessage &nm,Analytic
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_INDIRECT_BRANCH_WS,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -4152,7 +5700,7 @@ TraceDqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_SYNC,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -4168,6 +5716,8 @@ TraceDqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &an
 	int        ts_bits = 0;
 
 	nm.tcode = TraceDqr::TCODE_CORRELATION;
+
+//	printf("parse correlation\n");
 
 	// if multicore, parse src field
 
@@ -4211,14 +5761,6 @@ TraceDqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &an
 
 	bits += 2;
 
-	if (tmp != 0) {
-		printf("Error: DQErr SliceFileParser::parseCorrelation(): Expected CDF to be 0 (%d)\n",(int)tmp);
-
-		status = TraceDqr::DQERR_ERR;
-
-		return status;
-	}
-
 	nm.correlation.cdf = (uint8_t)tmp;
 
 	// parse the variable length i-cnt field
@@ -4233,6 +5775,29 @@ TraceDqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &an
 	bits += width;
 
 	nm.correlation.i_cnt = (int)tmp;
+
+	switch (nm.correlation.cdf) {
+	case 0:
+		break;
+	case 1:
+		rc = parseVarField(&tmp,&width);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+
+			return status;
+		}
+
+		bits += width;
+
+		nm.correlation.history = (int)tmp;
+
+		break;
+	default:
+		printf("Error: parseCorrelation(): invalid CDF field: %d\n",nm.correlation.cdf);
+
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -4261,7 +5826,7 @@ TraceDqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &an
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_CORRELATION,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -4347,7 +5912,7 @@ TraceDqr::DQErr SliceFileParser::parseError(NexusMessage &nm,Analytics &analytic
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_ERROR,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -4422,7 +5987,7 @@ TraceDqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm,Analytics 
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_OWNERSHIP_TRACE,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -4510,7 +6075,7 @@ TraceDqr::DQErr SliceFileParser::parseAuxAccessWrite(NexusMessage &nm,Analytics 
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_AUXACCESS_WRITE,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -4598,7 +6163,7 @@ TraceDqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm,Analytics
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
 	}
 
-	status = analytics.updateTraceInfo(nm.coreId,TraceDqr::TCODE_DATA_ACQUISITION,bits+msgSlices*2,msgSlices*2,ts_bits,0);
+	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,0);
 
 	nm.msgNum = analytics.currentTraceMsgNum();
 
@@ -4725,6 +6290,14 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 		w += 6;
 	}
 
+	if (w > (int)sizeof(v)*8) {
+		// variable field overflowed size of v
+
+		status = TraceDqr::DQERR_ERR;
+
+		return TraceDqr::DQERR_ERR;
+	}
+
 	if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
 		eom = true;
 	}
@@ -4733,8 +6306,6 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 
 	*width = w;
 	*val = v;
-
-//	printf("-> bitIndex: %d, value: %llx\n",bitIndex,v);
 
 	return TraceDqr::DQERR_OK;
 }
@@ -4749,8 +6320,6 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 		if (!tf) {
 			if (tf.eof()) {
 				status = TraceDqr::DQERR_EOF;
-
-				std::cout << "Info: End of trace file\n";
 			}
 			else {
 				status = TraceDqr::DQERR_ERR;
@@ -4785,8 +6354,6 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 		if (!tf) {
 			if (tf.eof()) {
 				status = TraceDqr::DQERR_EOF;
-
-				std::cout << "End of trace file\n";
 			}
 			else {
 				status = TraceDqr::DQERR_ERR;
@@ -4978,7 +6545,7 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				// all errors from readBinaryMsg() are non-recoverable.
 
 				if (rc != TraceDqr::DQERR_EOF) {
-					std::cout << "Error: (): readBinaryMsg() returned error " << rc << std::endl;
+					std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
 				}
 
 				status = rc;
@@ -4990,7 +6557,7 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 			rc = readAscMsg();
 			if (rc != TraceDqr::DQERR_OK) {
 				if (rc != TraceDqr::DQERR_EOF) {
-					std::cout << "Error: (): read/TxtMsg() returned error " << rc << std::endl;
+					std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
 				}
 
 				status = rc;
@@ -5016,11 +6583,9 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = parseOwnershipTrace(nm,analytics);
 				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH:
-//		cout << " | direct branch";
 				rc = parseDirectBranch(nm,analytics);
 				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
-//		cout << "| indirect branch";
 				rc = parseIndirectBranch(nm,analytics);
 				break;
 			case TraceDqr::TCODE_DATA_WRITE:
@@ -5038,7 +6603,6 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = parseError(nm,analytics);
 				break;
 			case TraceDqr::TCODE_SYNC:
-//		cout << "| sync";
 				rc = parseSync(nm,analytics);
 				break;
 			case TraceDqr::TCODE_CORRECTION:
@@ -5046,11 +6610,9 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 				rc = TraceDqr::DQERR_ERR;
 				break;
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-//		cout << "| direct branch with sync\n";
 				rc = parseDirectBranchWS(nm,analytics);
 				break;
 			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-//		cout << "| indirect branch with sync";
 				rc = parseIndirectBranchWS(nm,analytics);
 				break;
 			case TraceDqr::TCODE_DATA_WRITE_WS:
@@ -5071,8 +6633,17 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
 				rc = parseAuxAccessWrite(nm,analytics);
 				break;
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+				rc = parseIndirectHistory(nm,analytics);
+				break;
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+				rc = parseIndirectHistoryWS(nm,analytics);
+				break;
+			case TraceDqr::TCODE_RESOURCEFULL:
+				rc = parseResourceFull(nm,analytics);
+				break;
 			default:
-				std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << tcode << std::dec << std::endl;
+				std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << int(tcode) << std::dec << std::endl;
 				rc = TraceDqr::DQERR_ERR;
 			}
 
@@ -5324,10 +6895,65 @@ Disassembler::Disassembler(bfd *abfd)
 
    	fileReader = new class fileReader();
 
-   	lastFileName = nullptr;
-   	lastLineNumber = -1;
+    const bfd_arch_info_type *aitp;
+
+    aitp = bfd_get_arch_info(abfd);
+    if (aitp == nullptr) {
+  	  printf("Error: Disassembler::Disassembler(): Cannot get arch type for elf file\n");
+
+  	  status = TraceDqr::TraceDqr::DQERR_ERR;
+  	  return;
+    }
+
+    switch (aitp->mach) {
+    case bfd_mach_riscv32:
+  	  archSize = 32;
+  	  break;
+    case bfd_mach_riscv64:
+  	  archSize = 64;
+  	  break;
+    default:
+  	  printf("Error: Disassembler::Disassembler(): Unknown machine type\n");
+
+  	  status = TraceDqr::TraceDqr::DQERR_ERR;
+  	  return;
+    }
 
     status = TraceDqr::DQERR_OK;
+}
+
+Disassembler::~Disassembler()
+{
+	if (symbol_table != nullptr) {
+		delete [] symbol_table;
+		symbol_table = nullptr;
+	}
+
+	if (sorted_syms != nullptr) {
+		delete [] sorted_syms;
+		sorted_syms = nullptr;
+	}
+
+	if (func_info != nullptr) {
+		delete [] func_info;
+		func_info = nullptr;
+	}
+
+	while (codeSectionLst != nullptr) {
+		section *nextSection = codeSectionLst->next;
+		delete codeSectionLst;
+		codeSectionLst = nextSection;
+	}
+
+	if (info != nullptr) {
+		delete info;
+		info = nullptr;
+	}
+
+	if (fileReader != nullptr) {
+		delete fileReader;
+		fileReader = nullptr;
+	}
 }
 
 int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size)
@@ -5368,13 +6994,10 @@ int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_
 	*ins_size = size;
 
 	if (size == 16) {
-//    printf("instruction: %04x\n",inst);
 		*ins = inst;
 	}
 	else {
 		*ins = (((uint32_t)sp->code[(vma - sp->startAddr)/2+1]) << 16) | inst;
-
-//    printf("instruction: %08x\n",*ins);
 	}
 
 	return 0;
@@ -5522,22 +7145,49 @@ void Disassembler::print_address(bfd_vma vma)
 
 //	    	printf("\n");
 
-	    	if (offset == 0) {
-	    		printf("%08lx <%s>:\n",vma,sorted_syms[index]->name);
-	    	}
-	    	else {
-	    		printf("%08lx <%s+%x>:\n",vma,sorted_syms[index]->name,offset);
-	    	}
-	    }
+	    	// need to know if this is 64 or 32 bit
 
-	    printf("%8lx: ",vma);
+			switch (archSize) {
+			case 32:
+				if (offset == 0) {
+					printf("%08x <%s>:\n",(uint32_t)vma,sorted_syms[index]->name);
+				}
+				else {
+					printf("%08x <%s+%x>:\n",(uint32_t)vma,sorted_syms[index]->name,offset);
+				}
+				printf("%8x: ",(uint32_t)vma);
+				break;
+			case 64:
+				if (offset == 0) {
+					printf("%08llx <%s>:\n",vma,sorted_syms[index]->name);
+				}
+				else {
+					printf("%08llx <%s+%x>:\n",vma,sorted_syms[index]->name,offset);
+				}
+				printf("%8llx: ",vma);
+				break;
+			default:
+				printf("Error: Disassembler::print_address(): Bad arch size: %d\n",archSize);
+				break;
+			}
+	    }
 	}
 	else {
 		// didn't find symbol
 
 		prev_index = -1;
 
-		printf("%8lx:",vma);
+		switch (archSize) {
+		case 32:
+			printf("%8lx:",(uint32_t)vma);
+			break;
+		case 64:
+			printf("%8llx:",vma);
+			break;
+		default:
+			printf("Error: Disassembler::print_address(): Bad arch size: %d\n",archSize);
+			break;
+		}
 	}
 }
 
@@ -5613,26 +7263,30 @@ int Disassembler::decodeInstructionSize(uint32_t inst, int &inst_size)
 	return 1;
 }
 
-#define MOVE_BIT(bits,s,d)	((bits&(1<<s))?(1<<d):0)
+#define MOVE_BIT(bits,s,d)	(((bits)&(1<<(s)))?(1<<(d)):0)
 
-int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
 	// no branch or jump instruction in quadrant 0
 
 	inst_size = 16;
 	is_branch = false;
-	immeadiate = 0;
+	immediate = 0;
 
 	if ((instruction & 0x0003) != 0x0000) {
 		return 1;
 	}
+
+	// we only crare about rs1 and rd for branch instructions, so just set them to unknown for now
+	rs1 = TraceDqr::REG_unknown;
+	rd = TraceDqr::REG_unknown;
 
 	inst_type = TraceDqr::INST_UNKNOWN;
 
 	return 0;
 }
 
-int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
 	// Q1 compressed instruction
 
@@ -5661,7 +7315,10 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 			t |= 0xfffff000;
 		}
 
-		immeadiate = t;
+		immediate = t;
+
+		rs1 = TraceDqr::REG_unknown;
+		rd = TraceDqr::REG_1;
 		break;
 	case 0x5:
 		inst_type = TraceDqr::INST_C_J;
@@ -5683,7 +7340,10 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 			t |= 0xfffff000;
 		}
 
-		immeadiate = t;
+		rs1 = TraceDqr::REG_unknown;
+		rd = TraceDqr::REG_0;
+
+		immediate = t;
 		break;
 	case 0x6:
 		inst_type = TraceDqr::INST_C_BEQZ;
@@ -5702,7 +7362,10 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 			t |= 0xfffffe00;
 		}
 
-		immeadiate = t;
+		rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x03);
+		rd = TraceDqr::REG_unknown;
+
+		immediate = t;
 		break;
 	case 0x7:
 		inst_type = TraceDqr::INST_C_BNEZ;
@@ -5721,10 +7384,16 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 			t |= 0xfffffe00;
 		}
 
-		immeadiate = t;
+		rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x03);
+		rd = TraceDqr::REG_unknown;
+
+		immediate = t;
 		break;
 	default:
+		rs1 = TraceDqr::REG_unknown;
+		rd = TraceDqr::REG_unknown;
 		inst_type = TraceDqr::INST_UNKNOWN;
+		immediate = 0;
 		is_branch = 0;
 		break;
 	}
@@ -5732,7 +7401,7 @@ int Disassembler::decodeRV32Q1Instruction(uint32_t instruction,int &inst_size,Tr
 	return 0;
 }
 
-int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
 	// Q1 compressed instruction
 
@@ -5740,6 +7409,8 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 
 	inst_type = TraceDqr::INST_UNKNOWN;
 	is_branch = false;
+	rs1 = TraceDqr::REG_unknown;
+	rd = TraceDqr::REG_unknown;
 
 	switch (instruction >> 13) {
 	case 0x4:
@@ -5748,7 +7419,15 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 				if ((instruction & 0x0f80) != 0x0000) {
 					inst_type = TraceDqr::INST_C_JALR;
 					is_branch = true;
-					immeadiate = 0;
+
+					rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+					rd = TraceDqr::REG_1;
+					immediate = 0;
+				}
+				else {
+					inst_type = TraceDqr::INST_C_EBREAK;
+					immediate = 0;
+					is_branch = true;
 				}
 			}
 		}
@@ -5757,7 +7436,10 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 				if ((instruction & 0x0f80) != 0x0000) {
 					inst_type = TraceDqr::INST_C_JR;
 					is_branch = true;
-					immeadiate = 0;
+
+					rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+					rd = TraceDqr::REG_0;
+					immediate = 0;
 				}
 			}
 		}
@@ -5769,7 +7451,7 @@ int Disassembler::decodeRV32Q2Instruction(uint32_t instruction,int &inst_size,Tr
 	return 0;
 }
 
-int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
 	if ((instruction & 0x1f) == 0x1f) {
 		fprintf(stderr,"Error: decodeBranch(): cann't decode instructions longer than 32 bits\n");
@@ -5810,7 +7492,9 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 			t |= 0xffe00000;
 		}
 
-		immeadiate = t;
+		immediate = t;
+		rd = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+		rs1 = TraceDqr::REG_unknown;
 		break;
 	case 0x67:
 		if ((instruction & 0x7000) == 0x000) {
@@ -5823,10 +7507,15 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 				t |= 0xfffff000;
 			}
 
-			immeadiate = t;
+			immediate = t;
+			rd = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+			rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
 		}
 		else {
 			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
 			is_branch = false;
 		}
 		break;
@@ -5852,6 +7541,9 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 			break;
 		default:
 			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
 			is_branch = false;
 			return 0;
 		}
@@ -5875,30 +7567,424 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 			t |= 0xffffe000;
 		}
 
-		immeadiate = t;
+		immediate = t;
+		rd = TraceDqr::REG_unknown;
+		rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
+		break;
+	case 0x73:
+		if (instruction == 0x00200073) {
+			inst_type = TraceDqr::INST_URET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if (instruction == 0x10200073) {
+			inst_type = TraceDqr::INST_SRET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if (instruction == 0x30200073) {
+			inst_type = TraceDqr::INST_MRET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if (instruction == 0x00000073) {
+			inst_type = TraceDqr::INST_ECALL;
+			immediate = 0;
+			is_branch = true;
+		}
+		else if (instruction == 0x00100073) {
+			inst_type = TraceDqr::INST_EBREAK;
+			immediate = 0;
+			is_branch = true;
+		}
+		else {
+			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
+			is_branch = false;
+		}
+		break;
+	default:
+		inst_type = TraceDqr::INST_UNKNOWN;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
 		break;
 	}
 
 	return 0;
 }
 
-int Disassembler::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,int32_t &immeadiate,bool &is_branch)
+int Disassembler::decodeRV64Q0Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
+{
+	// no branch or jump instruction in quadrant 0
+
+	inst_size = 16;
+	is_branch = false;
+	immediate = 0;
+
+	if ((instruction & 0x0003) != 0x0000) {
+		return 1;
+	}
+
+	// we only crare about rs1 and rd for branch instructions, so just set them to unknown for now
+	rs1 = TraceDqr::REG_unknown;
+	rd = TraceDqr::REG_unknown;
+
+	inst_type = TraceDqr::INST_UNKNOWN;
+
+	return 0;
+}
+
+int Disassembler::decodeRV64Q1Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
+{
+	// Q1 compressed instruction
+
+	uint32_t t;
+
+	inst_size = 16;
+
+	switch (instruction >> 13) {
+	case 0x5:
+		inst_type = TraceDqr::INST_C_J;
+		is_branch = true;
+
+		t = MOVE_BIT(instruction,3,1);
+		t |= MOVE_BIT(instruction,4,2);
+		t |= MOVE_BIT(instruction,5,3);
+		t |= MOVE_BIT(instruction,11,4);
+		t |= MOVE_BIT(instruction,2,5);
+		t |= MOVE_BIT(instruction,7,6);
+		t |= MOVE_BIT(instruction,6,7);
+		t |= MOVE_BIT(instruction,9,8);
+		t |= MOVE_BIT(instruction,10,9);
+		t |= MOVE_BIT(instruction,8,10);
+		t |= MOVE_BIT(instruction,12,11);
+
+		if (t & (1<<11)) { // sign extend offset
+			t |= 0xfffff000;
+		}
+
+		rs1 = TraceDqr::REG_unknown;
+		rd = TraceDqr::REG_0;
+
+		immediate = t;
+		break;
+	case 0x6:
+		inst_type = TraceDqr::INST_C_BEQZ;
+		is_branch = true;
+
+		t = MOVE_BIT(instruction,3,1);
+		t |= MOVE_BIT(instruction,4,2);
+		t |= MOVE_BIT(instruction,10,3);
+		t |= MOVE_BIT(instruction,11,4);
+		t |= MOVE_BIT(instruction,2,5);
+		t |= MOVE_BIT(instruction,5,6);
+		t |= MOVE_BIT(instruction,6,7);
+		t |= MOVE_BIT(instruction,12,8);
+
+		if (t & (1<<8)) { // sign extend offset
+			t |= 0xfffffe00;
+		}
+
+		rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x03);
+		rd = TraceDqr::REG_unknown;
+
+		immediate = t;
+		break;
+	case 0x7:
+		inst_type = TraceDqr::INST_C_BNEZ;
+		is_branch = true;
+
+		t = MOVE_BIT(instruction,3,1);
+		t |= MOVE_BIT(instruction,4,2);
+		t |= MOVE_BIT(instruction,10,3);
+		t |= MOVE_BIT(instruction,11,4);
+		t |= MOVE_BIT(instruction,2,5);
+		t |= MOVE_BIT(instruction,5,6);
+		t |= MOVE_BIT(instruction,6,7);
+		t |= MOVE_BIT(instruction,12,8);
+
+		if (t & (1<<8)) { // sign extend offset
+			t |= 0xfffffe00;
+		}
+
+		rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x03);
+		rd = TraceDqr::REG_unknown;
+
+		immediate = t;
+		break;
+	default:
+		rs1 = TraceDqr::REG_unknown;
+		rd = TraceDqr::REG_unknown;
+		inst_type = TraceDqr::INST_UNKNOWN;
+		immediate = 0;
+		is_branch = 0;
+		break;
+	}
+
+	return 0;
+}
+
+int Disassembler::decodeRV64Q2Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
+{
+	// Q2 compressed instruction
+
+	inst_size = 16;
+
+	inst_type = TraceDqr::INST_UNKNOWN;
+	is_branch = false;
+	rs1 = TraceDqr::REG_unknown;
+	rd = TraceDqr::REG_unknown;
+
+	switch (instruction >> 13) {
+	case 0x4:
+		if (instruction & (1<<12)) {
+			if ((instruction & 0x007c) == 0x0000) {
+				if ((instruction & 0x0f80) != 0x0000) {
+					inst_type = TraceDqr::INST_C_JALR;
+					is_branch = true;
+
+					rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+					rd = TraceDqr::REG_1;
+					immediate = 0;
+				}
+				else {
+					inst_type = TraceDqr::INST_EBREAK;
+					immediate = 0;
+					is_branch = true;
+				}
+			}
+		}
+		else {
+			if ((instruction & 0x007c) == 0x0000) {
+				if ((instruction & 0x0f80) != 0x0000) {
+					inst_type = TraceDqr::INST_C_JR;
+					is_branch = true;
+
+					rs1 = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+					rd = TraceDqr::REG_0;
+					immediate = 0;
+				}
+			}
+		}
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
+{
+	if ((instruction & 0x1f) == 0x1f) {
+		fprintf(stderr,"Error: decodeRV64Instruction(): cann't decode instructions longer than 32 bits\n");
+		return 1;
+	}
+
+	uint32_t t;
+
+	inst_size = 32;
+
+	switch (instruction & 0x7f) {
+	case 0x6f:
+		inst_type = TraceDqr::INST_JAL;
+		is_branch = true;
+
+		t = MOVE_BIT(instruction,21,1);
+		t |= MOVE_BIT(instruction,22,2);
+		t |= MOVE_BIT(instruction,23,3);
+		t |= MOVE_BIT(instruction,24,4);
+		t |= MOVE_BIT(instruction,25,5);
+		t |= MOVE_BIT(instruction,26,6);
+		t |= MOVE_BIT(instruction,27,7);
+		t |= MOVE_BIT(instruction,28,8);
+		t |= MOVE_BIT(instruction,29,9);
+		t |= MOVE_BIT(instruction,30,10);
+		t |= MOVE_BIT(instruction,20,11);
+		t |= MOVE_BIT(instruction,12,12);
+		t |= MOVE_BIT(instruction,13,13);
+		t |= MOVE_BIT(instruction,14,14);
+		t |= MOVE_BIT(instruction,15,15);
+		t |= MOVE_BIT(instruction,16,16);
+		t |= MOVE_BIT(instruction,17,17);
+		t |= MOVE_BIT(instruction,18,18);
+		t |= MOVE_BIT(instruction,19,19);
+		t |= MOVE_BIT(instruction,31,20);
+
+		if (t & (1<<20)) { // sign extend offset
+			t |= 0xffe00000;
+		}
+
+		immediate = t;
+		rd = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x67:
+		if ((instruction & 0x7000) == 0x000) {
+			inst_type = TraceDqr::INST_JALR;
+			is_branch = true;
+
+			t = instruction >> 20;
+
+			if (t & (1<<11)) { // sign extend offset
+				t |= 0xfffff000;
+			}
+
+			immediate = t;
+			rd = (TraceDqr::Reg)((instruction >> 7) & 0x1f);
+			rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
+		}
+		else {
+			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
+			is_branch = false;
+		}
+		break;
+	case 0x63:
+		switch ((instruction >> 12) & 0x7) {
+		case 0x0:
+			inst_type = TraceDqr::INST_BEQ;
+			break;
+		case 0x1:
+			inst_type = TraceDqr::INST_BNE;
+			break;
+		case 0x4:
+			inst_type = TraceDqr::INST_BLT;
+			break;
+		case 0x5:
+			inst_type = TraceDqr::INST_BGE;
+			break;
+		case 0x6:
+			inst_type = TraceDqr::INST_BLTU;
+			break;
+		case 0x7:
+			inst_type = TraceDqr::INST_BGEU;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
+			is_branch = false;
+			return 0;
+		}
+
+		is_branch = true;
+
+		t = MOVE_BIT(instruction,8,1);
+		t |= MOVE_BIT(instruction,9,2);
+		t |= MOVE_BIT(instruction,10,3);
+		t |= MOVE_BIT(instruction,11,4);
+		t |= MOVE_BIT(instruction,25,5);
+		t |= MOVE_BIT(instruction,26,6);
+		t |= MOVE_BIT(instruction,27,7);
+		t |= MOVE_BIT(instruction,28,8);
+		t |= MOVE_BIT(instruction,29,9);
+		t |= MOVE_BIT(instruction,30,10);
+		t |= MOVE_BIT(instruction,7,11);
+		t |= MOVE_BIT(instruction,31,12);
+
+		if (t & (1<<12)) { // sign extend offset
+			t |= 0xffffe000;
+		}
+
+		immediate = t;
+		rd = TraceDqr::REG_unknown;
+		rs1 = (TraceDqr::Reg)((instruction >> 15) & 0x1f);
+		break;
+	case 0x73:
+		if (instruction == 0x00200073) {
+			inst_type = TraceDqr::INST_URET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if (instruction == 0x10200073) {
+			inst_type = TraceDqr::INST_SRET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if (instruction == 0x30200073) {
+			inst_type = TraceDqr::INST_MRET;
+			is_branch = true;
+			immediate = 0;
+		}
+		else if (instruction == 0x00000073) {
+			inst_type = TraceDqr::INST_ECALL;
+			immediate = 0;
+			is_branch = true;
+		}
+		else if (instruction == 0x00100073) {
+			inst_type = TraceDqr::INST_EBREAK;
+			immediate = 0;
+			is_branch = true;
+		}
+		else {
+			inst_type = TraceDqr::INST_UNKNOWN;
+			immediate = 0;
+			rd = TraceDqr::REG_unknown;
+			rs1 = TraceDqr::REG_unknown;
+			is_branch = false;
+		}
+		break;
+	default:
+		inst_type = TraceDqr::INST_UNKNOWN;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
+		break;
+	}
+
+	return 0;
+}
+
+int Disassembler::decodeInstruction(uint32_t instruction,int archSize,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1, TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
 	int rc;
 
-	switch (instruction & 0x0003) {
-	case 0x0000:	// quadrant 0, compressed
-		rc = decodeRV32Q0Instruction(instruction,inst_size,inst_type,immeadiate,is_branch);
+	switch (archSize) {
+	case 32:
+		switch (instruction & 0x0003) {
+		case 0x0000:	// quadrant 0, compressed
+			rc = decodeRV32Q0Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0001:	// quadrant 1, compressed
+			rc = decodeRV32Q1Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0002:	// quadrant 2, compressed
+			rc = decodeRV32Q2Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0003:	// not compressed. Assume RV32 for now
+			rc = decodeRV32Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		}
 		break;
-	case 0x0001:	// quadrant 1, compressed
-		rc = decodeRV32Q1Instruction(instruction,inst_size,inst_type,immeadiate,is_branch);
+	case 64:
+		switch (instruction & 0x0003) {
+		case 0x0000:	// quadrant 0, compressed
+			rc = decodeRV64Q0Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0001:	// quadrant 1, compressed
+			rc = decodeRV64Q1Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0002:	// quadrant 2, compressed
+			rc = decodeRV64Q2Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		case 0x0003:	// not compressed. Assume RV32 for now
+			rc = decodeRV64Instruction(instruction,inst_size,inst_type,rs1,rd,immediate,is_branch);
+			break;
+		}
 		break;
-	case 0x0002:	// quadrant 2, compressed
-		rc = decodeRV32Q2Instruction(instruction,inst_size,inst_type,immeadiate,is_branch);
-		break;
-	case 0x0003:	// not compressed. Assume RV32 for now
-		rc = decodeRV32Instruction(instruction,inst_size,inst_type,immeadiate,is_branch);
-		break;
+	default:
+		printf("Error: decodeInstruction(): Unknown arch size %d\n",archSize);
+
+		rc = 1;
 	}
 
 	return rc;
@@ -5947,6 +8033,9 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 
 	*filename = fl->name;
 
+	// save function name and line src in function list struct so it will be saved for reuse, or later use throughout the
+	// life of the object. Won't be overwritten.
+
 	if (function != nullptr) {
 		// find the function name in fncList
 
@@ -5969,9 +8058,9 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 			fl->funcs = funcLst;
 		}
 
-		// at this point fl->funcs should point to this function (if it was just added or not)
+		// at this point funcLst should point to this function (if it was just added or not)
 
-		*functionname = fl->funcs->func;
+		*functionname = funcLst->func;
 	}
 
 	// line numbers start at 1
@@ -6026,6 +8115,59 @@ int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 	// output from disassemble_func is in instruction.instrucitonText
 
 	return rc;
+}
+
+AddrStack::AddrStack(int size)
+{
+	stackSize = size;
+	sp = size;
+
+	if (size == 0) {
+		stack = nullptr;
+	}
+	else {
+		stack = new TraceDqr::ADDRESS[size];
+	}
+}
+
+AddrStack::~AddrStack()
+{
+	if (stack != nullptr) {
+		delete [] stack;
+		stack = nullptr;
+	}
+
+	stackSize = 0;
+	sp = 0;
+}
+
+void AddrStack::reset()
+{
+	sp = stackSize;
+}
+
+int AddrStack::push(TraceDqr::ADDRESS addr)
+{
+	if (sp <= 0) {
+		return 1;
+	}
+
+	sp -= 1;
+	stack[sp] = addr;
+
+	return 0;
+}
+
+TraceDqr::ADDRESS AddrStack::pop()
+{
+	if (sp >= stackSize) {
+		return -1;
+	}
+
+	TraceDqr::ADDRESS t = stack[sp];
+	sp += 1;
+
+	return t;
 }
 
 NexusMessageSync::NexusMessageSync()
