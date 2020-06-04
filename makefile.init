@@ -124,7 +124,6 @@ else
                           elf32-gen.o \
                           plugin.o \
                           cpu-riscv.o \
-                          cpu-plugin.o \
                           archive64.o
             LIBOPCODESOBJS := dis-buf.o disassemble.o dis-init.o riscv-dis.o riscv-opc.o
             LIBLIBERTYOBJS := regex.o \
