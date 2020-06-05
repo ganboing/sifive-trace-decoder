@@ -41,14 +41,14 @@ $(SWIGLIB): $(SWIGLIBOBJS)
 $(SWIGOBJ): $(SWIGCPP)
 	@echo 'Building file $@'
 	@echo 'Invoking: GCC C++ Compiler'
-	$(CROSSPREFIX)g++ $(CFLAGS) $(SWIGCFLAGS) -c $< -I"../include" $(JNIINCLUDEPATHS)
+	$(CROSSPREFIX)g++ $(CFLAGS) $(SWIGCFLAGS) -c $< -I"$(LIBPATH)" -I"../include" $(JNIINCLUDEPATHS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
 $(SWIGCPP): $(INCLUDES) $(SWIGINCLUDES)
 	@echo 'Building file $@'
 	@echo 'Invoking: SWIG Compiler'
-	swig -package com.sifive.trace -outdir com/sifive/trace -java -c++ -o dqr_wrap.cpp -I../include ../include/dqr.i
+	swig -package com.sifive.trace -outdir com/sifive/trace -java -c++ -o dqr_wrap.cpp -I"$(LIBPATH)" -I../include ../include/dqr.i
 	javac com/sifive/trace/*.java
 	jar cf TraceDecoder.jar com/sifive/trace/*
 	@echo 'Finished building: $@'

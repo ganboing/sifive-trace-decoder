@@ -8,7 +8,7 @@ SWIGOBJ += ./dqr_wrap.o
 %.o: ../src/%.cpp $(INCLUDES)
 	@echo 'Building file: $<'
 	@echo 'Invoking: GCC C++ Compiler'
-	$(CROSSPREFIX)g++ -I"../include" $(CFLAGS) -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -o "$@" "$<"
+	$(CROSSPREFIX)g++ -I"$(LIBPATH)" -I"../include" $(CFLAGS) -c -fmessage-length=0 -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@)" -o "$@" "$<"
 	@echo 'Finished building: $<'
 	@echo ' '
 

@@ -35,6 +35,8 @@ picbfd:
 
 bfd:
 	cp $(BINUTILSPATH)/bfd/libbfd.a $(PLATFORM)
+	cp $(BINUTILSPATH)/bfd/*.h $(PLATFORM)
+	cp $(BINUTILSPATH)/../riscv-binutils/include/*.h $(PLATFORM)
 
 liberty:
 	cp $(BINUTILSPATH)/libiberty/libiberty.a $(PLATFORM)
