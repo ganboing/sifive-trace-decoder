@@ -272,7 +272,20 @@ proc getTraceEnable {core} {
 
     set tracectl [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
 
-    if {($tracectl & 0x6) != 0} {
+    if {($tracectl & 0x2) != 0} {
+		return "on"
+    }
+
+    return "off"
+}
+
+proc getTracingEnable {core} {
+    global traceBaseAddrArray
+    global te_control_offset
+
+    set tracectl [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+
+    if {($tracectl & 0x4) != 0} {
 		return "on"
     }
 
@@ -281,24 +294,43 @@ proc getTraceEnable {core} {
 
 proc clearAndEnableTrace { core } {
 	cleartrace $core
-	enableTrace $core
+	enableTraceEncoder $core
 }
 
-proc enableTrace {core} {
+proc enableTraceEncoder {core} {
     global traceBaseAddrArray
     global te_control_offset
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-    set t [expr $t | 0x00000007]
+    set t [expr $t | 0x00000003]
     mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
 }
 
-proc disableTrace {core} {
+proc enableTracing {core} {
     global traceBaseAddrArray
     global te_control_offset
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-    set t [expr $t & ~0x00000006]
+    set t [expr $t | 0x00000005]
+    mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+}
+
+proc disableTraceEncoder {core} {
+    global traceBaseAddrArray
+    global te_control_offset
+
+    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+    set t [expr $t & ~0x00000002]
+    set t [expr $t | 0x00000001]
+    mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+}
+
+proc disableTracing {core} {
+    global traceBaseAddrArray
+    global te_control_offset
+
+    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+    set t [expr $t & ~0x00000004]
     set t [expr $t | 0x00000001]
     mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
 }
@@ -2735,11 +2767,11 @@ proc trace {{cores "all"} {opt ""}} {
 		echo ""
     } elseif {$opt == "on"} {
 		foreach core $coreList {
-			enableTrace $core
+			enableTraceEncoder $core
 		}
     } elseif {$opt == "off"} {
 		foreach core $coreList {
-			disableTrace $core
+			disableTraceEncoder $core
 		}
     } elseif {$opt == "reset"} {
 		foreach core $coreList {
