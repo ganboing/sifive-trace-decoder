@@ -54,6 +54,8 @@ static void usage(char *name)
 	printf("-nofile:      Do not display source file information.\n");
 	printf("-dasm:        Display disassembled code in output (on by default).\n");
 	printf("-nodasm:      Do not display disassembled code in output.\n");
+	printf("-func:        Display function name with srouce information (off by default).\n");
+	printf("-nofunc:      Do not display function information with source information.\n");
 	printf("-trace:       Display trace information in output (off by default).\n");
 	printf("-notrace:     Do not display trace information in output.\n");
 	printf("--strip=path: Strip of the specified path when displaying source file name/path. Strips off all that matches.\n");
@@ -89,6 +91,10 @@ static void usage(char *name)
 	printf("-noanaylitics: Do not compute and display trace analytics (default). Same as -analytics=0.\n");
 	printf("-freq nn      Specify the frequency in Hz for the timestamp tics clock. If specified, time instead\n");
 	printf("              of tics will be displayed.\n");
+	printf("-callreturn   Annotate calls, returns, and exceptions\n");
+	printf("-nocallreturn Do not annotate calls, returns, exceptions (default)\n");
+	printf("-branches     Annotate conditional branches with taken or not taken information\n");
+	printf("-nobrnaches   Do not annotate conditional branches with taken or not taken information (default)\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -161,6 +167,8 @@ int main(int argc, char *argv[])
 	int analytics_detail = 0;
 	bool itcprint_flag = false;
 	int itcprint_channel = 0;
+	bool showCallsReturns = false;
+	bool showBranches = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -387,6 +395,18 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
+		else if (strcmp("-callreturn",argv[i]) == 0 ) {
+			showCallsReturns = true;
+		}
+		else if (strcmp("-nocallreturn",argv[i]) == 0 ) {
+			showCallsReturns = false;
+		}
+		else if (strcmp("-branches",argv[i]) == 0 ) {
+			showBranches = true;
+		}
+		else if (strcmp("-nobranches",argv[i]) == 0 ) {
+			showBranches = false;
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -474,7 +494,7 @@ int main(int argc, char *argv[])
 	Instruction *instInfo;
 	NexusMessage *msgInfo;
 	Source *srcInfo;
-	char dst[1024];
+	char dst[10000];
 	int instlevel = 1;
 	int msgLevel = 2;
 	const char *lastSrcFile = nullptr;
@@ -571,6 +591,62 @@ int main(int argc, char *argv[])
 				instInfo->instructionToText(dst,sizeof dst,instlevel);
 				printf("  %s",dst);
 
+				if (showBranches == true) {
+					switch (instInfo->brFlags) {
+					case TraceDqr::BRFLAG_none:
+						break;
+					case TraceDqr::BRFLAG_unknown:
+						printf(" [u]");
+						break;
+					case TraceDqr::BRFLAG_taken:
+						printf(" [t]");
+						break;
+					case TraceDqr::BRFLAG_notTaken:
+						printf(" [nt]");
+						break;
+					}
+				}
+
+				if (showCallsReturns == true) {
+					if (instInfo->CRFlag != TraceDqr::isNone) {
+						const char *format = "%s";
+
+						printf(" [");
+
+						if (instInfo->CRFlag & TraceDqr::isCall) {
+							printf(format,"Call");
+							format = ",%s";
+						}
+
+						if (instInfo->CRFlag & TraceDqr::isReturn) {
+							printf(format,"Return");
+							format = ",%s";
+						}
+
+						if (instInfo->CRFlag & TraceDqr::isSwap) {
+							printf(format,"Swap");
+							format = ",%s";
+						}
+
+						if (instInfo->CRFlag & TraceDqr::isInterrupt) {
+							printf(format,"Interrupt");
+							format = ",%s";
+						}
+
+						if (instInfo->CRFlag & TraceDqr::isException) {
+							printf(format,"Exception");
+							format = ",%s";
+						}
+
+						if (instInfo->CRFlag & TraceDqr::isExceptionReturn) {
+							printf(format,"Exception Return");
+							format = ",%s";
+						}
+
+						printf("]");
+					}
+				}
+
 				printf("\n");
 
 				firstPrint = false;
@@ -630,6 +706,13 @@ int main(int argc, char *argv[])
 		}
 	} while (ec == TraceDqr::DQERR_OK);
 
+	if (ec == TraceDqr::DQERR_EOF) {
+		printf("End of Trace File\n");
+	}
+	else {
+		printf("Error (%d) terminated trace decode\n",ec);
+	}
+
 	if (itcprint_flag) {
 		std::string s = "";
 		bool haveStr;
@@ -672,7 +755,10 @@ int main(int argc, char *argv[])
 		printf("%s",dst);
 	}
 
+	trace->cleanUp();
+
 	delete trace;
+	trace = nullptr;
 
 	return 0;
 }
