@@ -6331,8 +6331,10 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 
 			return status;
 		}
-		if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && ((msg[0] & 0x3) != TraceDqr::MSEO_END)) {
-			printf("skipping: %02x\n",msg[0]);
+
+
+		if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff)) {
+			printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
 		}
 	} while ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL);
 
@@ -6358,7 +6360,7 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 			else {
 				status = TraceDqr::DQERR_ERR;
 
-				std::cout << "Error reading trace filem\n";
+				std::cout << "Error reading trace file\n";
 			}
 
 			tf.close();
@@ -6484,7 +6486,7 @@ TraceDqr::DQErr SliceFileParser::readAscMsg()
 	if ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) {
 		status = TraceDqr::DQERR_ERR;
 
-		std::cout << "Error: SliceFileParser::readBinaryMsg(): expected start of message; got" << std::hex << static_cast<uint8_t>(msg[0] & 0x3) << std::dec << std::endl;
+		std::cout << "Error: SliceFileParser::readAscMsg(): expected start of message; got" << std::hex << static_cast<uint8_t>(msg[0] & 0x3) << std::dec << std::endl;
 
 		return TraceDqr::DQERR_ERR;
 	}
@@ -6497,7 +6499,7 @@ TraceDqr::DQErr SliceFileParser::readAscMsg()
 		if (i >= (int)(sizeof msg / sizeof msg[0])) {
 			tf.close();
 
-			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
+			std::cout << "Error: SliceFileParser::readAscMsg(): msg buffer overflow" << std::endl;
 
 			status = TraceDqr::DQERR_ERR;
 

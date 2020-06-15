@@ -328,7 +328,7 @@ private:
 
 class AddrStack {
 public:
-	AddrStack(int size = 1024);
+	AddrStack(int size = 2048);
 	~AddrStack();
 	void reset();
 	int push(TraceDqr::ADDRESS addr);
