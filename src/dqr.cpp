@@ -4829,7 +4829,7 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 	}
 
 	if (!tf) {
-		printf("Error: SliceFileParder(): could not open file %s for input",filename);
+		printf("Error: SliceFileParder(): could not open file %s for input\n",filename);
 		status = TraceDqr::DQERR_OPEN;
 	}
 	else {

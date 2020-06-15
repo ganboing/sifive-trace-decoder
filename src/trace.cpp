@@ -693,17 +693,16 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 				// This can happen with resource full messages where an i-cnt type resource full
 				// may be emitted by the encoder due to i-cnt overflow, and it still have non-emitted
-				// history bits. We will need to keep reading trace messages untile we get a some
+				// history bits. We will need to keep reading trace messages until we get a some
 				// history. The current trace message should be retired.
 
-				//counts->dumpCounts(core);
-
-				printf("Error: nextAddr(): address: 0x%08x, no branch history for branch instruction!\n",addr);
+				// this is not an error. Just keep retrying until we get a trace message that
+				// kicks things loose again
 
 				pc = -1;
 
-				// The caller can detect this has happened are read a new trace message and retry, by
-				// checkint the brFlag for BRFLAG_unkown
+				// The caller can detect this has happened and read a new trace message and retry, by
+				// checking the brFlag for BRFLAG_unkown
 
 				brFlag = TraceDqr::BRFLAG_unknown;
 				break;
@@ -1822,6 +1821,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 				else if (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
 					// error
+					// must have a JR/JALR or exception/exception return to get here, and the CR stack is empty
 
 					state[currentCore] = TRACE_STATE_ERROR;
 
