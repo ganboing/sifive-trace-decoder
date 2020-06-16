@@ -711,6 +711,7 @@ int main(int argc, char *argv[])
 	}
 	else {
 		printf("Error (%d) terminated trace decode\n",ec);
+		return 1;
 	}
 
 	if (itcprint_flag) {
