@@ -103,18 +103,29 @@ static inline void _restore_inst_trace()
 
 static inline void _itc_print_write_uint32(uint32_t data)
 {
-	itcStimulus[itc_print_channel] = data;
+	uint32_t *stimulus = &itcStimulus[itc_print_channel];
+
+	while (*stimulus == 0) {}	// block until room in FIFO
+	*stimulus = data;
 }
 
 static inline void _itc_print_write_uint8(uint8_t data)
 {
-	uint8_t *itc_uint8 = (uint8_t*)&itcStimulus[itc_print_channel];
+	uint32_t *stimulus = &itcStimulus[itc_print_channel];
+
+	while (*stimulus == 0) {}	// block until room in FIFO
+
+	uint8_t *itc_uint8 = (uint8_t*)stimulus;
 	itc_uint8[3] = data;
 }
 
 static inline void _itc_print_write_uint16(uint16_t data)
 {
-	uint16_t *itc_uint16 = (uint16_t*)&itcStimulus[itc_print_channel];
+	uint32_t *stimulus = &itcStimulus[itc_print_channel];
+
+	while (*stimulus == 0) {}	// block until room in FIFO
+
+	uint16_t *itc_uint16 = (uint16_t*)stimulus;
 	itc_uint16[1] = data;
 }
 
@@ -134,8 +145,8 @@ static int _itc_fputs(const char *f)
 	uint16_t a;
 
     for (i = 0; i < words; i += 4) {
-		_itc_print_write_uint32(*(uint32_t*)(f+i));
-	}
+        _itc_print_write_uint32(*(uint32_t*)(f+i));
+    }
 
     switch (bytes) {
     case 0:
@@ -240,5 +251,3 @@ inline void itc_write_uint16(int channel, uint16_t data)
 	uint16_t *itc_uint16 = (uint16_t*)&itcStimulus[channel];
 	itc_uint16[1] = data;
 }
-
-
