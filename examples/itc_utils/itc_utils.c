@@ -106,6 +106,7 @@ static inline void _itc_print_write_uint32(uint32_t data)
 	uint32_t *stimulus = &itcStimulus[itc_print_channel];
 
 	while (*stimulus == 0) {}	// block until room in FIFO
+
 	*stimulus = data;
 }
 
@@ -237,17 +238,29 @@ int itc_printf(const char *f, ... )
 
 inline void itc_write_uint32(int channel, uint32_t data)
 {
-	itcStimulus[channel] = data;
+	uint32_t *stimulus = &itcStimulus[channel];
+
+	while (*stimulus == 0) {}	// block until room in FIFO
+
+	*stimulus = data;
 }
 
 inline void itc_write_uint8(int channel, uint8_t data)
 {
-	uint8_t *itc_uint8 = (uint8_t*)&itcStimulus[channel];
+	uint32_t *stimulus = &itcStimulus[channel];
+
+	while (*stimulus == 0) {}	// block until room in FIFO
+
+	uint8_t *itc_uint8 = (uint8_t*)stimulus;
 	itc_uint8[3] = data;
 }
 
 inline void itc_write_uint16(int channel, uint16_t data)
 {
-	uint16_t *itc_uint16 = (uint16_t*)&itcStimulus[channel];
+	uint32_t *stimulus = &itcStimulus[channel];
+
+	while (*stimulus == 0) {}	// block until room in FIFO
+
+	uint16_t *itc_uint16 = (uint16_t*)stimulus;
 	itc_uint16[1] = data;
 }
