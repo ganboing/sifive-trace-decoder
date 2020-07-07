@@ -86,7 +86,7 @@ static void usage(char *name)
 	printf("-srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables\n");
 	printf("              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.\n");
 	printf("-analytics:   Compute and display detail level 1 trace analytics.\n");
-	printf("-analytics=n: Specify the detail level for trace analytics dispaly. N sets the level to either 0 (no analytics display)\n");
+	printf("-analytics=n: Specify the detail level for trace analytics display. N sets the level to either 0 (no analytics display)\n");
 	printf("              1 (sort system totals), or 2 (display analytics by core).\n");
 	printf("-noanaylitics: Do not compute and display trace analytics (default). Same as -analytics=0.\n");
 	printf("-freq nn      Specify the frequency in Hz for the timestamp tics clock. If specified, time instead\n");
