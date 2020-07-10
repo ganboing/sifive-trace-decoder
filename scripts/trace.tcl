@@ -685,9 +685,9 @@ proc setTraceMode { core usermode } {
 				setTargetTraceMode $core "btm+sync"
 			}
 		}
-		"sampling" 
+		"sample" 
 		{
-			setTargetTraceMode $core "sync"
+			setTargetTraceMode $core "sample"
 		}
 		#"events" {}
 	}
@@ -700,7 +700,7 @@ proc setTargetTraceMode {core mode} {
 	#echo "Setting target trace mode to $mode"
     switch $mode {
        "none"       { set tm 0 }
-       "sync"       { set tm 1 }
+       "sample"     { set tm 1 }
        "btm+sync"   { set tm 3 }
        "btm"        { set tm 3 }
        "htmc+sync"  { set tm 6 }
@@ -720,10 +720,10 @@ proc getTraceMode {core} {
 	set tm [getTargetTraceMode $core]
 	switch $tm {
        "none"       { return "off" }
-       "sync"       { return "sampling" }
+       "sample"     { return "sample" }
        "btm+sync"   { return "instruction" }
        "htmc+sync"  { return "instruction" }
-       "htm+sync"  	{ return "instruction" }
+       "htm+sync"   { return "instruction" }
 	}
 	return "off"
 }
@@ -737,7 +737,7 @@ proc getTargetTraceMode {core} {
 
     switch $t {
        0       { return "none" }
-       1       { return "sync" }
+       1       { return "sample" }
        3       { return "btm+sync"  }
        6       { return "htmc+sync" }
        7       { return "htm+sync"  }
@@ -1425,7 +1425,7 @@ proc tracemode {{cores "all"} {opt ""}} {
         }
 
         if {$coreList == "error"} {
-            echo {Error: Usage: tracemode [corelist] [none | sync | all | btm | htm | htmc | help]}
+            echo {Error: Usage: tracemode [corelist] [none | all | btm | htm | htmc | sample | help]}
             return "error"
         }
     }
@@ -1451,12 +1451,12 @@ proc tracemode {{cores "all"} {opt ""}} {
 
     if {$opt == "help"} {
         echo "tracemode: set or display trace type (sync, sync+btm)"
-        echo {Usage: tracemode [corelist] [sync | all | btm | htm | htmc | none | help]}
+        echo {Usage: tracemode [corelist] [none | all | btm | htm | htmc | sample | help]}
         echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
-        echo "  sync:     Generate only sync trace messages"
         echo "  btm:      Generate both sync and btm trace messages"
         echo "  htm:      Generate sync and htm trace messages (with return stack optimization or repeat branch optimization)"
         echo "  htmc      Generate sync and conservitive htm trace messages (without return stack optimization or repeat branch optimization)"
+	echo "  sample    Generate PC sample trace using In Circuit Trace mode"
         echo "  all:      Generate both sync and btm or htm trace messages (whichever is supported by hardware)"
         echo "  none:     Do not generate sync or btm trace messages"
         echo "  help:     Display this message"
@@ -1464,13 +1464,13 @@ proc tracemode {{cores "all"} {opt ""}} {
         echo "tracemode with no arguments will display the current setting for the type"
         echo "of messages to generate (none, sync, or all)"
         echo ""
-    } elseif {($opt == "sync") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm") || ($opt == "htmc") || ($opt == "btm+sync") || ($opt == "htm+sync") || ($opt == "htmc+sync")} {
+    } elseif {($opt == "sample") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm") || ($opt == "htmc") || ($opt == "btm+sync") || ($opt == "htm+sync") || ($opt == "htmc+sync")} {
         foreach core $coreList {
             setTargetTraceMode $core $opt
         }
         echo -n ""
     } else {
-        echo {Error: Usage: tracemode [corelist] [sync | all | btm | htm | htmc | none | help]}
+        echo {Error: Usage: tracemode [corelist] [all | btm | htm | htmc | none | sample | help]}
     }
 }
 
@@ -3533,6 +3533,17 @@ proc sram {} {
 	} else {
 		tracemode 0 btm
 	}
+	tracedst 0 sram
+	cleartrace
+	trace on
+}
+
+proc sample {} {
+	global verbose
+	set verbose 2
+	stoponwrap 0 on
+	setTeStallEnable 0 on
+	tracemode 0 sample
 	tracedst 0 sram
 	cleartrace
 	trace on
