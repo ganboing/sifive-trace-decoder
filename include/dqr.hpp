@@ -100,14 +100,15 @@ public:
   	TCODE_AUXACCESS_READNEXT      = 24,
   	TCODE_AUXACCESS_WRITENEXT     = 25,
   	TCODE_AUXACCESS_RESPONSE      = 26,
-  	TCODE_RESOURCEFULL             = 27,
+  	TCODE_RESOURCEFULL            = 27,
   	TCODE_INDIRECTBRANCHHISTORY   = 28,
   	TCODE_INDIRECTBRANCHHISTORY_WS = 29,
   	TCODE_REPEATBRANCH            = 30,
   	TCODE_REPEATINSTRUCTION       = 31,
-  	TCODE_REPEATINSTRUCTION_WS   = 32,
+  	TCODE_REPEATINSTRUCTION_WS    = 32,
   	TCODE_CORRELATION             = 33,
   	TCODE_INCIRCUITTRACE          = 34,
+	TCODE_INCIRCUITTRACE_WS       = 35,
 
   	TCODE_UNDEFINED
   } TCode;
@@ -129,8 +130,16 @@ public:
   	SYNC_FIFO_OVERRUN       = 7,
   	SYNC_EXIT_POWERDOWN     = 9,
   	SYNC_MESSAGE_CONTENTION = 11,
+	SYNC_PC_SAMPLE          = 15,
   	SYNC_NONE
   } SyncReason;
+
+  typedef enum {
+    ICT_EXT_TRIG   = 8,
+	ICT_WATCHPOINT = 14,
+	ICT_PC_SAMPLE  = 15,
+	ICT_NONE
+  } ICTReason;
 
   typedef enum {
   	BTYPE_INDIRECT  = 0,
@@ -404,6 +413,16 @@ public:
     	struct {
     		uint32_t process;
     	} ownership;
+    	struct {
+    		TraceDqr::ICTReason cksrc;
+    		uint8_t ckdf;
+    		TraceDqr::ADDRESS ckdata;
+    	} ict;
+    	struct {
+    		TraceDqr::ICTReason cksrc;
+    		uint8_t ckdf;
+    		TraceDqr::ADDRESS ckdata;
+    	} ictWS;
     };
 
     int getI_Cnt();
@@ -411,6 +430,7 @@ public:
     TraceDqr::ADDRESS    getF_Addr();
     TraceDqr::BType      getB_Type();
 	TraceDqr::SyncReason getSyncReason();
+	TraceDqr::ICTReason  getICTReason();
 	uint8_t   getEType();
 	uint8_t  getCDF();
 	uint8_t  getEVCode();
@@ -481,6 +501,8 @@ private:
 		uint32_t num_trace_auxaccesswrite;
 		uint32_t num_trace_ownership;
 		uint32_t num_trace_error;
+		uint32_t num_trace_incircuittraceWS;
+		uint32_t num_trace_incircuittrace;
 
 		uint32_t trace_bits;
 		uint32_t trace_bits_max;
@@ -507,6 +529,8 @@ private:
 		uint32_t trace_bits_auxaccesswrite;
 		uint32_t trace_bits_ownership;
 		uint32_t trace_bits_error;
+		uint32_t trace_bits_incircuittraceWS;
+		uint32_t trace_bits_incircuittrace;
 
 		uint32_t num_trace_ts;
 		uint32_t num_trace_uaddr;

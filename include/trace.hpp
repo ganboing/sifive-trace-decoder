@@ -188,27 +188,6 @@ private:
 	class TsList *freeList;
 };
 
-#ifdef foo
-class linkedNexusMessage {
-public:
-	linkedNexusMessage();
-	static void init();
-	static dqr::DQErr buildLinkedMsgs(NexusMessage &nm);
-	static dqr::DQErr nextTraceMessage(NexusMessage &nm);
-
-    linkedNexusMessage *nextCoreMessage;
-    linkedNexusMessage *nextInOrderMessage;
-
-    bool consumed;
-    static linkedNexusMessage *firstMsg;
-    static int lastCore;
-    static linkedNexusMessage *linkedNexusMessageHeads[8];
-    static linkedNexusMessage *lastNexusMsgPtr[8];
-
-    NexusMessage nm;
-};
-#endif // foo
-
 // class SliceFileParser: Class to parse binary or ascii nexus messages into a NexusMessage object
 class SliceFileParser {
 public:
@@ -216,7 +195,6 @@ public:
              ~SliceFileParser();
   TraceDqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics);
 
-// foo  dqr::DQErr readAllTraceMsgs();
   TraceDqr::DQErr getErr() { return status; };
   void       dump();
 
@@ -254,6 +232,8 @@ private:
   TraceDqr::DQErr parseIndirectHistory(NexusMessage &nm,Analytics &analytics);
   TraceDqr::DQErr parseIndirectHistoryWS(NexusMessage &nm,Analytics &analytics);
   TraceDqr::DQErr parseResourceFull(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseICT(NexusMessage &nm,Analytics &analytics);
+  TraceDqr::DQErr parseICTWS(NexusMessage &nm,Analytics &analytics);
 };
 
 // class Disassembler: class to help in the dissasemblhy of instrucitons
