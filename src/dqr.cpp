@@ -3436,6 +3436,7 @@ TraceDqr::ADDRESS NexusMessage::getNextAddr()
 
 	return addr;
 }
+
 TraceDqr::BType NexusMessage::getB_Type()
 {
 	switch (tcode) {
