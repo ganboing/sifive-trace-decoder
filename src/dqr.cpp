@@ -6040,8 +6040,6 @@ TraceDqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics
 
 	nm.sync.sync     = (TraceDqr::SyncReason)tmp;
 
-	printf("sync reason: %d\n",nm.sync.sync);
-
 	rc = parseVarField(&tmp,&width);
 	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
@@ -6064,8 +6062,6 @@ TraceDqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics
 	addr_bits = width;
 
 	nm.sync.f_addr   = (TraceDqr::ADDRESS)tmp;
-
-	printf("sync faddr: %08llx, width: %d\n",nm.sync.f_addr,width);
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
