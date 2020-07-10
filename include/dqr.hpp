@@ -428,6 +428,7 @@ public:
     int getI_Cnt();
     TraceDqr::ADDRESS    getU_Addr();
     TraceDqr::ADDRESS    getF_Addr();
+    TraceDqr::ADDRESS    getNextAddr();
     TraceDqr::BType      getB_Type();
 	TraceDqr::SyncReason getSyncReason();
 	TraceDqr::ICTReason  getICTReason();

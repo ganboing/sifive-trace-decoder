@@ -3425,6 +3425,17 @@ TraceDqr::ADDRESS NexusMessage::getF_Addr()
 	return -1;
 }
 
+TraceDqr::ADDRESS NexusMessage::getNextAddr()
+{
+	TraceDqr::ADDRESS addr;
+
+	addr = getF_Addr();
+	if (addr != (TraceDqr::ADDRESS)-1) {
+		addr = addr << 1;
+	}
+
+	return addr;
+}
 TraceDqr::BType NexusMessage::getB_Type()
 {
 	switch (tcode) {
