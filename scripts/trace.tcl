@@ -2293,7 +2293,7 @@ proc getSink {core} {
 				2    { return "ATB"  }
 				4    { return "PIB"  }
 				8    { return "SBA"  }
-				16   { return "Funnel" }
+				16   { return "FUNNEL" }
 				default { return "Reserved" }
 			}
 		}
@@ -2301,7 +2301,7 @@ proc getSink {core} {
 		5 { return "ATB"    }
 		6 { return "PIB"    }
 		7 { return "SBA"    }
-		8 { return "Funnel" }
+		8 { return "FUNNEL" }
 		default { return "Reserved" }
     }
 }
