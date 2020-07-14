@@ -428,7 +428,7 @@ public:
     int getI_Cnt();
     TraceDqr::ADDRESS    getU_Addr();
     TraceDqr::ADDRESS    getF_Addr();
-    TraceDqr::ADDRESS    getNextAddr();
+    TraceDqr::ADDRESS    getNextAddr() {return currentAddress;};
     TraceDqr::BType      getB_Type();
 	TraceDqr::SyncReason getSyncReason();
 	TraceDqr::ICTReason  getICTReason();
@@ -587,6 +587,7 @@ public:
     ~Trace();
     void cleanUp();
 	TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
+	TraceDqr::DQErr setTSSize(int size);
 	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
 
 	enum TraceFlags {
@@ -650,6 +651,8 @@ private:
 
 	int              startMessageNum;
 	int              endMessageNum;
+
+	int              tsSize;
 
 	Analytics        analytics;
 

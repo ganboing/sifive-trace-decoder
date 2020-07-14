@@ -37,8 +37,10 @@ using namespace std;
 static void usage(char *name)
 {
 	printf("Usage: dqr -t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src] [-nosrc]\n");
-	printf("           [-file] [-nofile] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path] [-v] [-h]\n");
-	printf("           [-32] [-64] [-32+] [-addrsep] [-noaddrsep]\n");
+	printf("           [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path]\n");
+	printf("           [-itcprint | -itcprint=n] [-noitcprint] [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+]\n");
+	printf("           [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n] [-noanalytics] [-freq nn] [-tssize=n]\n");
+	printf("           [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-v] [-h]\n");
 	printf("\n");
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
@@ -89,12 +91,13 @@ static void usage(char *name)
 	printf("-analytics=n: Specify the detail level for trace analytics display. N sets the level to either 0 (no analytics display)\n");
 	printf("              1 (sort system totals), or 2 (display analytics by core).\n");
 	printf("-noanaylitics: Do not compute and display trace analytics (default). Same as -analytics=0.\n");
-	printf("-freq nn      Specify the frequency in Hz for the timestamp tics clock. If specified, time instead\n");
+	printf("-freq nn:     Specify the frequency in Hz for the timestamp tics clock. If specified, time instead\n");
 	printf("              of tics will be displayed.\n");
-	printf("-callreturn   Annotate calls, returns, and exceptions\n");
+	printf("-tssize=n:    Specify size in bits of timestamp counter; used for timestamp wrap\n");
+	printf("-callreturn:  Annotate calls, returns, and exceptions\n");
 	printf("-nocallreturn Do not annotate calls, returns, exceptions (default)\n");
-	printf("-branches     Annotate conditional branches with taken or not taken information\n");
-	printf("-nobrnaches   Do not annotate conditional branches with taken or not taken information (default)\n");
+	printf("-branches:    Annotate conditional branches with taken or not taken information\n");
+	printf("-nobrnaches:  Do not annotate conditional branches with taken or not taken information (default)\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -159,6 +162,7 @@ int main(int argc, char *argv[])
 	bool dasm_flag = true;
 	bool trace_flag = false;
 	bool func_flag = false;
+	int tssize = 40;
 	uint32_t freq = 0;
 	char *strip_flag = nullptr;
 	int  numAddrBits = 0;
@@ -395,6 +399,14 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
+		else if (strncmp("-tssize=",argv[i],sizeof "-tssize=") == 0) {
+			tssize = atoi(argv[i]+strlen("-tssize="));
+
+			if ((tssize <= 0) || (tssize > 64)) {
+				printf("Error: tssize must be > 0, <= 64");
+				return 1;
+			}
+		}
 		else if (strcmp("-callreturn",argv[i]) == 0 ) {
 			showCallsReturns = true;
 		}
@@ -461,6 +473,7 @@ int main(int argc, char *argv[])
 	}
 
 	trace->setTraceRange(start_msg_num,stop_msg_num);
+	trace->setTSSize(tssize);
 
 	if (itcprint_flag) {
 		trace->setITCPrintOptions(4096,itcprint_channel);

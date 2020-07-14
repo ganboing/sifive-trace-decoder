@@ -35,7 +35,7 @@
 
 //#define DQR_MAXCORES	8
 
-const char * const DQR_VERSION = "0.9.0";
+const char * const DQR_VERSION = "0.9.1";
 
 // static C type helper functions
 
@@ -3425,17 +3425,17 @@ TraceDqr::ADDRESS NexusMessage::getF_Addr()
 	return -1;
 }
 
-TraceDqr::ADDRESS NexusMessage::getNextAddr()
-{
-	TraceDqr::ADDRESS addr;
-
-	addr = getF_Addr();
-	if (addr != (TraceDqr::ADDRESS)-1) {
-		addr = addr << 1;
-	}
-
-	return addr;
-}
+//TraceDqr::ADDRESS NexusMessage::getNextAddr()
+//{
+//	TraceDqr::ADDRESS addr;
+//
+//	addr = getF_Addr();
+//	if (addr != (TraceDqr::ADDRESS)-1) {
+//		addr = addr << 1;
+//	}
+//
+//	return addr;
+//}
 
 TraceDqr::BType NexusMessage::getB_Type()
 {
@@ -5004,8 +5004,6 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 
 	msgSlices      = 0;
 	bitIndex       = 0;
-	currentAddress = 0;
-	currentTime    = 0;
 
 	this->binary = binary;
 

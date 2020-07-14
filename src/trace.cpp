@@ -343,6 +343,13 @@ TraceDqr::DQErr Trace::setTraceRange(int start_msg_num,int stop_msg_num)
 	return TraceDqr::DQERR_OK;
 }
 
+TraceDqr::DQErr Trace::setTSSize(int size)
+{
+	tsSize = size;
+
+	return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::ADDRESS Trace::computeAddress()
 {
 	switch (nm.tcode) {
@@ -1440,6 +1447,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					return status;
 				}
 
+				if (srcInfo != nullptr) {
+					Disassemble(currentAddress[currentCore]);
+
+					sourceInfo.coreId = currentCore;
+					*srcInfo = &sourceInfo;
+				}
+
 				state[currentCore] = TRACE_STATE_GETSECONDMSG;
 				break;
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
@@ -1559,6 +1573,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					}
 				}
 
+				if (srcInfo != nullptr) {
+					Disassemble(currentAddress[currentCore]);
+
+					sourceInfo.coreId = currentCore;
+					*srcInfo = &sourceInfo;
+				}
+
 				readNewTraceMessage = true;
 
 				return status;
@@ -1639,6 +1660,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					if (messageInfo.processITCPrintData(itcPrint) == false) {
 						*msgInfo = &messageInfo;
 					}
+				}
+
+				if ((srcInfo != nullptr) && (*srcInfo == nullptr)) {
+					Disassemble(currentAddress[currentCore]);
+
+					sourceInfo.coreId = currentCore;
+					*srcInfo = &sourceInfo;
 				}
 
 				TraceDqr::BType b_type;

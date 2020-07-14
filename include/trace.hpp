@@ -211,9 +211,6 @@ private:
   uint8_t       msg[64];
   bool          eom = false;
 
-  TraceDqr::ADDRESS	 currentAddress;
-  TraceDqr::TIMESTAMP currentTime;
-
   TraceDqr::DQErr readBinaryMsg();
   TraceDqr::DQErr readNextByte(uint8_t *byte);
   TraceDqr::DQErr readAscMsg();
