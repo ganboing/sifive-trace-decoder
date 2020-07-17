@@ -244,6 +244,11 @@ public:
 		BRFLAG_taken,
 		BRFLAG_notTaken,
 	};
+
+	enum tsType {
+		TS_full,
+		TS_rel,
+	};
 };
 
 // class Instruction: work with an instruction
@@ -617,6 +622,7 @@ public:
 	int         getAddressSize();
 	void analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
 	std::string analyticsToString(int detailLevel) { return analytics.toString(detailLevel); }
+	TraceDqr::TIMESTAMP adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
 
 private:
 	enum state {
@@ -653,6 +659,7 @@ private:
 	int              endMessageNum;
 
 	int              tsSize;
+	TraceDqr::TIMESTAMP tsBase;
 
 	Analytics        analytics;
 

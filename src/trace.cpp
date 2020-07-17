@@ -241,6 +241,9 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
 
   NexusMessage::targetFrequency = freq;
 
+  tsSize = 40;
+  tsBase = 0;
+
   enterISR = TraceDqr::isNone;
 
   status = TraceDqr::DQERR_OK;
@@ -348,6 +351,25 @@ TraceDqr::DQErr Trace::setTSSize(int size)
 	tsSize = size;
 
 	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::TIMESTAMP Trace::adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs)
+{
+	TraceDqr::TIMESTAMP ts;
+
+	if (tstype == TraceDqr::TS_full) {
+		ts = lastTs + tsBase;
+	}
+	else {
+		ts = (lastTs ^ newTs) + tsBase;
+	}
+
+	if (ts < lastTs) {
+		ts += (1 << tsSize);
+		tsBase += (1 << tsSize);
+	}
+
+	return ts;
 }
 
 TraceDqr::ADDRESS Trace::computeAddress()
@@ -906,19 +928,19 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 	case TraceDqr::TCODE_RESOURCEFULL:
 	case TraceDqr::TCODE_CORRELATION:
 		if (nm.haveTimestamp) {
-			ts = ts ^ nm.timestamp;
+			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH:
 		if (nm.haveTimestamp) {
-			ts = ts ^ nm.timestamp;
+			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 		faddr = faddr ^ (nm.indirectBranch.u_addr << 1);
 		pc = faddr;
 		break;
 	case TraceDqr::TCODE_SYNC:
 		if (nm.haveTimestamp) {
-			ts = nm.timestamp;
+			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 		faddr = nm.sync.f_addr << 1;
 		pc = faddr;
@@ -926,7 +948,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 		if (nm.haveTimestamp) {
-			ts = nm.timestamp;
+			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 		faddr = nm.directBranchWS.f_addr << 1;
 		pc = faddr;
@@ -934,7 +956,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 		if (nm.haveTimestamp) {
-			ts = nm.timestamp;
+			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 		faddr = nm.indirectBranchWS.f_addr << 1;
 		pc = faddr;
@@ -942,14 +964,14 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
 		if (nm.haveTimestamp) {
-			ts = ts ^ nm.timestamp;
+			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 		faddr = faddr ^ (nm.indirectHistory.u_addr << 1);
 		pc = faddr;
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 		if (nm.haveTimestamp) {
-			ts = nm.timestamp;
+			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 		faddr = nm.indirectHistoryWS.f_addr << 1;
 		pc = faddr;
@@ -957,14 +979,14 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 		if (nm.haveTimestamp) {
-			ts = ts ^ nm.timestamp;
+			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 		faddr = faddr ^ (nm.ict.ckdata << 1);
 		pc = faddr;
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 		if (nm.haveTimestamp) {
-			ts = nm.timestamp;
+			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 		faddr = nm.ictWS.ckdata << 1;
 		pc = faddr;
@@ -1328,6 +1350,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			currentAddress[currentCore] = lastFaddr[currentCore];
 
 			if (messageSync[currentCore]->msgs[0].haveTimestamp) {
+				// don't need to adjust ts for wrap, because this is the first sync and it will not wrap
 				lastTime[currentCore] = messageSync[currentCore]->msgs[0].timestamp;
 			}
 
@@ -1594,7 +1617,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// for now, return message;
 
 				if (nm.haveTimestamp) {
-					lastTime[currentCore] = lastTime[currentCore] ^ nm.timestamp;
+					lastTime[currentCore] = adjustTsForWrap(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
 				}
 
 				if (msgInfo != nullptr) {
@@ -1708,7 +1731,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// correlation has i_cnt, but no address info
 
 				if (nm.haveTimestamp) {
-					lastTime[currentCore] = lastTime[currentCore] ^ nm.timestamp;
+					lastTime[currentCore] = adjustTsForWrap(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
 				}
 
 				if (msgInfo != nullptr) {
@@ -1796,7 +1819,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// retire these instantly by returning them through msgInfo
 
 				if (nm.haveTimestamp) {
-					lastTime[currentCore] = lastTime[currentCore] ^ nm.timestamp;
+					lastTime[currentCore] = adjustTsForWrap(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
 				}
 
 				if (msgInfo != nullptr) {

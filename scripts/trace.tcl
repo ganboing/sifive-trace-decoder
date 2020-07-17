@@ -3549,6 +3549,13 @@ proc sample {} {
 	trace on
 }
 
+proc tsallon {} {
+	ts all on
+	tsbranch all all
+	tsitc all on
+	tsowner all on
+}
+
 init
 tracedst
 echo -n ""
