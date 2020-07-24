@@ -346,6 +346,17 @@ TraceDqr::DQErr Trace::setTraceRange(int start_msg_num,int stop_msg_num)
 	return TraceDqr::DQERR_OK;
 }
 
+TraceDqr::DQErr Trace::setPathType(TraceDqr::pathType pt)
+{
+	if (disassembler != nullptr) {
+		disassembler->setPathType(pt);
+
+		return TraceDqr::DQERR_OK;
+	}
+
+	return TraceDqr::DQERR_ERR;
+}
+
 TraceDqr::DQErr Trace::setTSSize(int size)
 {
 	tsSize = size;
@@ -1106,7 +1117,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	}
 
 	for (;;) {
-
 //		need to set readNewTraceMessage where it is needed! That includes
 //		staying in the same state that expects to get another message!!
 

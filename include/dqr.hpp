@@ -42,6 +42,8 @@
 #include <cstdint>
 #include <cassert>
 
+//#define DO_TIMES	1
+
 #define DQR_MAXCORES	8
 
 extern const char * const DQR_VERSION;
@@ -248,6 +250,12 @@ public:
 	enum tsType {
 		TS_full,
 		TS_rel,
+	};
+
+	enum pathType {
+		PATH_RAW,
+		PATH_TO_WINDOWS,
+		PATH_TO_UNIX,
 	};
 };
 
@@ -594,6 +602,7 @@ public:
 	TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
 	TraceDqr::DQErr setTSSize(int size);
 	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
+	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 
 	enum TraceFlags {
 		TF_INSTRUCTION = 0x01,
@@ -670,16 +679,6 @@ private:
 	NexusMessage     messageInfo;
 	Instruction      instructionInfo;
 	Source           sourceInfo;
-
-	//	or maybe have this stuff in the nexus messages??
-
-//	should this stuff be local? Do we need to remmember it?
-
-//	uint32_t                inst = -1;
-//	int                     inst_size = -1;
-//	TraceDqr::InstType inst_type = TraceDqr::InstType::INST_UNKNOWN;
-//	int32_t                 immediate = -1;
-//	bool                    is_branch = false;
 
 	class NexusMessageSync *messageSync[DQR_MAXCORES];
 

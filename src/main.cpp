@@ -98,6 +98,11 @@ static void usage(char *name)
 	printf("-nocallreturn Do not annotate calls, returns, exceptions (default)\n");
 	printf("-branches:    Annotate conditional branches with taken or not taken information\n");
 	printf("-nobrnaches:  Do not annotate conditional branches with taken or not taken information (default)\n");
+	printf("-pathunix:    Show all file paths using unix-type '/' path separators (default)\n");
+	printf("              Also cleans up path, removing // -> /, /./ -> /, and uplevels for each /../\n");
+	printf("-pathwindows: Show all file paths using windows-type '\\' path separators\n");
+	printf("              Also cleans up path, removing // -> /, /./ -> /, and uplevels for each /../\n");
+	printf("-pathraw:     Show all file path in the format stored in the elf file\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -173,6 +178,7 @@ int main(int argc, char *argv[])
 	int itcprint_channel = 0;
 	bool showCallsReturns = false;
 	bool showBranches = false;
+	TraceDqr::pathType pt = TraceDqr::PATH_TO_UNIX;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -419,6 +425,15 @@ int main(int argc, char *argv[])
 		else if (strcmp("-nobranches",argv[i]) == 0 ) {
 			showBranches = false;
 		}
+		else if (strcmp("-pathunix",argv[i]) == 0) {
+			pt = TraceDqr::PATH_TO_UNIX;
+		}
+		else if (strcmp("-pathwindows",argv[i]) == 0) {
+			pt = TraceDqr::PATH_TO_WINDOWS;
+		}
+		else if (strcmp("-pathraw",argv[i]) == 0) {
+			pt = TraceDqr::PATH_RAW;
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -474,6 +489,7 @@ int main(int argc, char *argv[])
 
 	trace->setTraceRange(start_msg_num,stop_msg_num);
 	trace->setTSSize(tssize);
+	trace->setPathType(pt);
 
 	if (itcprint_flag) {
 		trace->setITCPrintOptions(4096,itcprint_channel);

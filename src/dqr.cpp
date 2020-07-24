@@ -35,7 +35,7 @@
 
 //#define DQR_MAXCORES	8
 
-const char * const DQR_VERSION = "0.9.1";
+const char * const DQR_VERSION = "0.9.2";
 
 // static C type helper functions
 
@@ -216,6 +216,70 @@ static int stringify_callback(FILE *stream, const char *format, ...)
 }
 
 // Section Class Methods
+cachedInstInfo::cachedInstInfo(const char *file,const char *func,int linenum,const char *lineTxt,const char *instText,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset)
+{
+	// Don't need to allocate and copy file and function. They will remain until trace object is deleted
+
+	filename = file;
+	functionname = func;
+	linenumber = linenum;
+	lineptr = lineTxt;
+
+	instruction = inst;
+	instsize = instSize;
+
+	addressLabel = addresslabel;
+	addressLabelOffset = addresslabeloffset;
+
+	haveOperandAddress = haveoperandaddress;
+	operandAddress = operandaddress;
+	operandLabel = operandlabel;
+	operandLabelOffset = operandlabeloffset;
+
+	// Need to allocate and copy instruction. src changes every time an instruction is disassembled, so we need to save it
+
+	if (instText != nullptr) {
+		int	s = strlen(instText)+1;
+		instructionText = new char [s];
+		strcpy(instructionText,instText);
+	}
+	else {
+		instructionText = nullptr;
+	}
+}
+
+cachedInstInfo::~cachedInstInfo()
+{
+	filename = nullptr;
+	functionname = nullptr;
+	lineptr = nullptr;
+	addressLabel = nullptr;
+	operandLabel = nullptr;
+
+	if (instructionText != nullptr) {
+		delete [] instructionText;
+		instructionText = nullptr;
+	}
+}
+
+void cachedInstInfo::dump()
+{
+	printf("cachedInstInfo()\n");
+	printf("filename: '%s'\n",filename);
+	printf("fucntion: '%s'\n",functionname);
+	printf("linenumber: %d\n",linenumber);
+	printf("lineptr: '%s'\n",lineptr);
+	printf("instructin: 0x%08x\n",instruction);
+	printf("instruction size: %d\n",instsize);
+	printf("instruction text: '%s'\n",instructionText);
+	printf("addressLabel: '%s'\n",addressLabel);
+	printf("addressLabelOffset: %d\n",addressLabelOffset);
+	printf("haveOperandAddress: %d\n",haveOperandAddress);
+	printf("operandAddress: 0x%08x\n",operandAddress);
+	printf("operandLabel:%p\n",operandLabel);
+	printf("operandLabel: '%s'\n",operandLabel);
+	printf("operandLabelOffset: %d\n",operandLabelOffset);
+}
 
 // work with elf file sections using libbfd
 
@@ -228,6 +292,7 @@ section::section()
 	startAddr = (TraceDqr::ADDRESS)0;
 	endAddr   = (TraceDqr::ADDRESS)0;
 	code      = nullptr;
+	cachedInfo = nullptr;
 }
 
 section::~section()
@@ -236,9 +301,21 @@ section::~section()
 		delete [] code;
 		code = nullptr;
 	}
+
+	if (cachedInfo != nullptr) {
+		for (int i = 0; i < size/2; i++) {
+			if (cachedInfo[i] != nullptr) {
+				delete cachedInfo[i];
+				cachedInfo[i] = nullptr;
+			}
+		}
+
+		delete [] cachedInfo;
+		cachedInfo = nullptr;
+	}
 }
 
-section *section::initSection(section **head, asection *newsp)
+section *section::initSection(section **head, asection *newsp,bool enableInstCaching)
 {
 	next = *head;
 	*head = this;
@@ -267,6 +344,17 @@ section *section::initSection(section **head, asection *newsp)
       return nullptr;
     }
 
+    if (enableInstCaching) {
+    	cachedInfo = new cachedInstInfo*[size/2];	// divide by 2 because we want entries for addr/2
+
+    	for (int i = 0; i < size/2; i++) {
+    		cachedInfo[i] = nullptr;
+    	}
+    }
+    else {
+    	cachedInfo = nullptr;
+    }
+
     return this;
 }
 
@@ -280,6 +368,38 @@ section *section::getSectionByAddress(TraceDqr::ADDRESS addr)
 		}
 
 		sp = sp->next;
+	}
+
+	return nullptr;
+}
+
+cachedInstInfo *section::setCachedInfo(TraceDqr::ADDRESS addr,const char *file,const char *func,int linenum,const char *lineTxt,const char *instTxt,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset)
+{
+	if ((addr >= startAddr) && (addr <= endAddr)) {
+		if (cachedInfo != nullptr) {
+
+			int index = (addr - startAddr) >> 1;
+
+			assert(cachedInfo[index] == nullptr);
+
+			cachedInstInfo *cci;
+			cci = new cachedInstInfo(file,func,linenum,lineTxt,instTxt,inst,instSize,addresslabel,addresslabeloffset,haveoperandaddress,operandaddress,operandlabel,operandlabeloffset);
+
+			cachedInfo[index] = cci;
+
+			return cci;
+		}
+	}
+
+	return nullptr;
+}
+
+cachedInstInfo *section::getCachedInfo(TraceDqr::ADDRESS addr)
+{
+	if ((addr >= startAddr) && (addr <= endAddr)) {
+		if (cachedInfo != nullptr) {
+			return cachedInfo[(addr - startAddr) >> 1];
+		}
 	}
 
 	return nullptr;
@@ -896,7 +1016,7 @@ ElfReader::ElfReader(char *elfname)
           // found a code section, add to list
 
 		  section *sp = new section;
-		  sp->initSection(&codeSectionLst, p);
+		  sp->initSection(&codeSectionLst,p,false);
 	  }
   }
 
@@ -7072,6 +7192,8 @@ Disassembler::Disassembler(bfd *abfd)
 {
 	assert(abfd != nullptr);
 
+	pType = TraceDqr::PATH_TO_UNIX;
+
 	this->abfd = abfd;
 
     prev_index       = -1;
@@ -7172,7 +7294,7 @@ Disassembler::Disassembler(bfd *abfd)
             // found a code section, add to list
 
   		  section *sp = new section;
-  		  if (sp->initSection(&codeSectionLst, p) == nullptr) {
+  		  if (sp->initSection(&codeSectionLst,p,true) == nullptr) {
   			  status = TraceDqr::DQERR_ERR;
   			  return;
   		  }
@@ -7282,6 +7404,30 @@ Disassembler::~Disassembler()
 		delete fileReader;
 		fileReader = nullptr;
 	}
+}
+
+TraceDqr::DQErr Disassembler::setPathType(TraceDqr::pathType pt)
+{
+	TraceDqr::DQErr rc;
+	rc = TraceDqr::DQERR_OK;
+
+	switch (pt) {
+	case TraceDqr::PATH_TO_WINDOWS:
+		pType = TraceDqr::PATH_TO_WINDOWS;
+		break;
+	case TraceDqr::PATH_TO_UNIX:
+		pType = TraceDqr::PATH_TO_UNIX;
+		break;
+	case TraceDqr::PATH_RAW:
+		pType = TraceDqr::PATH_RAW;
+		break;
+	default:
+		pType = TraceDqr::PATH_TO_UNIX;
+		rc = TraceDqr::DQERR_ERR;
+		break;
+	}
+
+	return rc;
 }
 
 int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size)
@@ -8318,6 +8464,99 @@ int Disassembler::decodeInstruction(uint32_t instruction,int archSize,int &inst_
 	return rc;
 }
 
+// make all path separators either '/' or '\'; also remove '/./' and /../. Remove weird double path
+// showing up on linux (libbfd issue)
+
+void static sanePath(TraceDqr::pathType pt,const char *src,char *dst)
+{
+	char drive = 0;
+	int r = 0;
+	int w = 0;
+	char sep;
+
+	if (pt == TraceDqr::PATH_RAW) {
+		strcpy(dst,src);
+
+		return;
+	}
+
+	if (pt == TraceDqr::PATH_TO_WINDOWS) {
+		sep = '\\';
+	}
+	else {
+		sep = '/';
+	}
+
+	while (src[r] != 0) {
+		switch (src[r]) {
+		case ':':
+			if (w > 0) {
+				if (((dst[w-1] >= 'a') && (dst[w-1] <= 'z')) || ((dst[w-1] >= 'A') && (dst[w-1] <= 'Z'))) {
+					drive = dst[w-1];
+					w = 0;
+					dst[w] = drive;
+					w += 1;
+				}
+			}
+
+			dst[w] = src[r];
+			w += 1;
+			r += 1;
+			break;
+		case '/':
+		case '\\':
+			if ((w > 0) && (dst[w-1] == sep)) {
+				// skip; remove double /
+				r += 1;
+			}
+			else {
+				dst[w] = sep;
+				w += 1;
+				r += 1;
+			}
+			break;
+		case '.':
+			if ((w > 0) && (dst[w-1] == sep)) {
+				if ((src[r+1] == '/') || (src[r+1] == '\\')) { // have \.\ or /./
+					r += 2;
+				}
+				else if ((src[r+1] == '.') && ((src[r+2] == '/') || (src[r+2] == '\\'))) { // have \..\ or /../
+					// scan back in w until either sep or beginning of line is found
+					w -= 1;
+					while ((w > 0) && (dst[w-1] != sep)) {
+						w -= 1;
+					}
+					r += 3;
+				}
+				else { // have a '.' in a name - just pass it on
+					dst[w] = '.';
+					w += 1;
+					r += 1;
+				}
+			}
+			else {	// might be at beginning of string. Could be a ./ or a ../; copy the . or .. if followed by a /
+				if ((w == 0 ) && ((src[r+1] == '/') || (src[r+1] == '\\'))) {
+					// have a ./ at the beginning - strip it off
+					r += 2;
+				}
+				else {
+					dst[w] = '.';
+					w += 1;
+					r += 1;
+				}
+			}
+			break;
+		default:
+			dst[w] = src[r];
+			w += 1;
+			r += 1;
+			break;
+		}
+	}
+
+	dst[w] = 0;
+}
+
 int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, const char **functionname, unsigned int *linenumber, const char **lineptr)
 {
 	const char *file = nullptr;
@@ -8354,9 +8593,23 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 		return 0;
 	}
 
+	char fprime[2048];
+	char *sane;
+
+	if (strlen(file) > sizeof fprime) {
+		sane = new char[strlen(file)+1];
+	}
+	else {
+		sane = fprime;
+	}
+
+	sanePath(pType,file,sane);
+
+	// the fl/filelist stuff is to get the source line text
+
 	struct fileReader::fileList *fl;
 
-	fl = fileReader->findFile(file);
+	fl = fileReader->findFile(sane);
 	assert(fl != nullptr);
 
 	*filename = fl->name;
@@ -8397,6 +8650,11 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 		*lineptr = fl->lines[line-1];
 	}
 
+	if (sane != fprime) {
+		delete sane;
+		sane = nullptr;
+	}
+
 	return 1;
 }
 
@@ -8406,6 +8664,40 @@ int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 
 	bfd_vma vma;
 	vma = (bfd_vma)addr;
+
+	if (codeSectionLst == nullptr) {
+		return 1;
+	}
+
+	section *sp = codeSectionLst->getSectionByAddress(addr);
+
+	if (sp == nullptr) {
+		return 1;
+	}
+
+	cachedInstInfo *cii;
+
+	cii = sp->getCachedInfo(addr);
+	if (cii != nullptr) {
+		source.sourceFile = cii->filename;
+		source.sourceFunction = cii->functionname;
+		source.sourceLineNum = cii->linenumber;
+		source.sourceLine = cii->lineptr;
+
+		instruction.address = addr;
+		instruction.instruction = cii->instruction;
+		instruction.instSize = cii->instsize;
+		strcpy(instruction.instructionText,cii->instructionText);
+
+		instruction.addressLabel = cii->addressLabel;
+		instruction.addressLabelOffset = cii->addressLabelOffset;
+		instruction.haveOperandAddress = cii->haveOperandAddress;
+		instruction.operandAddress = cii->operandAddress;
+		instruction.operandLabel = cii->operandLabel;
+		instruction.operandLabelOffset = cii->operandLabelOffset;
+
+		return 0;
+	}
 
 	getSrcLines(addr, &source.sourceFile, &source.sourceFunction, &source.sourceLineNum, &source.sourceLine);
 
@@ -8420,16 +8712,6 @@ int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 
 	// before calling disassemble_func, need to update info struct to point to correct section!
 
-	if (codeSectionLst == nullptr) {
-		return 1;
-	}
-
-	section *sp = codeSectionLst->getSectionByAddress(addr);
-
-	if (sp == nullptr) {
-		return 1;
-	}
-
    	info->buffer_vma = sp->startAddr;
    	info->buffer_length = sp->size;
    	info->section = sp->asecptr;
@@ -8441,6 +8723,8 @@ int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 	rc = disassemble_func(vma,info);
 
 	// output from disassemble_func is in instruction.instrucitonText
+
+	sp->setCachedInfo(addr,source.sourceFile,source.sourceFunction,source.sourceLineNum,source.sourceLine,instruction.instructionText,instruction.instruction,instruction.instSize,instruction.addressLabel,instruction.addressLabelOffset,instruction.haveOperandAddress,instruction.operandAddress,instruction.operandLabel,instruction.operandLabelOffset);
 
 	return rc;
 }

@@ -56,6 +56,31 @@ private:
 };
 #endif // DO_TIMES
 
+class cachedInstInfo {
+public:
+	cachedInstInfo(const char *file,const char *func,int linenum,const char *lineTxt,const char *instText,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset);
+	~cachedInstInfo();
+
+	void dump();
+
+	const char *filename;
+	const char *functionname;
+	int linenumber;
+	const char *lineptr;
+
+	TraceDqr::RV_INST instruction;
+	int               instsize;
+
+	char             *instructionText;
+
+	const char       *addressLabel;
+	int               addressLabelOffset;
+	bool              haveOperandAddress;
+	TraceDqr::ADDRESS operandAddress;
+	const char       *operandLabel;
+	int               operandLabelOffset;
+};
+
 // class section: work with elf file sections using libbfd
 
 class section {
@@ -63,8 +88,11 @@ public:
 	section();
 	~section();
 
-	section *initSection(section **head,asection *newsp);
+	section *initSection(section **head,asection *newsp,bool enableInstCaching);
 	section *getSectionByAddress(TraceDqr::ADDRESS addr);
+
+	cachedInstInfo *setCachedInfo(TraceDqr::ADDRESS addr,const char *file,const char *func,int linenum,const char *lineTxt,const char *instTxt,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset);
+	cachedInstInfo *getCachedInfo(TraceDqr::ADDRESS addr);
 
 	section     *next;
 	bfd         *abfd;
@@ -73,6 +101,7 @@ public:
 	int          size;
 	asection    *asecptr;
 	uint16_t    *code;
+	cachedInstInfo **cachedInfo;
 };
 
 // class fileReader: Helper class to handler list of source code files
@@ -251,6 +280,8 @@ public:
 	Instruction getInstructionInfo() { return instruction; }
 	Source      getSourceInfo() { return source; }
 
+	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
+
 	TraceDqr::DQErr getStatus() {return status;}
 
 private:
@@ -267,6 +298,7 @@ private:
 	int               archSize;
 
 	bfd_vma           start_address;
+
 	long              number_of_syms;
 	asymbol         **symbol_table;
 	asymbol         **sorted_syms;
@@ -283,6 +315,8 @@ private:
 	Source      source;
 
 	class fileReader *fileReader;
+
+	TraceDqr::pathType pType;
 
 	void print_address(bfd_vma vma);
 	void print_address_and_instruction(bfd_vma vma);
