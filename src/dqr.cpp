@@ -415,13 +415,7 @@ std::string Instruction::addressToString(int labelLevel)
 
 	addressToText(dst,sizeof dst,labelLevel);
 
-	std::string s = "";
-
-	for (int i = 0; dst[i] != 0; i++) {
-		s += dst[i];
-	}
-
-	return s;
+	return std::string(dst);
 }
 
 void Instruction::addressToText(char *dst,size_t len,int labelLevel)
@@ -461,13 +455,7 @@ std::string Instruction::instructionToString(int labelLevel)
 
 	instructionToText(dst,sizeof dst,labelLevel);
 
-	std::string s = "";
-
-	for (int i = 0; dst[i] != 0; i++) {
-		s += dst[i];
-	}
-
-	return s;
+	return std::string(dst);
 }
 
 void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
@@ -477,6 +465,8 @@ void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 	int n;
 
 	dst[0] = 0;
+
+//	should cache this (as part of other instruction stuff cached)!!
 
 	if (instSize == 32) {
 		n = snprintf(dst,len,"%08x           %s",instruction,instructionText);
@@ -503,28 +493,21 @@ void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 
 std::string Instruction::addressLabelToString()
 {
-	std::string s = "";
 
 	if (addressLabel != nullptr) {
-		for (int i = 0; addressLabel[i] != 0; i++) {
-			s += addressLabel[i];
-		}
+		return std::string (addressLabel);
 	}
 
-	return s;
+	return std::string("");
 }
 
 std::string Instruction::operandLabelToString()
 {
-	std::string s = "";
-
 	if (operandLabel != nullptr) {
-		for (int i = 0; operandLabel[i] != 0; i++) {
-			s += operandLabel[i];
-		}
+		return std::string(operandLabel);
 	}
 
-	return s;
+	return std::string("");
 }
 
 const char *Source::stripPath(const char *path)
@@ -572,56 +555,41 @@ const char *Source::stripPath(const char *path)
 
 std::string Source::sourceFileToString(std::string path)
 {
-	std::string s = "";
-
 	if (sourceFile != nullptr) {
-	  const char *sf = stripPath(path.c_str());
 
-	  for (int i = 0; sf[i] != 0; i++) {
-		s += sf[i];
-	  }
+		const char *sf = stripPath(path.c_str());
+
+		return std::string(sf);
 	}
 
-	return s;
+	return std::string("");
 }
 
 std::string Source::sourceFileToString()
 {
-	std::string s = "";
-
 	if (sourceFile != nullptr) {
-	  for (int i = 0; sourceFile[i] != 0; i++) {
-		s += sourceFile[i];
-	  }
+		return std::string(sourceFile);
 	}
 
-	return s;
+	return std::string("");
 }
 
 std::string Source::sourceLineToString()
 {
-	std::string s = "";
-
 	if (sourceLine != nullptr) {
-	  for (int i = 0; sourceLine[i] != 0; i++) {
-		s += sourceLine[i];
-	  }
+		return std::string(sourceLine);
 	}
 
-	return s;
+	return std::string("");
 }
 
 std::string Source::sourceFunctionToString()
 {
-	std::string s = "";
-
 	if (sourceFunction != nullptr) {
-	  for (int i = 0; sourceFunction[i] != 0; i++) {
-		s += sourceFunction[i];
-	  }
+		return std::string(sourceFunction);
 	}
 
-	return s;
+	return std::string("");
 }
 
 fileReader::fileReader(/*paths*/)
@@ -3371,13 +3339,7 @@ std::string Analytics::toString(int detailLevel)
 
 	toText(dst,sizeof dst,detailLevel);
 
-	std::string s = "";
-
-	for (int i = 0; dst[i] != 0; i++) {
-		s += dst[i];
-	}
-
-	return s;
+	return std::string(dst);
 }
 
 uint32_t NexusMessage::targetFrequency = 0;
@@ -4187,9 +4149,7 @@ std::string NexusMessage::messageToString(int detailLevel)
 
 	messageToText(dst,sizeof dst,detailLevel);
 
-	std::string s(dst);
-
-	return s;
+	return std::string(dst);
 }
 
 void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
