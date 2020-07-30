@@ -446,7 +446,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (version_flag) {
-		printf("%s: version %s\n",argv[0],DQR_VERSION);
+		printf("%s: version %s\n",argv[0],Trace::version());
 		return 0;
 	}
 
