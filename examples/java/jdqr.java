@@ -22,6 +22,8 @@ public class jdqr {
 	    System.exit(1);
     }
 
+    System.out.printf("dqrdll version: %s\n",Trace.version());
+ 
     Trace t = new Trace(argv[0],true,argv[1],32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
     if (t == null) {
       System.out.println("t is null");

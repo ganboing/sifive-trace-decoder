@@ -301,6 +301,11 @@ void Trace::cleanUp()
 	}
 }
 
+const char *Trace::version()
+{
+	return DQR_VERSION;
+}
+
 int Trace::getArchSize()
 {
 	if (elfReader == nullptr) {

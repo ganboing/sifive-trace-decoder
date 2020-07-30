@@ -599,6 +599,7 @@ public:
     Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
     ~Trace();
     void cleanUp();
+    static const char *version();
 	TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
 	TraceDqr::DQErr setTSSize(int size);
 	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
