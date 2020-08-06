@@ -1938,11 +1938,28 @@ proc writeSRAM {core file limit} {
     }
 }
 
-proc writeSRAMdata { core tracebegin traceend fp } {
+proc _writeSRAMdata { core tracebegin traceend fp } {
 	for {set i $tracebegin} {$i < $traceend} {incr i 4} {
 		pack w [eval readSRAMData $core] -intle 32
 		puts -nonewline $fp $w
 	}
+}
+
+proc writeSRAMdata { core tracebegin traceend fp } {
+    global traceBaseAddrArray
+    global te_sinkdata_offset
+
+	set length [expr ($traceend - $tracebegin) / 4]
+	set daddr  [expr $traceBaseAddrArray($core) + $te_sinkdata_offset]
+	set data [riscv repeat_read $length $daddr 4] 
+	set packed ""
+	foreach value [split $data "\r\n "] {
+		if {$value != ""} {
+			pack w 0x$value -intle 32
+			append packed $w
+		}
+	}
+	puts $fp $packed
 }
 
 proc getCapturedTraceSize { core } {
