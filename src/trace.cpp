@@ -390,6 +390,11 @@ TraceDqr::TIMESTAMP Trace::adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TI
 	return ts;
 }
 
+TraceDqr::DQErr Trace::getTraceFileOffset(int &size,int &offset)
+{
+	return sfp->getFileOffset(size,offset);
+}
+
 TraceDqr::ADDRESS Trace::computeAddress()
 {
 	switch (nm.tcode) {

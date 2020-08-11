@@ -223,6 +223,7 @@ public:
              SliceFileParser(char *filename, bool binary, int srcBits);
              ~SliceFileParser();
   TraceDqr::DQErr readNextTraceMsg(NexusMessage &nm,class Analytics &analytics);
+  TraceDqr::DQErr getFileOffset(int &size,int &offset);
 
   TraceDqr::DQErr getErr() { return status; };
   void       dump();
@@ -235,6 +236,7 @@ private:
   bool          binary;
   int           srcbits;
   std::ifstream tf;
+  int           tfSize;
   int           bitIndex;
   int           msgSlices;
   uint8_t       msg[64];

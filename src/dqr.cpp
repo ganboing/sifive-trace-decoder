@@ -5091,6 +5091,8 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 
 	this->binary = binary;
 
+	tfSize = 0;
+
 	if (binary) {
 		tf.open(filename, std::ios::in | std::ios::binary);
 	}
@@ -5106,6 +5108,10 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 		status = TraceDqr::DQERR_OK;
 	}
 
+	tf.seekg (0, tf.end);
+	tfSize = tf.tellg();
+	tf.seekg (0, tf.beg);
+
 #if	0
 	// read entire slice file, create multiple quese base on src field
 
@@ -5118,6 +5124,18 @@ SliceFileParser::~SliceFileParser()
 	if (tf.is_open()) {
 		tf.close();
 	}
+}
+
+TraceDqr::DQErr SliceFileParser::getFileOffset(int &size,int &offset)
+{
+	if (!tf.is_open()) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	size = tfSize;
+	offset = tf.tellg();
+
+	return TraceDqr::DQERR_OK;
 }
 
 void SliceFileParser::dump()
