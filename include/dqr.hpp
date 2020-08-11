@@ -278,17 +278,19 @@ public:
 	void instructionToText(char *dst,size_t len,int labelLevel);
 	std::string instructionToString(int labelLevel);
 
-	int               CRFlag;
-
-	uint8_t           coreId;
-	TraceDqr::ADDRESS address;
-	TraceDqr::RV_INST instruction;
-	int               brFlags; // this is an int instead of TraceDqr::BancheFlags because it is easier to work with in java
-	char              instructionText[64];
-	int               instSize;
 	static int        addrSize;
 	static uint32_t   addrDispFlags;
 	static int        addrPrintWidth;
+
+	uint8_t           coreId;
+
+	int               CRFlag;
+	int               brFlags; // this is an int instead of TraceDqr::BancheFlags because it is easier to work with in java
+
+	TraceDqr::ADDRESS address;
+	int               instSize;
+	TraceDqr::RV_INST instruction;
+	char              instructionText[64];
 #ifdef SWIG
 	%immutable		addressLabel;
 #endif // SWIG
@@ -301,6 +303,8 @@ public:
 #endif // SWIG
 	const char       *operandLabel;
 	int               operandLabelOffset;
+
+	TraceDqr::TIMESTAMP timestamp;
 };
 
 // class Source: Helper class for source code information for an address
@@ -689,6 +693,67 @@ private:
 
 	TraceDqr::ADDRESS computeAddress();
 	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts);
+};
+
+class VRec {
+public:
+	void dump();
+	bool validLine;
+	int line;
+	uint8_t coreId;
+	uint32_t cycles;
+	int valid;
+	TraceDqr::ADDRESS pc;
+	bool wvf;
+	int wReg;
+	uint32_t wVal;
+	int r1Reg;
+	int r2Reg;
+	uint32_t r1Val;
+	uint32_t r2Val;
+	TraceDqr::RV_INST inst;
+	TraceDqr::RV_INST dasm;
+};
+
+#ifdef SWIG
+	%ignore Verilator::NextInstruction(Instruction **instInfo,NexusMessage **msgInfo,Source **srcInfo);
+#endif // SWIG
+
+class Verilator {
+public:
+	Verilator(char *f_name,int arch_size = 32);
+	~Verilator();
+
+	TraceDqr::DQErr getStatus() {return status;}
+
+	TraceDqr::DQErr decodeInstructionSize(uint32_t inst, int &inst_size);
+
+	TraceDqr::DQErr NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
+	TraceDqr::DQErr NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags);
+
+	void analyticsToText(char *dst,int dst_len,int detailLevel) {/*analytics.toText(dst,dst_len,detailLevel);*/ }
+//	std::string analyticsToString(int detailLevel) { /* return analytics.toString(detailLevel);*/ }
+
+private:
+	TraceDqr::DQErr status;
+
+	int archSize;
+
+	char *vf_name;
+	char *lineBuff;
+	char **lines;
+	int numLines;
+	int currentLine;
+
+	Instruction instructionInfo;
+
+	disassemble_info disasm_info;
+	disassembler_ftype disasm_func;
+	uint32_t instructionBuffer[2];
+
+	TraceDqr::DQErr readFile(char *file);
+	TraceDqr::DQErr parseFile();
+	TraceDqr::DQErr parseLine(int l,VRec *vrec);
 };
 
 #endif /* DQR_HPP_ */

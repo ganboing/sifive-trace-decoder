@@ -202,6 +202,9 @@ static int stringify_callback(FILE *stream, const char *format, ...)
 	va_list vl;
 	int rc;
 
+	// need a smarter struct for dis_output that contains a pointer for where to put the data and a lenght of thedata already in the string
+	// then don't need to strcat, but just print into the buffer indexed by length
+
 	if (dis_output == nullptr) {
 		return 0;
 	}
@@ -976,6 +979,7 @@ ElfReader::ElfReader(char *elfname)
 	  status = TraceDqr::TraceDqr::DQERR_ERR;
 	  return;
   }
+
   symtab = nullptr;
   codeSectionLst = nullptr;
 
@@ -8416,7 +8420,7 @@ int Disassembler::decodeInstruction(uint32_t instruction,int archSize,int &inst_
 		}
 		break;
 	default:
-		printf("Error: decodeInstruction(): Unknown arch size %d\n",archSize);
+		printf("Error: (): Unknown arch size %d\n",archSize);
 
 		rc = 1;
 	}
@@ -8749,3 +8753,683 @@ NexusMessageSync::NexusMessageSync()
 	index = 0;
 }
 
+Verilator::Verilator(char *f_name,int arch_size)
+{
+	TraceDqr::DQErr ec;
+
+	vf_name = nullptr;
+	lineBuff = nullptr;
+	lines = nullptr;
+	numLines = 0;
+	currentLine = 0;
+
+	if (f_name == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	ec = readFile(f_name);
+	if (ec != TraceDqr::DQERR_OK) {
+		status = ec;
+		return;
+	}
+
+//	ec = parseFile();
+//	if (ec != TraceDqr::DQERR_OK) {
+//		status = ec;
+//		return;
+//	}
+
+	// prep the dissasembler
+
+	archSize = arch_size;
+
+	init_disassemble_info(&disasm_info,stdout,(fprintf_ftype)stringify_callback);
+
+	disasm_info.arch = bfd_arch_riscv;
+
+	int mach;
+
+	if (archSize == 64) {
+		disasm_info.mach = bfd_mach_riscv64;
+		mach = bfd_mach_riscv64;
+	}
+	else {
+		disasm_info.mach = bfd_mach_riscv32;
+		mach = bfd_mach_riscv32;
+	}
+
+	disasm_func = disassembler((bfd_architecture)67/*bfd_arch_riscv*/,false,mach,nullptr);
+	if (disasm_func == nullptr) {
+		printf("arch: %d, mach: %d\n",bfd_arch_riscv,mach);
+
+		printf("problem creating disassembler function\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	disasm_info.read_memory_func = buffer_read_memory;
+	disasm_info.buffer = (bfd_byte*)instructionBuffer;
+	disasm_info.buffer_vma = 0;
+	disasm_info.buffer_length = sizeof instructionBuffer;
+
+	disassemble_init_for_target(&disasm_info);
+
+	status = TraceDqr::DQERR_OK;
+	return;
+}
+
+Verilator::~Verilator()
+{
+	if (vf_name != nullptr) {
+		delete [] vf_name;
+		vf_name = nullptr;
+	}
+
+	if (lineBuff != nullptr) {
+		delete [] lineBuff;
+		lineBuff = nullptr;
+	}
+}
+
+TraceDqr::DQErr Verilator::readFile(char *file)
+{
+	if (file == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	printf("Verilator::readFile(%s)\n",file);
+
+	int l = strlen(file);
+	vf_name = new char [l+1];
+
+	strcpy(vf_name,file);
+
+	std::ifstream  f(file, std::ifstream::binary);
+
+	if (!f) {
+		printf("Error: Verilator::readAndParse(): could not open verilator file %s for input\n",vf_name);
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	// get length of file:
+
+	f.seekg (0, f.end);
+	int length = f.tellg();
+	f.seekg (0, f.beg);
+
+	// allocate memory:
+
+	lineBuff = new char [length];
+
+	// read file into buffer
+
+	f.read(lineBuff,length);
+
+	f.close();
+
+	// count lines
+
+	int lc = 1;
+
+	for (int i = 0; i < length; i++) {
+		if (lineBuff[i] == '\n') {
+			lc += 1;
+		}
+	}
+
+	lines = new char *[lc];
+
+	// initialize arry of ptrs
+
+	int s;
+
+	l = 0;
+	s = 1;
+
+	lines[0] = &lineBuff[0];
+
+	for (int i = 1; i < length;i++) {
+		if (s != 0) {
+			lines[l] = &lineBuff[i];
+			l += 1;
+			s = 0;
+		}
+
+		// strip out CRs and LFs
+
+		if (lineBuff[i] == '\r') {
+			lineBuff[i] = 0;
+		}
+		else if (lineBuff[i] == '\n') {
+			lineBuff[i] = 0;
+			s = 1;
+		}
+	}
+
+	if (l >= lc) {
+		delete [] lines;
+		delete [] lineBuff;
+
+		lines = nullptr;
+		lineBuff = nullptr;
+
+		printf("Error: Verilator::readAndParse(): Error computing line count for file\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+
+	lines[l] = nullptr;
+
+	numLines = l;
+
+
+	return TraceDqr::DQERR_OK;
+}
+
+void VRec::dump()
+{
+	printf("VRec: %d",validLine);
+
+	if (validLine) {
+		printf(" line:%d",line);
+		printf(" core:%d",coreId);
+		printf(" cycles: %d",cycles);
+		printf(" valid: %d",valid);
+		printf(" pc=[%08llx]",pc);
+		printf(" W[r%2d=%08x][%d]",wReg,wVal,wvf);
+		printf(" R[r%2d=%08x]",r1Reg,r1Val);
+		printf(" R[r%2d=%08x]",r2Reg,r2Val);
+		printf(" inst=[%08x]",inst);
+		printf(" DASM(%08x)\n",dasm);
+	}
+}
+
+TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
+{
+	if (l >= numLines) {
+		return TraceDqr::DQERR_EOF;
+	}
+
+	char *lp = lines[l];
+	int ci;
+	char *ep;
+
+	vrec->validLine = false;
+
+	// No syntax errors until find first line that starts with 'C'
+
+	// strip ws
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	// check for core specifyer
+
+	if (lp[ci] != 'C') {
+		return TraceDqr::DQERR_OK;
+	}
+
+	ci += 1;
+
+	vrec->coreId = strtoul(&lp[ci],&ep,10);
+
+	if (ep == &lp[ci]) {
+		printf("Verilator::parseLine(): syntax error. Expected core number\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci = ep - lp;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (lp[ci] != ':') {
+		printf("Verilator::parseLine(): syntax error. Expected ':' at end of core number\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	vrec->cycles = strtoul(&lp[ci],&ep,10);
+
+	if (ep == &lp[ci]) {
+		printf("Verilator::parseLine(): syntax error. Expected cycle count\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci = ep - lp;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (lp[ci] != '[') {
+		printf("Verilator::parseLine(): syntax error. Expected '[' after cycle count\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	if ((lp[ci] >= '0') && (lp[ci] <= '1')) {
+		vrec->valid = lp[ci] - '0';
+	}
+	else {
+		printf("Verilator::parseLine(): syntax error. Expected valid flag of either 0 or 1\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	if (lp[ci] != ']') {
+		printf("Verilator::parseLine(): syntax error. Expected ']' after valid flag\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (strncmp("pc=[",&lp[ci],sizeof "pc=[" - 1) != 0) {
+		printf("Verilator::parseLine(): syntax error. Expected pc=[\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += sizeof "pc=[" - 1;
+
+	vrec->pc = strtoull(&lp[ci],&ep,16);
+
+	if (&lp[ci] == ep) {
+		printf("Verilator::parseLine(): syntax error parsing PC value\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci = ep - lp;
+
+	if (lp[ci] != ']') {
+		printf("Verilator::parseLine(): syntax error. Expected ']' after PC address\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	int numReads = 0;
+
+	for (int i = 0; i < 3; i++) { // get dst and two src operands
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		bool wf = false;
+		bool rf = false;
+
+		if (lp[ci] == 'W') {
+			wf = true;
+		}
+		else if (lp[ci] == 'R') {
+			rf = true;
+			numReads += 1;
+		}
+
+		if ((rf != true) && (wf != true)) {
+			printf("Verilator::parseLine(): syntax error. Expected read or write specifier\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		if (lp[ci] != '[') {
+			printf("Verilator::parseLine(): syntax error. Expected '[' after read or write specifier\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		if (lp[ci] != 'r') {
+			printf("Verilator::parseLine(): syntax error. Expected register specifier\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		uint32_t regNum;
+		regNum = strtoul(&lp[ci],&ep,10);
+
+		if (ep == &lp[ci]) {
+			printf("Verilator::parseLine(): syntax error. Expected register number\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci = ep - lp;
+
+		if (lp[ci] != '=') {
+			printf("Verilator::parseLine(): syntax error. Expected '='\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		uint32_t regVal;
+		regVal = strtoul(&lp[ci],&ep,16);
+
+		if (&lp[ci] == ep) {
+			printf("Verilator::parseLine(): syntax error. Expected register value\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci = ep - lp;
+
+		if (lp[ci] != ']') {
+			printf("Verilator::parseLine(): syntax error. Expected ']' after register value\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		if (wf) {
+			// for writes
+
+			vrec->wReg = regNum;
+			vrec->wVal = regVal;
+
+			if (lp[ci] != '[') {
+				printf("Verilator::parseLine(): syntax error. Expected '[' for write valid flag\n");
+				return TraceDqr::DQERR_ERR;
+			}
+
+			ci += 1;
+
+			if ((lp[ci] < '0') || (lp[ci] > '1')) {
+				printf("Verilator::parseLine(): syntax error. Expected write valid flag of either '0' or '1'\n");
+				return TraceDqr::DQERR_ERR;
+			}
+
+			vrec->wvf = lp[ci] - '0';
+			ci += 1;
+
+			if (lp[ci] != ']') {
+				printf("Verilator::parseLine(): syntax error. Expected ']' after write valid flag\n");
+				return TraceDqr::DQERR_ERR;
+			}
+
+			ci += 1;
+		}
+		else {
+			// for reads
+
+			if (numReads == 1) {
+				vrec->r1Reg = regNum;
+				vrec->r1Val = regVal;
+			}
+			else {
+				vrec->r2Reg = regNum;
+				vrec->r2Val = regVal;
+			}
+		}
+	}
+
+	ci += 1;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (strncmp(&lp[ci],"inst=[",sizeof "inst=[" - 1) != 0) {
+		printf("Verilator::parseLine(): syntax error. Expected 'inst='\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += sizeof "inst=[" - 1;
+
+	vrec->inst = strtoul(&lp[ci],&ep,16);
+	if (ep == &lp[ci]) {
+		printf("Verilator::parseLine(): syntax error parsing instruction\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci = ep - lp;
+
+	if (lp[ci] != ']') {
+		printf("Verilator::parseLine(): syntax error parsing instruction. Expected ']'\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (strncmp(&lp[ci],"DASM(",sizeof "DASM(" - 1) != 0) {
+		printf("Verilator::parseLine(): syntax error. Expected 'DASM('\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += sizeof "DASM(" - 1;
+
+	vrec->dasm = strtoul(&lp[ci],&ep,16);
+	if (ep == &lp[ci]) {
+		printf("Verilator::parseLine(): syntax error parsing DASM\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci = ep - lp;
+
+	if (lp[ci] != ')') {
+		printf("Verilator::parseLine(): syntax error parsing DASM. Expected ')'\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (lp[ci] != 0) {
+		printf("Verilator::parseLine(): extra input on end of line; ignoring\n");
+	}
+
+	vrec->validLine = true;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Verilator::parseFile()
+{
+	TraceDqr::DQErr s;
+	VRec vrec;
+
+	printf("parseFile()\n"); fflush(stdout);
+
+	for (int i = 0; i < numLines; i++) {
+		s = parseLine(i,&vrec);
+		if (s != TraceDqr::DQERR_OK) {
+			status = s;
+			printf("Error parsing file!\n");fflush(stdout);
+			return s;
+		}
+		vrec.dump();
+	}
+
+	printf("file parsed!\n");fflush(stdout);
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Verilator::decodeInstructionSize(uint32_t inst, int &inst_size)
+{
+	switch (inst & 0x0003) {
+	case 0x0000:	// quadrant 0, compressed
+		inst_size = 16;
+		return TraceDqr::DQERR_OK;
+	case 0x0001:	// quadrant 1, compressed
+		inst_size = 16;
+		return TraceDqr::DQERR_OK;
+	case 0x0002:	// quadrant 2, compressed
+		inst_size = 16;
+		return TraceDqr::DQERR_OK;
+	case 0x0003:	// not compressed. Assume RV32 for now
+		if ((inst & 0x1f) == 0x1f) {
+			fprintf(stderr,"Error: decode_instruction(): cann't decode instructions longer than 32 bits\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+		inst_size = 32;
+		return TraceDqr::DQERR_OK;
+	}
+
+	// error return
+
+	return TraceDqr::DQERR_ERR;
+}
+
+TraceDqr::DQErr Verilator::NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags)
+{
+	TraceDqr::DQErr ec;
+
+	Instruction  *instInfop = nullptr;
+	NexusMessage *msgInfop  = nullptr;
+	Source       *srcInfop  = nullptr;
+
+	Instruction  **instInfopp = nullptr;
+	NexusMessage **msgInfopp  = nullptr;
+	Source       **srcInfopp  = nullptr;
+
+	if (instInfo != nullptr) {
+		instInfopp = &instInfop;
+	}
+
+	if (msgInfo != nullptr) {
+		msgInfopp = &msgInfop;
+	}
+
+	if (srcInfo != nullptr) {
+		srcInfopp = &srcInfop;
+	}
+
+	ec = NextInstruction(instInfopp, msgInfopp, srcInfopp);
+
+	*flags = 0;
+
+	if (ec == TraceDqr::DQERR_OK) {
+		if (instInfo != nullptr) {
+			if (instInfop != nullptr) {
+				*instInfo = *instInfop;
+				*flags |= TraceDqr::TRACE_HAVE_INSTINFO;
+			}
+		}
+
+		if (msgInfo != nullptr) {
+			if (msgInfop != nullptr) {
+				*msgInfo = *msgInfop;
+				*flags |= TraceDqr::TRACE_HAVE_MSGINFO;
+			}
+		}
+
+		if (srcInfo != nullptr) {
+			if (srcInfop != nullptr) {
+				*srcInfo = *srcInfop;
+				*flags |= TraceDqr::TRACE_HAVE_SRCINFO;
+			}
+		}
+	}
+
+	return ec;
+}
+
+TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo)
+{
+	TraceDqr::DQErr rc;
+	TraceDqr::ADDRESS addr;
+	int crFlag = 0;
+	TraceDqr::BranchFlags brFlags = TraceDqr::BRFLAG_none;
+	VRec vrec;
+
+	if (instInfo != nullptr) {
+		*instInfo = nullptr;
+	}
+
+	if (msgInfo != nullptr) {
+		*msgInfo = nullptr;
+	}
+
+	if (srcInfo != nullptr) {
+		*srcInfo = nullptr;
+	}
+
+	if (currentLine >= numLines) {
+		return TraceDqr::DQERR_EOF;
+	}
+
+	do {
+		rc = parseLine(currentLine,&vrec);
+		currentLine += 1;
+
+		if (rc != TraceDqr::DQERR_OK) {
+			return rc;
+		}
+	} while ((vrec.validLine == false) || (vrec.valid == false));
+
+	disasm_info.buffer_vma = vrec.pc;
+	instructionBuffer[0] = vrec.inst;
+
+	instructionInfo.instructionText[0] = 0;
+	dis_output = instructionInfo.instructionText;
+
+	// don't need to use global dis_output to point to where to print. Instead, override stream to point to char
+	// buffer of where to print data to. This will give multi-instance safe code for verilator and trace objects
+
+	size_t insn_size = disasm_func(vrec.pc,&disasm_info);
+
+// we should cache disassembly!
+
+	// now turn vrec into instrec
+
+	instructionInfo.coreId = vrec.coreId;
+	instructionInfo.address = vrec.pc;
+	instructionInfo.instruction = vrec.inst;
+	instructionInfo.brFlags = brFlags;
+	instructionInfo.CRFlag = crFlag;
+	instructionInfo.addressLabel = nullptr;
+	instructionInfo.addressLabelOffset = 0;
+	instructionInfo.timestamp = vrec.cycles;
+
+	rc = decodeInstructionSize(vrec.inst,instructionInfo.instSize);
+	if (TraceDqr::DQERR_OK != 0) {
+		printf("Error: Verilator::NextInstruction(): could not decode instruction size\n");
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+
+	instructionInfo.haveOperandAddress = false; // this needs done correctly - this isn't correct
+
+	*instInfo = &instructionInfo;
+
+	// need multicore support
+	// caching of instruction/address
+	// improve print callback disassembly routines to use stream as a pointer to a struct with a buffer and
+	// and length to improve performance and allow multithreading (or multi object)
+	// improve disassembly to not print 32 bit literals as 64 bits
+
+	// check isvalid or whatever to make sure the line is valid in the verilator otuput file
+	// add timestamp field to instruction type, add display of timestamp in main. Also need flag for haveTimestamp
+
+	// compute crFlags, brFlags
+
+	// create synthetic nexus messages? Do we really need this?
+
+//	Disassemble();
+
+	return TraceDqr::DQERR_OK;
+}

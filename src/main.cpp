@@ -156,6 +156,7 @@ int main(int argc, char *argv[])
 	char *tf_name = nullptr;
 	char *base_name = nullptr;
 	char *ef_name = nullptr;
+	char *vf_name = nullptr;
 	char buff[128];
 	int buff_index = 0;
 	bool usage_flag = false;
@@ -179,6 +180,7 @@ int main(int argc, char *argv[])
 	bool showCallsReturns = false;
 	bool showBranches = false;
 	TraceDqr::pathType pt = TraceDqr::PATH_TO_UNIX;
+	int archSize = 32;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -190,6 +192,7 @@ int main(int argc, char *argv[])
 			}
 
 			base_name = nullptr;
+			vf_name = nullptr;
 
 			tf_name = argv[i];
 		}
@@ -203,6 +206,7 @@ int main(int argc, char *argv[])
 
 			ef_name = nullptr;
 			tf_name = nullptr;
+			vf_name = nullptr;
 
 			base_name = argv[i];
 		}
@@ -434,6 +438,28 @@ int main(int argc, char *argv[])
 		else if (strcmp("-pathraw",argv[i]) == 0) {
 			pt = TraceDqr::PATH_RAW;
 		}
+		else if (strcmp("-verilator",argv[i]) == 0) {
+			i += 1;
+			if (i >= argc) {
+				printf("Error: option -verilator requires a file name\n");
+				usage(argv[0]);
+				return 1;
+			}
+
+			base_name = nullptr;
+			tf_name = nullptr;
+			ef_name = nullptr;
+
+			vf_name = argv[i];
+		}
+		else if (strncmp("-archsize=",argv[i],sizeof "-archsize=") == 0) {
+			archSize = atoi(argv[i]+strlen("-archsize="));
+
+			if ((archSize != 32) && (archSize != 64)) {
+				printf("Error: archSize must be 32 or 64\n");
+				return 1;
+			}
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -450,49 +476,64 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
-	if (tf_name == nullptr) {
-		if (base_name == nullptr) {
-			printf("Error: must specify either a base name or a trace file name\n");
-			usage(argv[0]);
-			return 1;
-		}
+	if ((vf_name == nullptr) && (tf_name == nullptr) && (base_name == nullptr)) {
+		printf("Error: must specify either verilator file, trace file, or base name\n");
+		usage(argv[0]);
+		return 1;
+	}
 
+	if (base_name != nullptr) {
 		tf_name = &buff[buff_index];
 		strcpy(tf_name,base_name);
 		strcat(tf_name,".rtd");
 		buff_index += strlen(tf_name) + 1;
+
+		ef_name = &buff[buff_index];
+		strcpy(ef_name,base_name);
+		strcat(ef_name,".elf");
+		buff_index += strlen(ef_name) + 1;
 	}
 
-	if (ef_name == nullptr) {
-		if (base_name != nullptr) {
-			ef_name = &buff[buff_index];
-			strcpy(ef_name,base_name);
-			strcat(ef_name,".elf");
-			buff_index += strlen(ef_name) + 1;
-		}
-	}
+	Trace *trace = nullptr;
+	Verilator *v = nullptr;
 
 	// might want to include some path info!
 
-	Trace *trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
+	if (vf_name != nullptr) {
+		v = new (std::nothrow) Verilator(vf_name,archSize);
 
-	assert(trace != nullptr);
+		assert(v != nullptr);
 
-	if (trace->getStatus() != TraceDqr::DQERR_OK) {
-		delete trace;
-		trace = nullptr;
+		if (v->getStatus() != TraceDqr::DQERR_OK) {
+			delete v;
+			v = nullptr;
 
-		printf("Error: new Trace(%s,%s) failed\n",tf_name,ef_name);
+			printf("Error: new Verilator(%s,%d) failed\n",vf_name,archSize);
 
-		return 1;
+			return 1;
+		}
 	}
+	else {
+		trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
 
-	trace->setTraceRange(start_msg_num,stop_msg_num);
-	trace->setTSSize(tssize);
-	trace->setPathType(pt);
+		assert(trace != nullptr);
 
-	if (itcprint_flag) {
-		trace->setITCPrintOptions(4096,itcprint_channel);
+		if (trace->getStatus() != TraceDqr::DQERR_OK) {
+			delete trace;
+			trace = nullptr;
+
+			printf("Error: new Trace(%s,%s) failed\n",tf_name,ef_name);
+
+			return 1;
+		}
+
+		trace->setTraceRange(start_msg_num,stop_msg_num);
+		trace->setTSSize(tssize);
+		trace->setPathType(pt);
+
+		if (itcprint_flag) {
+			trace->setITCPrintOptions(4096,itcprint_channel);
+		}
 	}
 
 	TraceDqr::DQErr ec;
@@ -536,7 +577,12 @@ int main(int argc, char *argv[])
 	TraceDqr::TIMESTAMP startTime, endTime;
 
 	do {
-		ec = trace->NextInstruction(&instInfo,&msgInfo,&srcInfo);
+		if (v != nullptr) {
+			ec = v->NextInstruction(&instInfo,&msgInfo,&srcInfo);
+		}
+		else {
+			ec = trace->NextInstruction(&instInfo,&msgInfo,&srcInfo);
+		}
 
 		if (ec == TraceDqr::DQERR_OK) {
 			if (srcInfo != nullptr) {
@@ -582,8 +628,6 @@ int main(int argc, char *argv[])
 			}
 
 			if (dasm_flag && (instInfo != nullptr)) {
-//			    instInfo->addressToText(dst,instlevel);
-
 				instInfo->addressToText(dst,sizeof dst,0);
 
 				if (func_flag) {
@@ -610,6 +654,14 @@ int main(int argc, char *argv[])
 				}
 
 				int n;
+
+				if ((v != nullptr) && (instInfo->timestamp != 0)) {
+					n = printf("t:%d ",instInfo->timestamp);
+
+					for (int i = n; i < 12; i++) {
+						printf(" ");
+					}
+				}
 
 				n = printf("    %s:",dst);
 
@@ -777,18 +829,35 @@ int main(int argc, char *argv[])
 	}
 
 	if (analytics_detail > 0) {
-		trace->analyticsToText(dst,sizeof dst,analytics_detail);
-		if (firstPrint == false) {
-			printf("\n");
+		if (trace != nullptr) {
+			trace->analyticsToText(dst,sizeof dst,analytics_detail);
+			if (firstPrint == false) {
+				printf("\n");
+			}
+			firstPrint = false;
+			printf("%s",dst);
 		}
-		firstPrint = false;
-		printf("%s",dst);
+		if (v != nullptr) {
+			v->analyticsToText(dst,sizeof dst,analytics_detail);
+			if (firstPrint == false) {
+				printf("\n");
+			}
+			firstPrint = false;
+			printf("%s",dst);
+		}
 	}
 
+	if (trace != nullptr) {
 	trace->cleanUp();
 
 	delete trace;
 	trace = nullptr;
+	}
+
+	if (v != nullptr) {
+		delete v;
+		v = nullptr;
+	}
 
 	return 0;
 }
