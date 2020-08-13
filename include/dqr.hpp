@@ -305,6 +305,7 @@ public:
 	int               operandLabelOffset;
 
 	TraceDqr::TIMESTAMP timestamp;
+	int               cycles;
 };
 
 // class Source: Helper class for source code information for an address
@@ -726,7 +727,10 @@ public:
 	Verilator(char *f_name,int arch_size = 32);
 	~Verilator();
 
+	void cleanUp();
 	TraceDqr::DQErr getStatus() {return status;}
+
+	TraceDqr::DQErr getTraceFileOffset(int &size,int &offset);
 
 	TraceDqr::DQErr decodeInstructionSize(uint32_t inst, int &inst_size);
 
@@ -753,9 +757,14 @@ private:
 	disassembler_ftype disasm_func;
 	uint32_t instructionBuffer[2];
 
+	TraceDqr::ADDRESS      currentAddress[DQR_MAXCORES];
+	TraceDqr::ADDRESS      currentTime[DQR_MAXCORES];
+
 	TraceDqr::DQErr readFile(char *file);
 	TraceDqr::DQErr parseFile();
 	TraceDqr::DQErr parseLine(int l,VRec *vrec);
+//	need to rename nextAddr to compueFlags or something
+//	TraceDqr::DQErr nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag)
 };
 
 #endif /* DQR_HPP_ */

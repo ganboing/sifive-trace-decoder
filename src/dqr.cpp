@@ -8678,6 +8678,9 @@ int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 		instruction.operandLabel = cii->operandLabel;
 		instruction.operandLabelOffset = cii->operandLabelOffset;
 
+		// instruction.timestamp = 0;
+		// instruction.cycles = 0;
+
 		return 0;
 	}
 
@@ -8819,10 +8822,6 @@ Verilator::Verilator(char *f_name,int arch_size)
 
 	disasm_func = disassembler((bfd_architecture)67/*bfd_arch_riscv*/,false,mach,nullptr);
 	if (disasm_func == nullptr) {
-		printf("arch: %d, mach: %d\n",bfd_arch_riscv,mach);
-
-		printf("problem creating disassembler function\n");
-
 		status = TraceDqr::DQERR_ERR;
 		return;
 	}
@@ -8834,11 +8833,24 @@ Verilator::Verilator(char *f_name,int arch_size)
 
 	disassemble_init_for_target(&disasm_info);
 
+	for (int i = 0; (size_t)i < sizeof currentAddress / sizeof currentAddress[0]; i++) {
+		currentAddress[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof currentTime / sizeof currentTime[0]; i++) {
+		currentTime[i] = 0;
+	}
+
 	status = TraceDqr::DQERR_OK;
 	return;
 }
 
 Verilator::~Verilator()
+{
+	cleanUp();
+}
+
+void Verilator::cleanUp()
 {
 	if (vf_name != nullptr) {
 		delete [] vf_name;
@@ -8859,7 +8871,7 @@ TraceDqr::DQErr Verilator::readFile(char *file)
 		return status;
 	}
 
-	printf("Verilator::readFile(%s)\n",file);
+//	printf("Verilator::readFile(%s)\n",file);
 
 	int l = strlen(file);
 	vf_name = new char [l+1];
@@ -8976,7 +8988,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	}
 
 	char *lp = lines[l];
-	int ci;
+	int ci = 0;
 	char *ep;
 
 	vrec->validLine = false;
@@ -9001,6 +9013,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (ep == &lp[ci]) {
 		printf("Verilator::parseLine(): syntax error. Expected core number\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9012,6 +9026,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (lp[ci] != ':') {
 		printf("Verilator::parseLine(): syntax error. Expected ':' at end of core number\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9021,6 +9037,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (ep == &lp[ci]) {
 		printf("Verilator::parseLine(): syntax error. Expected cycle count\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9032,6 +9050,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (lp[ci] != '[') {
 		printf("Verilator::parseLine(): syntax error. Expected '[' after cycle count\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9042,6 +9062,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	}
 	else {
 		printf("Verilator::parseLine(): syntax error. Expected valid flag of either 0 or 1\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9049,6 +9071,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (lp[ci] != ']') {
 		printf("Verilator::parseLine(): syntax error. Expected ']' after valid flag\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9060,6 +9084,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (strncmp("pc=[",&lp[ci],sizeof "pc=[" - 1) != 0) {
 		printf("Verilator::parseLine(): syntax error. Expected pc=[\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9069,6 +9095,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (&lp[ci] == ep) {
 		printf("Verilator::parseLine(): syntax error parsing PC value\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9076,6 +9104,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (lp[ci] != ']') {
 		printf("Verilator::parseLine(): syntax error. Expected ']' after PC address\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9101,6 +9131,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 		if ((rf != true) && (wf != true)) {
 			printf("Verilator::parseLine(): syntax error. Expected read or write specifier\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 			return TraceDqr::DQERR_ERR;
 		}
 
@@ -9108,6 +9140,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 		if (lp[ci] != '[') {
 			printf("Verilator::parseLine(): syntax error. Expected '[' after read or write specifier\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 			return TraceDqr::DQERR_ERR;
 		}
 
@@ -9115,6 +9149,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 		if (lp[ci] != 'r') {
 			printf("Verilator::parseLine(): syntax error. Expected register specifier\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 			return TraceDqr::DQERR_ERR;
 		}
 
@@ -9125,6 +9161,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 		if (ep == &lp[ci]) {
 			printf("Verilator::parseLine(): syntax error. Expected register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 			return TraceDqr::DQERR_ERR;
 		}
 
@@ -9132,6 +9170,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 		if (lp[ci] != '=') {
 			printf("Verilator::parseLine(): syntax error. Expected '='\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 			return TraceDqr::DQERR_ERR;
 		}
 
@@ -9142,6 +9182,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 		if (&lp[ci] == ep) {
 			printf("Verilator::parseLine(): syntax error. Expected register value\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 			return TraceDqr::DQERR_ERR;
 		}
 
@@ -9149,6 +9191,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 		if (lp[ci] != ']') {
 			printf("Verilator::parseLine(): syntax error. Expected ']' after register value\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 			return TraceDqr::DQERR_ERR;
 		}
 
@@ -9162,6 +9206,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 			if (lp[ci] != '[') {
 				printf("Verilator::parseLine(): syntax error. Expected '[' for write valid flag\n");
+				printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 				return TraceDqr::DQERR_ERR;
 			}
 
@@ -9169,6 +9215,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 			if ((lp[ci] < '0') || (lp[ci] > '1')) {
 				printf("Verilator::parseLine(): syntax error. Expected write valid flag of either '0' or '1'\n");
+				printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 				return TraceDqr::DQERR_ERR;
 			}
 
@@ -9177,6 +9225,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 			if (lp[ci] != ']') {
 				printf("Verilator::parseLine(): syntax error. Expected ']' after write valid flag\n");
+				printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 				return TraceDqr::DQERR_ERR;
 			}
 
@@ -9204,6 +9254,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (strncmp(&lp[ci],"inst=[",sizeof "inst=[" - 1) != 0) {
 		printf("Verilator::parseLine(): syntax error. Expected 'inst='\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9212,6 +9264,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	vrec->inst = strtoul(&lp[ci],&ep,16);
 	if (ep == &lp[ci]) {
 		printf("Verilator::parseLine(): syntax error parsing instruction\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9219,6 +9273,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (lp[ci] != ']') {
 		printf("Verilator::parseLine(): syntax error parsing instruction. Expected ']'\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9230,6 +9286,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (strncmp(&lp[ci],"DASM(",sizeof "DASM(" - 1) != 0) {
 		printf("Verilator::parseLine(): syntax error. Expected 'DASM('\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9238,6 +9296,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	vrec->dasm = strtoul(&lp[ci],&ep,16);
 	if (ep == &lp[ci]) {
 		printf("Verilator::parseLine(): syntax error parsing DASM\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9245,6 +9305,8 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	if (lp[ci] != ')') {
 		printf("Verilator::parseLine(): syntax error parsing DASM. Expected ')'\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -9312,6 +9374,338 @@ TraceDqr::DQErr Verilator::decodeInstructionSize(uint32_t inst, int &inst_size)
 	return TraceDqr::DQERR_ERR;
 }
 
+#ifdef foodog42
+TraceDqr::DQErr Verilator::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag)
+{
+	TraceDqr::CountType ct;
+	uint32_t inst;
+	int inst_size;
+	TraceDqr::InstType inst_type;
+	int32_t immediate;
+	bool isBranch;
+	int rc;
+	TraceDqr::Reg rs1;
+	TraceDqr::Reg rd;
+	bool isTaken;
+
+	status = elfReader->getInstructionByAddress(addr,inst);
+	if (status != TraceDqr::DQERR_OK) {
+		printf("Error: nextAddr(): getInstructionByAddress() failed\n");
+
+		return status;
+	}
+
+	crFlag = TraceDqr::isNone;
+	brFlag = TraceDqr::BRFLAG_none;
+
+	// figure out how big the instruction is
+	// Note: immediate will already be adjusted - don't need to mult by 2 before adding to address
+
+	rc = decodeInstruction(inst,inst_size,inst_type,rs1,rd,immediate,isBranch);
+	if (rc != 0) {
+		printf("Error: nextAddr(): Cannot decode instruction %04x\n",inst);
+
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	switch (inst_type) {
+	case TraceDqr::INST_UNKNOWN:
+		// btm and htm same
+
+		pc = addr + inst_size/8;
+		break;
+	case TraceDqr::INST_JAL:
+		// btm and htm same
+
+		// rd = pc+4 (rd can be r0)
+		// pc = pc + (sign extended immediate offset)
+		// plan unconditional jumps use rd -> r0
+		// inferrable unconditional
+
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			counts->push(core,addr + inst_size/8);
+			crFlag |= TraceDqr::isCall;
+		}
+
+		pc = addr + immediate;
+		break;
+	case TraceDqr::INST_JALR:
+		// btm: indirect branch; return pc = -1
+		// htm: indirect branch with history; return pc = pop'd addr if possible, else -1
+
+		// rd = pc+4 (rd can be r0)
+		// pc = pc + ((sign extended immediate offset) + rs) & 0xffe
+		// plain unconditional jumps use rd -> r0
+		// not inferrable unconditional
+
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
+				counts->push(core,addr+inst_size/8);
+				pc = -1;
+				crFlag |= TraceDqr::isCall;
+			}
+			else if (rd != rs1) { // rd == link; rs1 == link; rd != rs1
+				pc = counts->pop(core);
+				counts->push(core,addr+inst_size/8);
+				crFlag |= TraceDqr::isSwap;
+			}
+			else { // rd == link; rs1 == link; rd == rs1
+				counts->push(core,addr+inst_size/8);
+				pc = -1;
+				crFlag |= TraceDqr::isCall;
+			}
+		}
+		else if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) { // rd != link; rs1 == link
+			pc = counts->pop(core);
+			crFlag |= TraceDqr::isReturn;
+		}
+		else {
+			pc = -1;
+		}
+
+		if (traceType == TraceDqr::TRACETYPE_BTM) {
+			if (counts->consumeICnt(core,0) > inst_size / 16) {
+				// this handles the case of jumping to the instruction following the jump!
+
+				pc = addr + inst_size/8;
+			}
+			else {
+				pc = -1;
+			}
+		}
+		break;
+	case TraceDqr::INST_BEQ:
+	case TraceDqr::INST_BNE:
+	case TraceDqr::INST_BLT:
+	case TraceDqr::INST_BGE:
+	case TraceDqr::INST_BLTU:
+	case TraceDqr::INST_BGEU:
+	case TraceDqr::INST_C_BEQZ:
+	case TraceDqr::INST_C_BNEZ:
+		// htm: follow history bits
+		// btm: there will only be a trace record following this for taken branch. not taken branches are not
+		// reported. If btm mode, we can look at i-count. If it is going to go to 0, branch was taken (direct branch message
+		// will follow). If not going to 0, not taken
+
+		// pc = pc + (sign extend immediate offset) (BLTU and BGEU are not sign extended)
+		// inferrable conditional
+
+		if (traceType == TraceDqr::TRACETYPE_HTM) {
+			// htm mode
+			ct = counts->getCurrentCountType(core);
+			switch (ct) {
+			case TraceDqr::COUNTTYPE_none:
+				printf("Error: nextAddr(): instruction counts consumed\n");
+
+				return TraceDqr::DQERR_ERR;
+			case TraceDqr::COUNTTYPE_i_cnt:
+				// don't know if the branch is taken or not, so we don't know the next addr
+
+				// This can happen with resource full messages where an i-cnt type resource full
+				// may be emitted by the encoder due to i-cnt overflow, and it still have non-emitted
+				// history bits. We will need to keep reading trace messages until we get a some
+				// history. The current trace message should be retired.
+
+				// this is not an error. Just keep retrying until we get a trace message that
+				// kicks things loose again
+
+				pc = -1;
+
+				// The caller can detect this has happened and read a new trace message and retry, by
+				// checking the brFlag for BRFLAG_unkown
+
+				brFlag = TraceDqr::BRFLAG_unknown;
+				break;
+			case TraceDqr::COUNTTYPE_history:
+				//consume history bit here and set pc accordingly
+
+				rc = counts->consumeHistory(core,isTaken);
+				if ( rc != 0) {
+					printf("Error: nextAddr(): consumeHistory() failed\n");
+
+					status = TraceDqr::DQERR_ERR;
+
+					return status;
+				}
+
+				if (isTaken) {
+					pc = addr + immediate;
+					brFlag = TraceDqr::BRFLAG_taken;
+				}
+				else {
+					pc = addr + inst_size / 8;
+					brFlag = TraceDqr::BRFLAG_notTaken;
+				}
+				break;
+			case TraceDqr::COUNTTYPE_taken:
+				rc = counts->consumeTakenCount(core);
+				if ( rc != 0) {
+					printf("Error: nextAddr(): consumeTakenCount() failed\n");
+
+					status = TraceDqr::DQERR_ERR;
+
+					return status;
+				}
+
+				pc = addr + immediate;
+				brFlag = TraceDqr::BRFLAG_taken;
+				break;
+			case TraceDqr::COUNTTYPE_notTaken:
+				rc = counts->consumeNotTakenCount(core);
+				if ( rc != 0) {
+					printf("Error: nextAddr(): consumeTakenCount() failed\n");
+
+					status = TraceDqr::DQERR_ERR;
+
+					return status;
+				}
+
+				pc = addr + inst_size / 8;
+				brFlag = TraceDqr::BRFLAG_notTaken;
+				break;
+			}
+		}
+		else {
+			// btm mode
+
+			// if i-cnts don't go to zero for this instruction, this branch is not taken in btmmode.
+			// if i-cnts go to zero for this instruciotn, it might be a taken branch. Need to look
+			// at the tcode for the current nexus message. If it is a direct branch with or without
+			// sync, it is taken. Otherwise, not taken (it could be the result of i-cnt reaching the
+			// limit, forcing a sync type message, but branch not taken).
+
+			if (counts->consumeICnt(core,0) > inst_size / 16) {
+				// not taken
+
+				pc = addr + inst_size / 8;
+
+				brFlag = TraceDqr::BRFLAG_notTaken;
+			}
+			else if ((tcode == TraceDqr::TCODE_DIRECT_BRANCH) || (tcode == TraceDqr::TCODE_DIRECT_BRANCH_WS)) {
+				// taken
+
+				pc = addr + immediate;
+
+				brFlag = TraceDqr::BRFLAG_taken;
+			}
+			else {
+				// not taken
+
+				pc = addr + inst_size / 8;
+
+				brFlag = TraceDqr::BRFLAG_notTaken;
+			}
+		}
+		break;
+	case TraceDqr::INST_C_J:
+		// btm, htm same
+
+		// pc = pc + (signed extended immediate offset)
+		// inferrable unconditional
+
+		pc = addr + immediate;
+		break;
+	case TraceDqr::INST_C_JAL:
+		// btm, htm same
+
+		// x1 = pc + 2
+		// pc = pc + (signed extended immediate offset)
+		// inferrable unconditional
+
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			counts->push(core,addr + inst_size/8);
+			crFlag |= TraceDqr::isCall;
+		}
+
+		pc = addr + immediate;
+		break;
+	case TraceDqr::INST_C_JR:
+		// pc = pc + rs1
+		// not inferrable unconditional
+
+		if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
+			pc = counts->pop(core);
+			crFlag |= TraceDqr::isReturn;
+		}
+		else {
+			pc = -1;
+		}
+
+		if (traceType == TraceDqr::TRACETYPE_BTM) {
+			if (counts->consumeICnt(core,0) > inst_size / 16) {
+				// this handles the case of jumping to the instruction following the jump!
+
+				pc = addr + inst_size / 8;
+			}
+			else {
+				pc = -1;
+			}
+		}
+		break;
+	case TraceDqr::INST_C_JALR:
+		// x1 = pc + 2
+		// pc = pc + rs1
+		// not inferrble unconditional
+
+		if (rs1 == TraceDqr::REG_5) {
+			pc = counts->pop(core);
+			counts->push(core,addr+inst_size/8);
+			crFlag |= TraceDqr::isSwap;
+		}
+		else {
+			counts->push(core,addr+inst_size/8);
+			pc = -1;
+			crFlag |= TraceDqr::isCall;
+		}
+
+		if (traceType == TraceDqr::TRACETYPE_BTM) {
+			if (counts->consumeICnt(core,0) > inst_size / 16) {
+				// this handles the case of jumping to the instruction following the jump!
+
+				pc = addr + inst_size / 8;
+			}
+			else {
+				pc = -1;
+			}
+		}
+		break;
+	case TraceDqr::INST_EBREAK:
+	case TraceDqr::INST_ECALL:
+		crFlag |= TraceDqr::isException;
+		pc = -1;
+		break;
+	case TraceDqr::INST_MRET:
+	case TraceDqr::INST_SRET:
+	case TraceDqr::INST_URET:
+		crFlag |= TraceDqr::isExceptionReturn;
+		pc = -1;
+		break;
+	default:
+		pc = addr + inst_size / 8;
+		break;
+	}
+
+	// Always consume i-cnt unless brFlag == BRFLAG_unknown because we will retry computing next
+	// addr for this instruction later
+
+	if (brFlag != TraceDqr::BRFLAG_unknown) {
+		counts->consumeICnt(core,inst_size/16);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+#endif // foodog
+
+TraceDqr::DQErr Verilator::getTraceFileOffset(int &size,int &offset)
+{
+	size = numLines;
+	offset = currentLine;
+
+	return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::DQErr Verilator::NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags)
 {
 	TraceDqr::DQErr ec;
@@ -9373,6 +9767,7 @@ TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage 
 	int crFlag = 0;
 	TraceDqr::BranchFlags brFlags = TraceDqr::BRFLAG_none;
 	VRec vrec;
+	int currentCore;
 
 	if (instInfo != nullptr) {
 		*instInfo = nullptr;
@@ -9410,6 +9805,12 @@ TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage 
 
 	size_t insn_size = disasm_func(vrec.pc,&disasm_info);
 
+	// need current addr and next addr! for this core!!
+
+	// need to get next vrec for nextAddr!
+
+	//rc = nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag); should this also return inst size?
+
 // we should cache disassembly!
 
 	// now turn vrec into instrec
@@ -9422,6 +9823,7 @@ TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage 
 	instructionInfo.addressLabel = nullptr;
 	instructionInfo.addressLabelOffset = 0;
 	instructionInfo.timestamp = vrec.cycles;
+	instructionInfo.cycles = 0;
 
 	rc = decodeInstructionSize(vrec.inst,instructionInfo.instSize);
 	if (TraceDqr::DQERR_OK != 0) {
@@ -9448,6 +9850,8 @@ TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage 
 	// create synthetic nexus messages? Do we really need this?
 
 //	Disassemble();
+
+//	currentAddress[currentCore] = vrec.pc;
 
 	return TraceDqr::DQERR_OK;
 }

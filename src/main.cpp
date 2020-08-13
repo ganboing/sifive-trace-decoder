@@ -733,7 +733,7 @@ int main(int argc, char *argv[])
 				firstPrint = false;
 			}
 
-			if ((trace_flag || itcprint_flag) && (msgInfo != nullptr)) {
+			if ((trace != nullptr) && (trace_flag || itcprint_flag) && (msgInfo != nullptr)) {
 				// got the goods! Get to it!
 
 				core_mask |= 1 << msgInfo->coreId;
@@ -795,7 +795,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if (itcprint_flag) {
+	if ((trace != nullptr) && itcprint_flag) {
 		std::string s = "";
 		bool haveStr;
 

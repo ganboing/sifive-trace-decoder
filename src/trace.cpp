@@ -235,6 +235,7 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
   instructionInfo.operandLabelOffset = 0;
 
   instructionInfo.timestamp = 0;
+  instructionInfo.cycles = 0;
 
   sourceInfo.sourceFile = nullptr;
   sourceInfo.sourceFunction = nullptr;
@@ -1970,6 +1971,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				(*instInfo)->brFlags = brFlags;
 
 				(*instInfo)->timestamp = lastTime[currentCore];
+				(*instInfo)->cycles = 0;
 			}
 
 			if (srcInfo != nullptr) {
