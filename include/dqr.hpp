@@ -670,7 +670,7 @@ private:
 	int              currentCore;
 	int              srcbits;
 	bool             bufferItc;
-	int              enterISR;
+	int              enterISR[DQR_MAXCORES];
 
 	int              startMessageNum;
 	int              endMessageNum;
@@ -732,8 +732,6 @@ public:
 
 	TraceDqr::DQErr getTraceFileOffset(int &size,int &offset);
 
-	TraceDqr::DQErr decodeInstructionSize(uint32_t inst, int &inst_size);
-
 	TraceDqr::DQErr NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
 	TraceDqr::DQErr NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags);
 
@@ -749,7 +747,13 @@ private:
 	char *lineBuff;
 	char **lines;
 	int numLines;
-	int currentLine;
+	int nextLine;
+	int currentCore;
+	bool flushing;
+
+	bool haveCurrentVrec[DQR_MAXCORES];
+	VRec currentVrec[DQR_MAXCORES];
+	TraceDqr::DQErr deferredStatus;
 
 	Instruction instructionInfo;
 
@@ -757,14 +761,20 @@ private:
 	disassembler_ftype disasm_func;
 	uint32_t instructionBuffer[2];
 
-	TraceDqr::ADDRESS      currentAddress[DQR_MAXCORES];
-	TraceDqr::ADDRESS      currentTime[DQR_MAXCORES];
+	TraceDqr::ADDRESS currentAddress[DQR_MAXCORES];
+	TraceDqr::ADDRESS currentTime[DQR_MAXCORES];
+
+	int  enterISR[DQR_MAXCORES];
 
 	TraceDqr::DQErr readFile(char *file);
 	TraceDqr::DQErr parseFile();
 	TraceDqr::DQErr parseLine(int l,VRec *vrec);
+	TraceDqr::DQErr getNextVrec(int nextLine,VRec &vrec);
+
 //	need to rename nextAddr to compueFlags or something
-//	TraceDqr::DQErr nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag)
+	TraceDqr::DQErr computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint32_t currentInst,TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag);
+	TraceDqr::DQErr flushNextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
+	TraceDqr::DQErr buildInstructionFromVrec(VRec *vrec,TraceDqr::BranchFlags brFlags,int crFlag);
 };
 
 #endif /* DQR_HPP_ */

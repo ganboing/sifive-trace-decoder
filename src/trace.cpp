@@ -247,7 +247,9 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
   tsSize = 40;
   tsBase = 0;
 
-  enterISR = TraceDqr::isNone;
+  for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
+	  enterISR[i] = TraceDqr::isNone;
+  }
 
   status = TraceDqr::DQERR_OK;
 }
@@ -1744,7 +1746,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 
 				if (b_type == TraceDqr::BTYPE_EXCEPTION) {
-					enterISR = TraceDqr::isInterrupt;
+					enterISR[currentCore] = TraceDqr::isInterrupt;
 				}
 
 				readNewTraceMessage = true;
@@ -1966,8 +1968,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			if (instInfo != nullptr) {
 				instructionInfo.coreId = currentCore;
 				*instInfo = &instructionInfo;
-				(*instInfo)->CRFlag = (crFlag | enterISR);
-				enterISR = TraceDqr::isNone;
+				(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
+				enterISR[currentCore] = TraceDqr::isNone;
 				(*instInfo)->brFlags = brFlags;
 
 				(*instInfo)->timestamp = lastTime[currentCore];
