@@ -500,7 +500,12 @@ int main(int argc, char *argv[])
 	// might want to include some path info!
 
 	if (vf_name != nullptr) {
-		v = new (std::nothrow) Verilator(vf_name,archSize);
+		if ( ef_name != nullptr) {
+			v = new (std::nothrow) Verilator(vf_name,ef_name);
+		}
+		else {
+			v = new (std::nothrow) Verilator(vf_name,archSize);
+		}
 
 		assert(v != nullptr);
 
@@ -634,7 +639,6 @@ int main(int argc, char *argv[])
 					if (srcbits > 0) {
 						printf("[%d] ",instInfo->coreId);
 					}
-
 					if (instInfo->address != (lastAddress + lastInstSize / 8)) {
 						if (instInfo->addressLabel != nullptr) {
 							printf("<%s",instInfo->addressLabel);
@@ -657,6 +661,8 @@ int main(int argc, char *argv[])
 
 				if ((v != nullptr) && (instInfo->timestamp != 0)) {
 					n = printf("t:%d ",instInfo->timestamp);
+
+					n += printf("[%d] ",instInfo->cycles);
 
 					for (int i = n; i < 12; i++) {
 						printf(" ");

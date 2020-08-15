@@ -278,6 +278,8 @@ public:
 	static int   decodeInstruction(uint32_t instruction,int archSize,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
 
 	void  overridePrintAddress(bfd_vma addr, struct disassemble_info *info); // hmm.. don't need info - part of object!
+	void  getAddressSyms(bfd_vma vma);
+	void  clearOperandAddress();
 
 	Instruction getInstructionInfo() { return instruction; }
 	Source      getSourceInfo() { return source; }

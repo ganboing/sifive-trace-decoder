@@ -944,7 +944,7 @@ ElfReader::ElfReader(char *elfname)
 
   aitp = bfd_get_arch_info(abfd);
   if (aitp == nullptr) {
-	  printf("Error: ElfReader(): Cannot get arch in for file %s\n",elfname);
+	  printf("Error: ElfReader(): Cannot get arch info for file %s\n",elfname);
 
 	  status = TraceDqr::TraceDqr::DQERR_ERR;
 	  return;
@@ -7316,11 +7316,6 @@ Disassembler::Disassembler(bfd *abfd)
    	info->section = codeSectionLst->asecptr;
    	info->buffer = (bfd_byte*)codeSectionLst->code;
 
-//   	info->buffer_vma = text->vma;
-//   	info->buffer_length = text->size;
-//   	info->section = text;
-//   	bfd_malloc_and_get_section(abfd,text,&info->buffer);
-
    	info->application_data = (void*)this;
 
    	disassemble_init_for_target(info);
@@ -7471,7 +7466,6 @@ int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index
 		return 0;
 	}
 
-	//asymbol **syms;
 	int i;
 
 	// check for a cache hit
@@ -7549,7 +7543,8 @@ void Disassembler::overridePrintAddress(bfd_vma addr, struct disassemble_info *i
 	// use field in info to point to disassembler object so we can call member funcs
 
 	if (info != this->info) {
-		printf("Error: overridePrintAddress(): info does not match\n");
+//		printf("Error: overridePrintAddress(): info does not match (0x%08x, 0x%08x)\n",this->info,info);
+//		this may be okay. Different info.
 	}
 
 	instruction.operandAddress = addr;
@@ -7562,8 +7557,11 @@ void Disassembler::overridePrintAddress(bfd_vma addr, struct disassemble_info *i
 	rc = lookup_symbol_by_address(addr,BSF_FUNCTION,&index,&offset);
 
 	if (rc != 0) {
-
 		// found symbol
+
+//		printf("found symbol @0x%08x '%s' %x\n",addr,sorted_syms[index]->name,offset);
+
+		// putting in wrong instrction object!!!!!
 
 		instruction.operandLabel = sorted_syms[index]->name;
 		instruction.operandLabelOffset = offset;
@@ -7662,6 +7660,35 @@ void Disassembler::print_address_and_instruction(bfd_vma vma)
 	else {
 		 printf("       %04x                    ",ins);
 	}
+}
+
+void Disassembler::getAddressSyms(bfd_vma vma)
+{
+	// find closest preceeding function symbol and print with offset
+
+	int index;
+	int offset;
+	int rc;
+
+	rc = lookup_symbol_by_address(vma,BSF_FUNCTION,&index,&offset);
+	if (rc == 0) {
+		// did not find symbol
+
+		instruction.addressLabel = nullptr;
+		instruction.addressLabelOffset = 0;
+	}
+	else {
+
+		// found symbol
+
+		instruction.addressLabel = sorted_syms[index]->name;
+		instruction.addressLabelOffset = offset;
+	}
+}
+
+void Disassembler::clearOperandAddress()
+{
+	instruction.haveOperandAddress = false;
 }
 
 void Disassembler::setInstructionAddress(bfd_vma vma)
@@ -8786,6 +8813,9 @@ Verilator::Verilator(char *f_name,int arch_size)
 	currentCore = 0;
 	flushing = false;
 
+	elfReader = nullptr;
+	disassembler = nullptr;
+
 	if (f_name == nullptr) {
 		status = TraceDqr::DQERR_ERR;
 		return;
@@ -8822,11 +8852,125 @@ Verilator::Verilator(char *f_name,int arch_size)
 		mach = bfd_mach_riscv32;
 	}
 
-	disasm_func = disassembler((bfd_architecture)67/*bfd_arch_riscv*/,false,mach,nullptr);
+	disasm_func = ::disassembler((bfd_architecture)67/*bfd_arch_riscv*/,false,mach,nullptr);
 	if (disasm_func == nullptr) {
 		status = TraceDqr::DQERR_ERR;
 		return;
 	}
+
+	disasm_info.read_memory_func = buffer_read_memory;
+	disasm_info.buffer = (bfd_byte*)instructionBuffer;
+	disasm_info.buffer_vma = 0;
+	disasm_info.buffer_length = sizeof instructionBuffer;
+
+	disassemble_init_for_target(&disasm_info);
+
+	for (int i = 0; (size_t)i < sizeof currentAddress / sizeof currentAddress[0]; i++) {
+		currentAddress[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof currentTime / sizeof currentTime[0]; i++) {
+		currentTime[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof haveCurrentVrec / sizeof haveCurrentVrec[0]; i++) {
+		haveCurrentVrec[i] = false;
+	}
+
+	for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
+		enterISR[i] = 0;
+	}
+
+	status = TraceDqr::DQERR_OK;
+	return;
+}
+
+Verilator::Verilator(char *f_name,char *e_name)
+{
+	TraceDqr::DQErr ec;
+
+	vf_name = nullptr;
+	lineBuff = nullptr;
+	lines = nullptr;
+	numLines = 0;
+	nextLine = 0;
+	currentCore = 0;
+	flushing = false;
+	elfReader = nullptr;
+	disassembler = nullptr;
+
+	if (f_name == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	ec = readFile(f_name);
+	if (ec != TraceDqr::DQERR_OK) {
+		status = ec;
+		return;
+	}
+
+    elfReader = new (std::nothrow) ElfReader(e_name);
+
+    assert(elfReader != nullptr);
+
+    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
+    	delete elfReader;
+    	elfReader = nullptr;
+
+    	status = TraceDqr::DQERR_ERR;
+
+    	return;
+    }
+
+    bfd *abfd;
+    abfd = elfReader->get_bfd();
+
+	disassembler = new (std::nothrow) Disassembler(abfd);
+
+	assert(disassembler != nullptr);
+
+	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+		if (elfReader != nullptr) {
+			delete elfReader;
+			elfReader = nullptr;
+		}
+
+		delete disassembler;
+		disassembler = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
+	// prep the dissasembler
+
+	archSize = elfReader->getArchSize();
+
+	init_disassemble_info(&disasm_info,stdout,(fprintf_ftype)stringify_callback);
+
+	disasm_info.arch = bfd_arch_riscv;
+
+	int mach;
+
+	if (archSize == 64) {
+		disasm_info.mach = bfd_mach_riscv64;
+		mach = bfd_mach_riscv64;
+	}
+	else {
+		disasm_info.mach = bfd_mach_riscv32;
+		mach = bfd_mach_riscv32;
+	}
+
+	disasm_func = ::disassembler((bfd_architecture)67/*bfd_arch_riscv*/,false,mach,nullptr);
+	if (disasm_func == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+   	disasm_info.print_address_func = override_print_address;
+   	disasm_info.application_data = (void*)disassembler;
 
 	disasm_info.read_memory_func = buffer_read_memory;
 	disasm_info.buffer = (bfd_byte*)instructionBuffer;
@@ -8870,6 +9014,16 @@ void Verilator::cleanUp()
 	if (lineBuff != nullptr) {
 		delete [] lineBuff;
 		lineBuff = nullptr;
+	}
+
+	if (elfReader != nullptr) {
+		delete elfReader;
+		elfReader = nullptr;
+	}
+
+	if (disassembler != nullptr) {
+		delete disassembler;
+		disassembler = nullptr;
 	}
 }
 
@@ -9550,7 +9704,7 @@ TraceDqr::DQErr Verilator::getNextVrec(int nextLine,VRec &vrec)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr Verilator::flushNextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo)
+TraceDqr::DQErr Verilator::flushNextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo)
 {
 	TraceDqr::DQErr rc;
 
@@ -9558,12 +9712,10 @@ TraceDqr::DQErr Verilator::flushNextInstruction(Instruction **instInfo, NexusMes
 		if (haveCurrentVrec[i]){
 			haveCurrentVrec[i] = false;
 
-			rc = buildInstructionFromVrec(&currentVrec[i],TraceDqr::BRFLAG_none,TraceDqr::isNone);
+			rc = buildInstructionFromVrec(instInfo,&currentVrec[i],TraceDqr::BRFLAG_none,TraceDqr::isNone);
 
-			if (rc == TraceDqr::DQERR_OK) {
-				if (instInfo != nullptr) {
-					*instInfo = &instructionInfo;
-				}
+			if ((disassembler != nullptr) && (srcInfo != nullptr)) {
+				disassembler->getSrcLines(instInfo->address, &sourceInfo.sourceFile, &sourceInfo.sourceFunction, &sourceInfo.sourceLineNum, &sourceInfo.sourceLine);
 			}
 
 			return rc;
@@ -9573,15 +9725,15 @@ TraceDqr::DQErr Verilator::flushNextInstruction(Instruction **instInfo, NexusMes
 	return deferredStatus;
 }
 
-TraceDqr::DQErr Verilator::buildInstructionFromVrec(VRec *vrec,TraceDqr::BranchFlags brFlags,int crFlag)
+TraceDqr::DQErr Verilator::buildInstructionFromVrec(Instruction *instInfo,VRec *vrec,TraceDqr::BranchFlags brFlags,int crFlag)
 {
 	// at this point we have two vrecs for same core
 
 	disasm_info.buffer_vma = vrec->pc;
 	instructionBuffer[0] = vrec->inst;
 
-	instructionInfo.instructionText[0] = 0;
-	dis_output = instructionInfo.instructionText;
+	instInfo->instructionText[0] = 0;
+	dis_output = instInfo->instructionText;
 
 	// don't need to use global dis_output to point to where to print. Instead, override stream to point to char
 	// buffer of where to print data to. This will give multi-instance safe code for verilator and trace objects
@@ -9590,22 +9742,55 @@ TraceDqr::DQErr Verilator::buildInstructionFromVrec(VRec *vrec,TraceDqr::BranchF
 	// the elf file if we don't have one! So can't allocate a block of memory for the code region unless
 	// we read through the verilator file and collect info on pc addresses first
 
+	if (disassembler != nullptr) {
+		disassembler->clearOperandAddress();
+	}
+
 	size_t instSize = disasm_func(vrec->pc,&disasm_info)*8;
+
+	if (disassembler != nullptr) {
+		Instruction tmpInfo;
+		tmpInfo = disassembler->getInstructionInfo();
+		disassembler->getAddressSyms(vrec->pc);
+
+		instInfo->haveOperandAddress = tmpInfo.haveOperandAddress;
+		instInfo->operandAddress = tmpInfo.operandAddress;
+
+		instInfo->operandLabel = tmpInfo.operandLabel;
+		instInfo->operandLabelOffset = tmpInfo.operandLabelOffset;
+
+		instInfo->addressLabel = tmpInfo.addressLabel;
+		instInfo->addressLabelOffset = tmpInfo.addressLabelOffset;
+
+//		printf("operandAdress: %08x\n",instInfo->operandAddress);
+//		printf("haveOperandAddress: %d\n",instInfo->haveOperandAddress);
+//		printf("operandLabel: '%s'\n",instInfo->operandLabel);
+//		printf("operandLabelOffset: %d\n",instInfo->operandLabelOffset);
+//		printf("->addressLabel: '%s'\n",instInfo->addressLabel);
+//		printf("addressLabelOffset: %d\n",instInfo->addressLabelOffset);
+	}
+	else {
+		instInfo->haveOperandAddress = false;
+		instInfo->operandAddress = 0;
+		instInfo->operandLabel = nullptr;
+		instInfo->operandLabelOffset = 0;
+		instInfo->addressLabel = nullptr;
+		instInfo->addressLabelOffset = 0;
+	}
 
 	// now turn vrec into instrec
 
-	instructionInfo.coreId = vrec->coreId;
-	instructionInfo.address = vrec->pc;
-	instructionInfo.instruction = vrec->inst;
-	instructionInfo.instSize = instSize;
-	instructionInfo.brFlags = brFlags;
-	instructionInfo.CRFlag = crFlag;
-	instructionInfo.addressLabel = nullptr;
-	instructionInfo.addressLabelOffset = 0;
-	instructionInfo.timestamp = vrec->cycles;
-	instructionInfo.cycles = 0;
+	instInfo->coreId = vrec->coreId;
+	instInfo->address = vrec->pc;
+	instInfo->instruction = vrec->inst;
+	instInfo->instSize = instSize;
+	instInfo->brFlags = brFlags;
+	instInfo->CRFlag = crFlag;
 
-	instructionInfo.haveOperandAddress = false; // this needs done correctly - this isn't correct
+	instInfo->timestamp = vrec->cycles;
+
+	instInfo->cycles = vrec->cycles - currentTime[vrec->coreId];
+	currentTime[vrec->coreId] = vrec->cycles;
 
 	return TraceDqr::DQERR_OK;
 }
@@ -9723,41 +9908,55 @@ TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage 
 	}
 
 	if (flushing) {
-		rc = flushNextInstruction(instInfo, msgInfo, srcInfo);
+		rc = flushNextInstruction(&instructionInfo,&messageInfo,&sourceInfo);
+
+		if (instInfo != nullptr) {
+			*instInfo = &instructionInfo;
+		}
+
+		if (srcInfo != nullptr) {
+			if (disassembler != nullptr) {
+				disassembler->getSrcLines(instructionInfo.address, &sourceInfo.sourceFile, &sourceInfo.sourceFunction, &sourceInfo.sourceLineNum, &sourceInfo.sourceLine);
+
+				*srcInfo = &sourceInfo;
+			}
+		}
+
 		return rc;
 	}
 
 	rc = computeBranchFlags(currentVrec[currentCore].pc,currentVrec[currentCore].inst,nextVrec.pc,crFlag,brFlags);
 	if (rc != TraceDqr::DQERR_OK) {
 		printf("Error: Verilator::NextInstruction(): could not compute branch flags\n");
+
 		status = rc;
 		return status;
 	}
 
 	currentCore = nextVrec.coreId;
 
-	rc = buildInstructionFromVrec(&currentVrec[currentCore],brFlags,crFlag);
+	rc = buildInstructionFromVrec(&instructionInfo,&currentVrec[currentCore],brFlags,crFlag);
 
 	currentVrec[currentCore] = nextVrec;
 
-	*instInfo = &instructionInfo;
+	if (disassembler != nullptr) {
+		disassembler->getSrcLines(instructionInfo.address, &sourceInfo.sourceFile, &sourceInfo.sourceFunction, &sourceInfo.sourceLineNum, &sourceInfo.sourceLine);
+	}
 
-	// need multicore support
+	if (instInfo != nullptr) {
+		*instInfo = &instructionInfo;
+	}
+
+	if (srcInfo != nullptr) {
+		*srcInfo = &sourceInfo;
+	}
+
 	// caching of instruction/address
 	// improve print callback disassembly routines to use stream as a pointer to a struct with a buffer and
 	// and length to improve performance and allow multithreading (or multi object)
 	// improve disassembly to not print 32 bit literals as 64 bits
 
-	// check isvalid or whatever to make sure the line is valid in the verilator otuput file
-	// add timestamp field to instruction type, add display of timestamp in main. Also need flag for haveTimestamp
-
-	// compute crFlags, brFlags
-
 	// create synthetic nexus messages? Do we really need this?
-
-//	Disassemble();
-
-//	currentAddress[currentCore] = vrec.pc;
 
 	return TraceDqr::DQERR_OK;
 }

@@ -725,6 +725,7 @@ public:
 class Verilator {
 public:
 	Verilator(char *f_name,int arch_size = 32);
+	Verilator(char *f_name,char *e_name);
 	~Verilator();
 
 	void cleanUp();
@@ -755,7 +756,12 @@ private:
 	VRec currentVrec[DQR_MAXCORES];
 	TraceDqr::DQErr deferredStatus;
 
-	Instruction instructionInfo;
+	Instruction  instructionInfo;
+	Source       sourceInfo;
+	NexusMessage messageInfo;
+
+	class ElfReader    *elfReader; // need this class to create disassembler class
+	class Disassembler *disassembler;
 
 	disassemble_info disasm_info;
 	disassembler_ftype disasm_func;
@@ -773,8 +779,8 @@ private:
 
 //	need to rename nextAddr to compueFlags or something
 	TraceDqr::DQErr computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint32_t currentInst,TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag);
-	TraceDqr::DQErr flushNextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
-	TraceDqr::DQErr buildInstructionFromVrec(VRec *vrec,TraceDqr::BranchFlags brFlags,int crFlag);
+	TraceDqr::DQErr flushNextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo);
+	TraceDqr::DQErr buildInstructionFromVrec(Instruction *instInfo,VRec *vrec,TraceDqr::BranchFlags brFlags,int crFlag);
 };
 
 #endif /* DQR_HPP_ */
