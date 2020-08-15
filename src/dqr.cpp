@@ -9943,16 +9943,18 @@ TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage 
 
 	currentVrec[currentCore] = nextVrec;
 
-	if (disassembler != nullptr) {
-		disassembler->getSrcLines(instructionInfo.address, &sourceInfo.sourceFile, &sourceInfo.sourceFunction, &sourceInfo.sourceLineNum, &sourceInfo.sourceLine);
-	}
-
 	if (instInfo != nullptr) {
 		*instInfo = &instructionInfo;
 	}
 
-	if (srcInfo != nullptr) {
-		*srcInfo = &sourceInfo;
+	if (disassembler != nullptr) {
+		int rc;
+
+		rc = disassembler->getSrcLines(instructionInfo.address, &sourceInfo.sourceFile, &sourceInfo.sourceFunction, &sourceInfo.sourceLineNum, &sourceInfo.sourceLine);
+
+		if ((rc != 0) && (srcInfo != nullptr)) {
+			*srcInfo = &sourceInfo;
+		}
 	}
 
 	// caching of instruction/address

@@ -18,14 +18,22 @@ public class vdqr {
 
   public static void main(String argv[]) {
     System.out.printf("%d elements in argv[]\n",argv.length);
-    if (argv.length != 1) {
+
+    Verilator v = null;
+
+    if (argv.length == 1) {
+	v = new Verilator(argv[0],32);
+    }
+    else if (argv.length == 2) {
+	v = new Verilator(argv[0],argv[1]);
+    }
+    else {
 	    System.out.println("Usage: java vdqr <trace-file-name>");
 	    System.exit(1);
     }
 
     System.out.printf("dqrdll version: %s\n",Trace.version());
  
-    Verilator v = new Verilator(argv[0],32);
     if (v == null) {
       System.out.println("v is null");
       System.exit(1);
@@ -46,10 +54,10 @@ public class vdqr {
 
     SWIGTYPE_p_int flags = TraceDecoder.new_intp();
     
-    boolean func_flag = false;
-    boolean file_flag = false;
+    boolean func_flag = true;
+    boolean file_flag = true;
     boolean dasm_flag = true;
-    boolean src_flag = false;
+    boolean src_flag = true;
     boolean itcPrint_flag = false;
     boolean trace_flag = false;
     int srcBits = 0;
