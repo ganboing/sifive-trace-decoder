@@ -306,6 +306,10 @@ public:
 
 	TraceDqr::TIMESTAMP timestamp;
 	int               cycles;
+
+	uint32_t r0Val;
+	uint32_t r1Val;
+	uint32_t wVal;
 };
 
 // class Source: Helper class for source code information for an address

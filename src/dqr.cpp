@@ -9789,6 +9789,10 @@ TraceDqr::DQErr Verilator::buildInstructionFromVrec(Instruction *instInfo,VRec *
 
 	instInfo->timestamp = vrec->cycles;
 
+	instInfo->r0Val = vrec->r1Val;
+	instInfo->r1Val = vrec->r2Val;
+	instInfo->wVal = vrec->wVal;
+
 	instInfo->cycles = vrec->cycles - currentTime[vrec->coreId];
 	currentTime[vrec->coreId] = vrec->cycles;
 
