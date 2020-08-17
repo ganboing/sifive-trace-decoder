@@ -1903,7 +1903,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //			decode instruction/decode instruction size should cache their results (at least last one)
 //			because it gets called a few times here!
 
-			rc = decodeInstructionSize(inst,inst_size);
+			rc = decodeInstructionSize(inst,inst_size);	// inst and inst_size are only used for analytics?
 			if (rc != 0) {
 				printf("Error: Cann't decode size of instruction %04x\n",inst);
 

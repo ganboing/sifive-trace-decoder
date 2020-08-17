@@ -156,7 +156,7 @@ int main(int argc, char *argv[])
 	char *tf_name = nullptr;
 	char *base_name = nullptr;
 	char *ef_name = nullptr;
-	char *vf_name = nullptr;
+	char *sf_name = nullptr;
 	char buff[128];
 	int buff_index = 0;
 	bool usage_flag = false;
@@ -192,7 +192,7 @@ int main(int argc, char *argv[])
 			}
 
 			base_name = nullptr;
-			vf_name = nullptr;
+			sf_name = nullptr;
 
 			tf_name = argv[i];
 		}
@@ -206,7 +206,7 @@ int main(int argc, char *argv[])
 
 			ef_name = nullptr;
 			tf_name = nullptr;
-			vf_name = nullptr;
+			sf_name = nullptr;
 
 			base_name = argv[i];
 		}
@@ -438,10 +438,10 @@ int main(int argc, char *argv[])
 		else if (strcmp("-pathraw",argv[i]) == 0) {
 			pt = TraceDqr::PATH_RAW;
 		}
-		else if (strcmp("-verilator",argv[i]) == 0) {
+		else if (strcmp("-simulator",argv[i]) == 0) {
 			i += 1;
 			if (i >= argc) {
-				printf("Error: option -verilator requires a file name\n");
+				printf("Error: option -simulator requires a file name\n");
 				usage(argv[0]);
 				return 1;
 			}
@@ -450,7 +450,7 @@ int main(int argc, char *argv[])
 			tf_name = nullptr;
 			ef_name = nullptr;
 
-			vf_name = argv[i];
+			sf_name = argv[i];
 		}
 		else if (strncmp("-archsize=",argv[i],sizeof "-archsize=") == 0) {
 			archSize = atoi(argv[i]+strlen("-archsize="));
@@ -476,8 +476,8 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
-	if ((vf_name == nullptr) && (tf_name == nullptr) && (base_name == nullptr)) {
-		printf("Error: must specify either verilator file, trace file, or base name\n");
+	if ((sf_name == nullptr) && (tf_name == nullptr) && (base_name == nullptr)) {
+		printf("Error: must specify either simulator file, trace file, or base name\n");
 		usage(argv[0]);
 		return 1;
 	}
@@ -495,25 +495,25 @@ int main(int argc, char *argv[])
 	}
 
 	Trace *trace = nullptr;
-	Verilator *v = nullptr;
+	Simulator *sim = nullptr;
 
 	// might want to include some path info!
 
-	if (vf_name != nullptr) {
+	if (sf_name != nullptr) {
 		if ( ef_name != nullptr) {
-			v = new (std::nothrow) Verilator(vf_name,ef_name);
+			sim = new (std::nothrow) Simulator(sf_name,ef_name);
 		}
 		else {
-			v = new (std::nothrow) Verilator(vf_name,archSize);
+			sim = new (std::nothrow) Simulator(sf_name,archSize);
 		}
 
-		assert(v != nullptr);
+		assert(sim != nullptr);
 
-		if (v->getStatus() != TraceDqr::DQERR_OK) {
-			delete v;
-			v = nullptr;
+		if (sim->getStatus() != TraceDqr::DQERR_OK) {
+			delete sim;
+			sim = nullptr;
 
-			printf("Error: new Verilator(%s,%d) failed\n",vf_name,archSize);
+			printf("Error: new Simulator(%s,%d) failed\n",sf_name,archSize);
 
 			return 1;
 		}
@@ -582,8 +582,8 @@ int main(int argc, char *argv[])
 	TraceDqr::TIMESTAMP startTime, endTime;
 
 	do {
-		if (v != nullptr) {
-			ec = v->NextInstruction(&instInfo,&msgInfo,&srcInfo);
+		if (sim != nullptr) {
+			ec = sim->NextInstruction(&instInfo,&msgInfo,&srcInfo);
 		}
 		else {
 			ec = trace->NextInstruction(&instInfo,&msgInfo,&srcInfo);
@@ -659,7 +659,7 @@ int main(int argc, char *argv[])
 
 				int n;
 
-				if ((v != nullptr) && (instInfo->timestamp != 0)) {
+				if ((sim != nullptr) && (instInfo->timestamp != 0)) {
 					n = printf("t:%d ",instInfo->timestamp);
 
 					n += printf("[%d] ",instInfo->cycles);
@@ -843,8 +843,8 @@ int main(int argc, char *argv[])
 			firstPrint = false;
 			printf("%s",dst);
 		}
-		if (v != nullptr) {
-			v->analyticsToText(dst,sizeof dst,analytics_detail);
+		if (sim != nullptr) {
+			sim->analyticsToText(dst,sizeof dst,analytics_detail);
 			if (firstPrint == false) {
 				printf("\n");
 			}
@@ -860,9 +860,9 @@ int main(int argc, char *argv[])
 	trace = nullptr;
 	}
 
-	if (v != nullptr) {
-		delete v;
-		v = nullptr;
+	if (sim != nullptr) {
+		delete sim;
+		sim = nullptr;
 	}
 
 	return 0;

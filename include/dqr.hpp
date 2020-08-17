@@ -702,7 +702,7 @@ private:
 	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts);
 };
 
-class VRec {
+class SRec {
 public:
 	void dump();
 	bool validLine;
@@ -723,19 +723,20 @@ public:
 };
 
 #ifdef SWIG
-	%ignore Verilator::NextInstruction(Instruction **instInfo,NexusMessage **msgInfo,Source **srcInfo);
+	%ignore Simulator::NextInstruction(Instruction **instInfo,NexusMessage **msgInfo,Source **srcInfo);
 #endif // SWIG
 
-class Verilator {
+class Simulator {
 public:
-	Verilator(char *f_name,int arch_size = 32);
-	Verilator(char *f_name,char *e_name);
-	~Verilator();
+	Simulator(char *f_name,int arch_size = 32);
+	Simulator(char *f_name,char *e_name);
+	~Simulator();
 
 	void cleanUp();
 	TraceDqr::DQErr getStatus() {return status;}
 
 	TraceDqr::DQErr getTraceFileOffset(int &size,int &offset);
+	int Disassemble(SRec *srec);
 
 	TraceDqr::DQErr NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
 	TraceDqr::DQErr NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags);
@@ -756,8 +757,8 @@ private:
 	int currentCore;
 	bool flushing;
 
-	bool haveCurrentVrec[DQR_MAXCORES];
-	VRec currentVrec[DQR_MAXCORES];
+	bool haveCurrentSrec[DQR_MAXCORES];
+	SRec currentSrec[DQR_MAXCORES];
 	TraceDqr::DQErr deferredStatus;
 
 	Instruction  instructionInfo;
@@ -778,13 +779,13 @@ private:
 
 	TraceDqr::DQErr readFile(char *file);
 	TraceDqr::DQErr parseFile();
-	TraceDqr::DQErr parseLine(int l,VRec *vrec);
-	TraceDqr::DQErr getNextVrec(int nextLine,VRec &vrec);
+	TraceDqr::DQErr parseLine(int l,SRec *srec);
+	TraceDqr::DQErr getNextSrec(int nextLine,SRec &srec);
 
 //	need to rename nextAddr to compueFlags or something
 	TraceDqr::DQErr computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint32_t currentInst,TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag);
 	TraceDqr::DQErr flushNextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo);
-	TraceDqr::DQErr buildInstructionFromVrec(Instruction *instInfo,VRec *vrec,TraceDqr::BranchFlags brFlags,int crFlag);
+	TraceDqr::DQErr buildInstructionFromSrec(SRec *srec,TraceDqr::BranchFlags brFlags,int crFlag);
 };
 
 #endif /* DQR_HPP_ */

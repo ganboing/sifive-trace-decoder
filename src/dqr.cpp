@@ -8801,7 +8801,7 @@ NexusMessageSync::NexusMessageSync()
 	index = 0;
 }
 
-Verilator::Verilator(char *f_name,int arch_size)
+Simulator::Simulator(char *f_name,int arch_size)
 {
 	TraceDqr::DQErr ec;
 
@@ -8873,8 +8873,8 @@ Verilator::Verilator(char *f_name,int arch_size)
 		currentTime[i] = 0;
 	}
 
-	for (int i = 0; (size_t)i < sizeof haveCurrentVrec / sizeof haveCurrentVrec[0]; i++) {
-		haveCurrentVrec[i] = false;
+	for (int i = 0; (size_t)i < sizeof haveCurrentSrec / sizeof haveCurrentSrec[0]; i++) {
+		haveCurrentSrec[i] = false;
 	}
 
 	for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
@@ -8885,7 +8885,7 @@ Verilator::Verilator(char *f_name,int arch_size)
 	return;
 }
 
-Verilator::Verilator(char *f_name,char *e_name)
+Simulator::Simulator(char *f_name,char *e_name)
 {
 	TraceDqr::DQErr ec;
 
@@ -8944,40 +8944,7 @@ Verilator::Verilator(char *f_name,char *e_name)
 		return;
 	}
 
-	// prep the dissasembler
-
 	archSize = elfReader->getArchSize();
-
-	init_disassemble_info(&disasm_info,stdout,(fprintf_ftype)stringify_callback);
-
-	disasm_info.arch = bfd_arch_riscv;
-
-	int mach;
-
-	if (archSize == 64) {
-		disasm_info.mach = bfd_mach_riscv64;
-		mach = bfd_mach_riscv64;
-	}
-	else {
-		disasm_info.mach = bfd_mach_riscv32;
-		mach = bfd_mach_riscv32;
-	}
-
-	disasm_func = ::disassembler((bfd_architecture)67/*bfd_arch_riscv*/,false,mach,nullptr);
-	if (disasm_func == nullptr) {
-		status = TraceDqr::DQERR_ERR;
-		return;
-	}
-
-   	disasm_info.print_address_func = override_print_address;
-   	disasm_info.application_data = (void*)disassembler;
-
-	disasm_info.read_memory_func = buffer_read_memory;
-	disasm_info.buffer = (bfd_byte*)instructionBuffer;
-	disasm_info.buffer_vma = 0;
-	disasm_info.buffer_length = sizeof instructionBuffer;
-
-	disassemble_init_for_target(&disasm_info);
 
 	for (int i = 0; (size_t)i < sizeof currentAddress / sizeof currentAddress[0]; i++) {
 		currentAddress[i] = 0;
@@ -8987,8 +8954,8 @@ Verilator::Verilator(char *f_name,char *e_name)
 		currentTime[i] = 0;
 	}
 
-	for (int i = 0; (size_t)i < sizeof haveCurrentVrec / sizeof haveCurrentVrec[0]; i++) {
-		haveCurrentVrec[i] = false;
+	for (int i = 0; (size_t)i < sizeof haveCurrentSrec / sizeof haveCurrentSrec[0]; i++) {
+		haveCurrentSrec[i] = false;
 	}
 
 	for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
@@ -8999,12 +8966,12 @@ Verilator::Verilator(char *f_name,char *e_name)
 	return;
 }
 
-Verilator::~Verilator()
+Simulator::~Simulator()
 {
 	cleanUp();
 }
 
-void Verilator::cleanUp()
+void Simulator::cleanUp()
 {
 	if (vf_name != nullptr) {
 		delete [] vf_name;
@@ -9027,7 +8994,7 @@ void Verilator::cleanUp()
 	}
 }
 
-TraceDqr::DQErr Verilator::readFile(char *file)
+TraceDqr::DQErr Simulator::readFile(char *file)
 {
 	if (file == nullptr) {
 		status = TraceDqr::DQERR_ERR;
@@ -9035,7 +9002,7 @@ TraceDqr::DQErr Verilator::readFile(char *file)
 		return status;
 	}
 
-//	printf("Verilator::readFile(%s)\n",file);
+//	printf("Simulator::readFile(%s)\n",file);
 
 	int l = strlen(file);
 	vf_name = new char [l+1];
@@ -9045,7 +9012,7 @@ TraceDqr::DQErr Verilator::readFile(char *file)
 	std::ifstream  f(file, std::ifstream::binary);
 
 	if (!f) {
-		printf("Error: Verilator::readAndParse(): could not open verilator file %s for input\n",vf_name);
+		printf("Error: Simulator::readAndParse(): could not open verilator file %s for input\n",vf_name);
 		status = TraceDqr::DQERR_ERR;
 
 		return status;
@@ -9113,7 +9080,7 @@ TraceDqr::DQErr Verilator::readFile(char *file)
 		lines = nullptr;
 		lineBuff = nullptr;
 
-		printf("Error: Verilator::readAndParse(): Error computing line count for file\n");
+		printf("Error: Simulator::readAndParse(): Error computing line count for file\n");
 
 		status = TraceDqr::DQERR_ERR;
 		return status;
@@ -9127,9 +9094,9 @@ TraceDqr::DQErr Verilator::readFile(char *file)
 	return TraceDqr::DQERR_OK;
 }
 
-void VRec::dump()
+void SRec::dump()
 {
-	printf("VRec: %d",validLine);
+	printf("SRec: %d",validLine);
 
 	if (validLine) {
 		printf(" line:%d",line);
@@ -9145,7 +9112,7 @@ void VRec::dump()
 	}
 }
 
-TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
+TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 {
 	if (l >= numLines) {
 		return TraceDqr::DQERR_EOF;
@@ -9155,9 +9122,9 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	int ci = 0;
 	char *ep;
 
-	vrec->validLine = false;
-	vrec->valid = false;
-	vrec->line = l;
+	srec->validLine = false;
+	srec->valid = false;
+	srec->line = l;
 
 	// No syntax errors until find first line that starts with 'C'
 
@@ -9175,10 +9142,10 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	ci += 1;
 
-	vrec->coreId = strtoul(&lp[ci],&ep,10);
+	srec->coreId = strtoul(&lp[ci],&ep,10);
 
 	if (ep == &lp[ci]) {
-		printf("Verilator::parseLine(): syntax error. Expected core number\n");
+		printf("Simulator::parseLine(): syntax error. Expected core number\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9191,7 +9158,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	}
 
 	if (lp[ci] != ':') {
-		printf("Verilator::parseLine(): syntax error. Expected ':' at end of core number\n");
+		printf("Simulator::parseLine(): syntax error. Expected ':' at end of core number\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9199,10 +9166,10 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	ci += 1;
 
-	vrec->cycles = strtoul(&lp[ci],&ep,10);
+	srec->cycles = strtoul(&lp[ci],&ep,10);
 
 	if (ep == &lp[ci]) {
-		printf("Verilator::parseLine(): syntax error. Expected cycle count\n");
+		printf("Simulator::parseLine(): syntax error. Expected cycle count\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9215,7 +9182,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	}
 
 	if (lp[ci] != '[') {
-		printf("Verilator::parseLine(): syntax error. Expected '[' after cycle count\n");
+		printf("Simulator::parseLine(): syntax error. Expected '[' after cycle count\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9224,10 +9191,10 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	ci += 1;
 
 	if ((lp[ci] >= '0') && (lp[ci] <= '1')) {
-		vrec->valid = lp[ci] - '0';
+		srec->valid = lp[ci] - '0';
 	}
 	else {
-		printf("Verilator::parseLine(): syntax error. Expected valid flag of either 0 or 1\n");
+		printf("Simulator::parseLine(): syntax error. Expected valid flag of either 0 or 1\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9236,7 +9203,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	ci += 1;
 
 	if (lp[ci] != ']') {
-		printf("Verilator::parseLine(): syntax error. Expected ']' after valid flag\n");
+		printf("Simulator::parseLine(): syntax error. Expected ']' after valid flag\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9249,7 +9216,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	}
 
 	if (strncmp("pc=[",&lp[ci],sizeof "pc=[" - 1) != 0) {
-		printf("Verilator::parseLine(): syntax error. Expected pc=[\n");
+		printf("Simulator::parseLine(): syntax error. Expected pc=[\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9257,10 +9224,10 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	ci += sizeof "pc=[" - 1;
 
-	vrec->pc = strtoull(&lp[ci],&ep,16);
+	srec->pc = strtoull(&lp[ci],&ep,16);
 
 	if (&lp[ci] == ep) {
-		printf("Verilator::parseLine(): syntax error parsing PC value\n");
+		printf("Simulator::parseLine(): syntax error parsing PC value\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9269,7 +9236,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	ci = ep - lp;
 
 	if (lp[ci] != ']') {
-		printf("Verilator::parseLine(): syntax error. Expected ']' after PC address\n");
+		printf("Simulator::parseLine(): syntax error. Expected ']' after PC address\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9296,7 +9263,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 		}
 
 		if ((rf != true) && (wf != true)) {
-			printf("Verilator::parseLine(): syntax error. Expected read or write specifier\n");
+			printf("Simulator::parseLine(): syntax error. Expected read or write specifier\n");
 			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 			return TraceDqr::DQERR_ERR;
@@ -9305,7 +9272,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 		ci += 1;
 
 		if (lp[ci] != '[') {
-			printf("Verilator::parseLine(): syntax error. Expected '[' after read or write specifier\n");
+			printf("Simulator::parseLine(): syntax error. Expected '[' after read or write specifier\n");
 			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 			return TraceDqr::DQERR_ERR;
@@ -9314,7 +9281,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 		ci += 1;
 
 		if (lp[ci] != 'r') {
-			printf("Verilator::parseLine(): syntax error. Expected register specifier\n");
+			printf("Simulator::parseLine(): syntax error. Expected register specifier\n");
 			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 			return TraceDqr::DQERR_ERR;
@@ -9326,7 +9293,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 		regNum = strtoul(&lp[ci],&ep,10);
 
 		if (ep == &lp[ci]) {
-			printf("Verilator::parseLine(): syntax error. Expected register number\n");
+			printf("Simulator::parseLine(): syntax error. Expected register number\n");
 			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 			return TraceDqr::DQERR_ERR;
@@ -9335,7 +9302,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 		ci = ep - lp;
 
 		if (lp[ci] != '=') {
-			printf("Verilator::parseLine(): syntax error. Expected '='\n");
+			printf("Simulator::parseLine(): syntax error. Expected '='\n");
 			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 			return TraceDqr::DQERR_ERR;
@@ -9347,7 +9314,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 		regVal = strtoul(&lp[ci],&ep,16);
 
 		if (&lp[ci] == ep) {
-			printf("Verilator::parseLine(): syntax error. Expected register value\n");
+			printf("Simulator::parseLine(): syntax error. Expected register value\n");
 			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 			return TraceDqr::DQERR_ERR;
@@ -9356,7 +9323,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 		ci = ep - lp;
 
 		if (lp[ci] != ']') {
-			printf("Verilator::parseLine(): syntax error. Expected ']' after register value\n");
+			printf("Simulator::parseLine(): syntax error. Expected ']' after register value\n");
 			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 			return TraceDqr::DQERR_ERR;
@@ -9367,11 +9334,11 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 		if (wf) {
 			// for writes
 
-			vrec->wReg = regNum;
-			vrec->wVal = regVal;
+			srec->wReg = regNum;
+			srec->wVal = regVal;
 
 			if (lp[ci] != '[') {
-				printf("Verilator::parseLine(): syntax error. Expected '[' for write valid flag\n");
+				printf("Simulator::parseLine(): syntax error. Expected '[' for write valid flag\n");
 				printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 				return TraceDqr::DQERR_ERR;
@@ -9380,17 +9347,17 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 			ci += 1;
 
 			if ((lp[ci] < '0') || (lp[ci] > '1')) {
-				printf("Verilator::parseLine(): syntax error. Expected write valid flag of either '0' or '1'\n");
+				printf("Simulator::parseLine(): syntax error. Expected write valid flag of either '0' or '1'\n");
 				printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 				return TraceDqr::DQERR_ERR;
 			}
 
-			vrec->wvf = lp[ci] - '0';
+			srec->wvf = lp[ci] - '0';
 			ci += 1;
 
 			if (lp[ci] != ']') {
-				printf("Verilator::parseLine(): syntax error. Expected ']' after write valid flag\n");
+				printf("Simulator::parseLine(): syntax error. Expected ']' after write valid flag\n");
 				printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 				return TraceDqr::DQERR_ERR;
@@ -9402,12 +9369,12 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 			// for reads
 
 			if (numReads == 1) {
-				vrec->r1Reg = regNum;
-				vrec->r1Val = regVal;
+				srec->r1Reg = regNum;
+				srec->r1Val = regVal;
 			}
 			else {
-				vrec->r2Reg = regNum;
-				vrec->r2Val = regVal;
+				srec->r2Reg = regNum;
+				srec->r2Val = regVal;
 			}
 		}
 	}
@@ -9419,7 +9386,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	}
 
 	if (strncmp(&lp[ci],"inst=[",sizeof "inst=[" - 1) != 0) {
-		printf("Verilator::parseLine(): syntax error. Expected 'inst='\n");
+		printf("Simulator::parseLine(): syntax error. Expected 'inst='\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9427,9 +9394,9 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	ci += sizeof "inst=[" - 1;
 
-	vrec->inst = strtoul(&lp[ci],&ep,16);
+	srec->inst = strtoul(&lp[ci],&ep,16);
 	if (ep == &lp[ci]) {
-		printf("Verilator::parseLine(): syntax error parsing instruction\n");
+		printf("Simulator::parseLine(): syntax error parsing instruction\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9438,7 +9405,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	ci = ep - lp;
 
 	if (lp[ci] != ']') {
-		printf("Verilator::parseLine(): syntax error parsing instruction. Expected ']'\n");
+		printf("Simulator::parseLine(): syntax error parsing instruction. Expected ']'\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9451,7 +9418,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	}
 
 	if (strncmp(&lp[ci],"DASM(",sizeof "DASM(" - 1) != 0) {
-		printf("Verilator::parseLine(): syntax error. Expected 'DASM('\n");
+		printf("Simulator::parseLine(): syntax error. Expected 'DASM('\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9459,9 +9426,9 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 
 	ci += sizeof "DASM(" - 1;
 
-	vrec->dasm = strtoul(&lp[ci],&ep,16);
+	srec->dasm = strtoul(&lp[ci],&ep,16);
 	if (ep == &lp[ci]) {
-		printf("Verilator::parseLine(): syntax error parsing DASM\n");
+		printf("Simulator::parseLine(): syntax error parsing DASM\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9470,7 +9437,7 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	ci = ep - lp;
 
 	if (lp[ci] != ')') {
-		printf("Verilator::parseLine(): syntax error parsing DASM. Expected ')'\n");
+		printf("Simulator::parseLine(): syntax error parsing DASM. Expected ')'\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
 
 		return TraceDqr::DQERR_ERR;
@@ -9483,33 +9450,33 @@ TraceDqr::DQErr Verilator::parseLine(int l, VRec *vrec)
 	}
 
 	if (lp[ci] != 0) {
-		printf("Verilator::parseLine(): extra input on end of line; ignoring\n");
+		printf("Simulator::parseLine(): extra input on end of line; ignoring\n");
 	}
 
-	vrec->validLine = true;
+	srec->validLine = true;
 
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr Verilator::parseFile()
+TraceDqr::DQErr Simulator::parseFile()
 {
 	TraceDqr::DQErr s;
-	VRec vrec;
+	SRec srec;
 
 	for (int i = 0; i < numLines; i++) {
-		s = parseLine(i,&vrec);
+		s = parseLine(i,&srec);
 		if (s != TraceDqr::DQERR_OK) {
 			status = s;
 			printf("Error parsing file!\n");
 			return s;
 		}
-		vrec.dump();
+		srec.dump();
 	}
 
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr Verilator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint32_t currentInst, TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag)
+TraceDqr::DQErr Simulator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint32_t currentInst, TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag)
 {
 	int inst_size;
 	TraceDqr::InstType inst_type;
@@ -9678,7 +9645,7 @@ TraceDqr::DQErr Verilator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr Verilator::getTraceFileOffset(int &size,int &offset)
+TraceDqr::DQErr Simulator::getTraceFileOffset(int &size,int &offset)
 {
 	size = numLines;
 	offset = nextLine;
@@ -9686,37 +9653,37 @@ TraceDqr::DQErr Verilator::getTraceFileOffset(int &size,int &offset)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr Verilator::getNextVrec(int nextLine,VRec &vrec)
+TraceDqr::DQErr Simulator::getNextSrec(int nextLine,SRec &srec)
 {
 	TraceDqr::DQErr rc;
 
 	do {
-		rc = parseLine(nextLine,&vrec);
+		rc = parseLine(nextLine,&srec);
 		nextLine += 1;
 
 		if (rc != TraceDqr::DQERR_OK) {
 			return rc;
 		}
-	} while ((vrec.validLine == false) || (vrec.valid == false));
+	} while ((srec.validLine == false) || (srec.valid == false));
 
-	// when we get here, we have read the next valid VRec in the input. Could be for any core
+	// when we get here, we have read the next valid SRec in the input. Could be for any core
 
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr Verilator::flushNextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo)
+TraceDqr::DQErr Simulator::flushNextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo)
 {
 	TraceDqr::DQErr rc;
 
 	for (int i = 0; i < DQR_MAXCORES; i++) {
-		if (haveCurrentVrec[i]){
-			haveCurrentVrec[i] = false;
+		if (haveCurrentSrec[i]){
+			haveCurrentSrec[i] = false;
 
-			rc = buildInstructionFromVrec(instInfo,&currentVrec[i],TraceDqr::BRFLAG_none,TraceDqr::isNone);
+			// don't need to compute branch flags for call/return because this is the last instrucition
+			// and we can't tell if a branch is taken or not. But e could determine call/return info.
+			// We should be doing that. Dang!
 
-			if ((disassembler != nullptr) && (srcInfo != nullptr)) {
-				disassembler->getSrcLines(instInfo->address, &sourceInfo.sourceFile, &sourceInfo.sourceFunction, &sourceInfo.sourceLineNum, &sourceInfo.sourceLine);
-			}
+			rc = buildInstructionFromSrec(&currentSrec[i],TraceDqr::BRFLAG_none,TraceDqr::isNone);
 
 			return rc;
 		}
@@ -9725,81 +9692,97 @@ TraceDqr::DQErr Verilator::flushNextInstruction(Instruction *instInfo, NexusMess
 	return deferredStatus;
 }
 
-TraceDqr::DQErr Verilator::buildInstructionFromVrec(Instruction *instInfo,VRec *vrec,TraceDqr::BranchFlags brFlags,int crFlag)
+TraceDqr::DQErr Simulator::buildInstructionFromSrec(SRec *srec,TraceDqr::BranchFlags brFlags,int crFlag)
 {
-	// at this point we have two vrecs for same core
+	// at this point we have two srecs for same core
 
-	disasm_info.buffer_vma = vrec->pc;
-	instructionBuffer[0] = vrec->inst;
+	int rc;
 
-	instInfo->instructionText[0] = 0;
-	dis_output = instInfo->instructionText;
-
-	// don't need to use global dis_output to point to where to print. Instead, override stream to point to char
-	// buffer of where to print data to. This will give multi-instance safe code for verilator and trace objects
-
-	// not easy to cache disassembly because we don't know the address range for the program (can't read
-	// the elf file if we don't have one! So can't allocate a block of memory for the code region unless
-	// we read through the verilator file and collect info on pc addresses first
-
-	if (disassembler != nullptr) {
-		disassembler->clearOperandAddress();
+	rc = Disassemble(srec);
+	if (rc != 0) {
+		return TraceDqr::DQERR_ERR;
 	}
 
-	size_t instSize = disasm_func(vrec->pc,&disasm_info)*8;
+	instructionInfo.brFlags = brFlags;
+	instructionInfo.CRFlag = crFlag;
 
-	if (disassembler != nullptr) {
-		Instruction tmpInfo;
-		tmpInfo = disassembler->getInstructionInfo();
-		disassembler->getAddressSyms(vrec->pc);
+	instructionInfo.timestamp = srec->cycles;
 
-		instInfo->haveOperandAddress = tmpInfo.haveOperandAddress;
-		instInfo->operandAddress = tmpInfo.operandAddress;
+	instructionInfo.r0Val = srec->r1Val;
+	instructionInfo.r1Val = srec->r2Val;
+	instructionInfo.wVal = srec->wVal;
 
-		instInfo->operandLabel = tmpInfo.operandLabel;
-		instInfo->operandLabelOffset = tmpInfo.operandLabelOffset;
+	instructionInfo.cycles = srec->cycles - currentTime[srec->coreId];
 
-		instInfo->addressLabel = tmpInfo.addressLabel;
-		instInfo->addressLabelOffset = tmpInfo.addressLabelOffset;
-
-//		printf("operandAdress: %08x\n",instInfo->operandAddress);
-//		printf("haveOperandAddress: %d\n",instInfo->haveOperandAddress);
-//		printf("operandLabel: '%s'\n",instInfo->operandLabel);
-//		printf("operandLabelOffset: %d\n",instInfo->operandLabelOffset);
-//		printf("->addressLabel: '%s'\n",instInfo->addressLabel);
-//		printf("addressLabelOffset: %d\n",instInfo->addressLabelOffset);
-	}
-	else {
-		instInfo->haveOperandAddress = false;
-		instInfo->operandAddress = 0;
-		instInfo->operandLabel = nullptr;
-		instInfo->operandLabelOffset = 0;
-		instInfo->addressLabel = nullptr;
-		instInfo->addressLabelOffset = 0;
-	}
-
-	// now turn vrec into instrec
-
-	instInfo->coreId = vrec->coreId;
-	instInfo->address = vrec->pc;
-	instInfo->instruction = vrec->inst;
-	instInfo->instSize = instSize;
-	instInfo->brFlags = brFlags;
-	instInfo->CRFlag = crFlag;
-
-	instInfo->timestamp = vrec->cycles;
-
-	instInfo->r0Val = vrec->r1Val;
-	instInfo->r1Val = vrec->r2Val;
-	instInfo->wVal = vrec->wVal;
-
-	instInfo->cycles = vrec->cycles - currentTime[vrec->coreId];
-	currentTime[vrec->coreId] = vrec->cycles;
+	currentTime[srec->coreId] = srec->cycles;
 
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr Verilator::NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags)
+int Simulator::Disassemble(SRec *srec)
+{
+	TraceDqr::DQErr ec;
+
+	if (disassembler != nullptr) {
+		disassembler->Disassemble(srec->pc);
+
+		ec = disassembler->getStatus();
+
+		if (ec != TraceDqr::DQERR_OK ) {
+			status = ec;
+			return 0;
+		}
+
+		// the two lines below copy each structure completely. This is probably
+		// pretty inefficient, and just returning pointers and using pointers
+		// would likely be better
+
+		instructionInfo = disassembler->getInstructionInfo();
+		sourceInfo = disassembler->getSourceInfo();
+	}
+	else {
+		// hafta do it all ourselves!
+
+		disasm_info.buffer_vma = srec->pc;
+		instructionBuffer[0] = srec->inst;
+
+		instructionInfo.instructionText[0] = 0;
+		dis_output = instructionInfo.instructionText;
+
+		// don't need to use global dis_output to point to where to print. Instead, override stream to point to char
+		// buffer of where to print data to. This will give multi-instance safe code for verilator and trace objects
+
+		// not easy to cache disassembly because we don't know the address range for the program (can't read
+		// the elf file if we don't have one! So can't allocate a block of memory for the code region unless
+		// we read through the verilator file and collect info on pc addresses first
+
+		size_t instSize = disasm_func(srec->pc,&disasm_info)*8;
+
+		if (instSize == 0) {
+			status = TraceDqr::DQERR_ERR;
+			return 1;
+		}
+
+		instructionInfo.haveOperandAddress = false;
+		instructionInfo.operandAddress = 0;
+		instructionInfo.operandLabel = nullptr;
+		instructionInfo.operandLabelOffset = 0;
+		instructionInfo.addressLabel = nullptr;
+		instructionInfo.addressLabelOffset = 0;
+
+		// now turn srec into instrec
+
+		instructionInfo.address = srec->pc;
+		instructionInfo.instruction = srec->inst;
+		instructionInfo.instSize = instSize;
+	}
+
+	instructionInfo.coreId = srec->coreId;
+
+	return 0;
+}
+
+TraceDqr::DQErr Simulator::NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags)
 {
 	TraceDqr::DQErr ec;
 
@@ -9853,12 +9836,12 @@ TraceDqr::DQErr Verilator::NextInstruction(Instruction *instInfo, NexusMessage *
 	return ec;
 }
 
-TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo)
+TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo)
 {
 	TraceDqr::DQErr rc;
 	int crFlag = 0;
 	TraceDqr::BranchFlags brFlags = TraceDqr::BRFLAG_none;
-	VRec nextVrec;
+	SRec nextSrec;
 
 	if (instInfo != nullptr) {
 		*instInfo = nullptr;
@@ -9880,7 +9863,7 @@ TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage 
 		bool done = false;
 
 		do {
-			rc = getNextVrec(nextLine,nextVrec);
+			rc = getNextSrec(nextLine,nextSrec);
 
 			if (rc != TraceDqr::DQERR_OK) {
 				deferredStatus = rc;
@@ -9888,27 +9871,25 @@ TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage 
 				done = true;
 			}
 			else {
-				nextLine = nextVrec.line+1;	// as long as rc is not an error, nextVrec.line is valid
+				nextLine = nextSrec.line+1;	// as long as rc is not an error, nextSrec.line is valid
 
-//				printf("->nextLine: %d, nextVrec.line: %d\n",nextLine,nextVrec.line);
+				if (nextSrec.validLine && nextSrec.valid) {
+					if (haveCurrentSrec[nextSrec.coreId] == false) {
+						currentSrec[nextSrec.coreId] = nextSrec;
+						haveCurrentSrec[nextSrec.coreId] = true;
 
-				if (nextVrec.validLine && nextVrec.valid) {
-					if (haveCurrentVrec[nextVrec.coreId] == false) {
-						currentVrec[nextVrec.coreId] = nextVrec;
-						haveCurrentVrec[nextVrec.coreId] = true;
+						nextSrec.valid = false;
 
-						nextVrec.valid = false;
-
-						// don't set done to true, because we still don't have current and new vrecs!
+						// don't set done to true, because we still don't have current and new srecs!
 					}
 					else {
-						// have two consecutive vrecs for the same core. We are done looping
+						// have two consecutive srecs for the same core. We are done looping
 
 						done = true;
 					}
 				}
 			}
-		} while (((nextVrec.validLine == false) || (nextVrec.valid == false)) && !done);
+		} while (((nextSrec.validLine == false) || (nextSrec.valid == false)) && !done);
 	}
 
 	if (flushing) {
@@ -9920,8 +9901,10 @@ TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage 
 
 		if (srcInfo != nullptr) {
 			if (disassembler != nullptr) {
-				disassembler->getSrcLines(instructionInfo.address, &sourceInfo.sourceFile, &sourceInfo.sourceFunction, &sourceInfo.sourceLineNum, &sourceInfo.sourceLine);
-
+//				shouldn't need to call getsrclines. FlushNextInstruciotn should be callingbuildinstructionfromsrec which fills it all in
+//
+//				disassembler->getSrcLines(instructionInfo.address, &sourceInfo.sourceFile, &sourceInfo.sourceFunction, &sourceInfo.sourceLineNum, &sourceInfo.sourceLine);
+//
 				*srcInfo = &sourceInfo;
 			}
 		}
@@ -9929,30 +9912,26 @@ TraceDqr::DQErr Verilator::NextInstruction(Instruction **instInfo, NexusMessage 
 		return rc;
 	}
 
-	rc = computeBranchFlags(currentVrec[currentCore].pc,currentVrec[currentCore].inst,nextVrec.pc,crFlag,brFlags);
+	rc = computeBranchFlags(currentSrec[currentCore].pc,currentSrec[currentCore].inst,nextSrec.pc,crFlag,brFlags);
 	if (rc != TraceDqr::DQERR_OK) {
-		printf("Error: Verilator::NextInstruction(): could not compute branch flags\n");
+		printf("Error: Simulator::NextInstruction(): could not compute branch flags\n");
 
 		status = rc;
 		return status;
 	}
 
-	currentCore = nextVrec.coreId;
+	currentCore = nextSrec.coreId;
 
-	rc = buildInstructionFromVrec(&instructionInfo,&currentVrec[currentCore],brFlags,crFlag);
+	rc = buildInstructionFromSrec(&currentSrec[currentCore],brFlags,crFlag);
 
-	currentVrec[currentCore] = nextVrec;
+	currentSrec[currentCore] = nextSrec;
 
 	if (instInfo != nullptr) {
 		*instInfo = &instructionInfo;
 	}
 
 	if (disassembler != nullptr) {
-		int rc;
-
-		rc = disassembler->getSrcLines(instructionInfo.address, &sourceInfo.sourceFile, &sourceInfo.sourceFunction, &sourceInfo.sourceLineNum, &sourceInfo.sourceLine);
-
-		if ((rc != 0) && (srcInfo != nullptr)) {
+		if (srcInfo != nullptr) {
 			*srcInfo = &sourceInfo;
 		}
 	}

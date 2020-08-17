@@ -408,3 +408,16 @@ private:
 };
 
 #endif /* TRACE_HPP_ */
+
+
+// Improvements:
+//
+// Disassembler class:
+//  Should be able to creat disassembler object without elf file
+//  Should have a diasassemble method that takes an address and an instruciotn, not just an address
+//  Should be able us use a block of memory for the code, not from an elf file
+//  Use new methods to cleanup verilator nextInstruction()
+
+// move some stuff in instruction object to a separate object pointed to from instruciton object so that coppies
+// of the object don't need to copy it all (regfile is an example). Create accessor method to get. Destructor should
+// delete all
