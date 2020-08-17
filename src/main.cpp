@@ -44,6 +44,8 @@ static void usage(char *name)
 	printf("\n");
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
+	printf("-s simfile:   Specify the name of the simulator output file. When using a simulator output file, cannot use\n");
+	printf("              a tracefile (-t option). Can provide an elf file (-e option), but is not required.\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
 	printf("-start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is\n");
@@ -438,10 +440,10 @@ int main(int argc, char *argv[])
 		else if (strcmp("-pathraw",argv[i]) == 0) {
 			pt = TraceDqr::PATH_RAW;
 		}
-		else if (strcmp("-simulator",argv[i]) == 0) {
+		else if (strcmp("-s",argv[i]) == 0) {
 			i += 1;
 			if (i >= argc) {
-				printf("Error: option -simulator requires a file name\n");
+				printf("Error: option -s requires a file name\n");
 				usage(argv[0]);
 				return 1;
 			}
