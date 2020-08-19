@@ -9142,6 +9142,16 @@ TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 
 	ci += 1;
 
+	// Skip whitespace (seen out files with "C:     0")
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (!isdigit(lp[ci])) {
+		// Still a comment line
+		return TraceDqr::DQERR_OK;
+	}
+
 	srec->coreId = strtoul(&lp[ci],&ep,10);
 
 	if (ep == &lp[ci]) {
