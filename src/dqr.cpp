@@ -9181,6 +9181,12 @@ TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 		ci += 1;
 	}
 
+	if (strncmp("frf",&lp[ci],3) == 0) {
+		// bail for now! Ignore line!
+
+		return TraceDqr::DQERR_OK;
+	}
+
 	if (lp[ci] != '[') {
 		printf("Simulator::parseLine(): syntax error. Expected '[' after cycle count\n");
 		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
