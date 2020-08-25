@@ -237,7 +237,7 @@ proc setTraceBufferWidth {} {
 			return 0
 			}
 
-			for {set i 0} {($w & (1 << $i)) == 0} {incr i} { }
+			for {set i 0} {(w & (1 << $i)) == 0} {incr i} { }
 
 			set trace_buffer_width [expr 1 << $i]
 			return $trace_buffer_width
@@ -542,7 +542,7 @@ proc setTsBranch {core branch} {
     switch $branch {
 		"off"                { set br 0 }
 		"indirect+exception" { set br 1 }
-		"reserved"           { set br 1 }
+		"indirect"           { set br 1 }
 		"all"                { set br 3 }
 		default              { set br 0 }
     }
@@ -886,8 +886,8 @@ proc printtracebaseaddresses {} {
         set core [expr $core + 1]
     }
 
-    if {$traceFunnelAddress != 0} {
-        echo "Funnel block at $traceFunnelAddress"
+    if {traceFunnelAddress != 0} {
+        echo "Funnele block at $traceFunnelAddress"
     }
 
     echo -n ""
@@ -1723,9 +1723,11 @@ proc writeSRAM {core file limit} {
         echo ""
     }
 
-	set tracewp [gettracewp $core]
+	set stop_on_wrap [getTeStopOnWrap $core]
 
     if {$file == "stdout"} {
+		set tracewp [gettracewp $core]
+
 		if {($tracewp & 1) == 0 } { 
 			# buffer has not wrapped
 			set tracebegin 0
@@ -1735,7 +1737,7 @@ proc writeSRAM {core file limit} {
 				set stop_on_wrap [getTeStopOnWrap $core]
 				set length [expr $traceend - $tracebegin]
 				if {$length > $limit} {
-					if {$stop_on_wrap=="on"} {
+					if (stop_on_wrap == "on") {
 						# use the beginning of the buffer by
 						# adjusting the end point.
 						set traceend [expr $tracebegin + $limit]
@@ -1776,7 +1778,7 @@ proc writeSRAM {core file limit} {
 				set stop_on_wrap [getTeStopOnWrap $core]
 				set length1 [expr $traceend - $tracebegin]
 				set length2 [expr $traceend2 - $tracebegin2]
-				if {$stop_on_wrap=="on"} {
+				if (stop_on_wrap == "on") {
 					#use the beginning of the buffer
 					if { $limit < $length1 } {
 						# everything is in part1, just need
@@ -1837,6 +1839,8 @@ proc writeSRAM {core file limit} {
 		return $f
     } else {
 		set fp [open "$file" wb]
+
+		set tracewp [gettracewp $core]
 
 		if {($tracewp & 1) == 0 } { 
 			# buffer has not wrapped
@@ -1946,19 +1950,16 @@ proc writeSRAMdata { core tracebegin traceend fp } {
     global te_sinkdata_offset
 
 	set length [expr ($traceend - $tracebegin) / 4]
-	if {$length>0} {
-		set daddr  [expr $traceBaseAddrArray($core) + $te_sinkdata_offset]
-		set data [riscv repeat_read $length $daddr 4] 
-		set packed ""
-
-		foreach value [split $data "\r\n "] {
-			if {$value != ""} {
-				pack w 0x$value -intle 32
-				append packed $w
-			}
+	set daddr  [expr $traceBaseAddrArray($core) + $te_sinkdata_offset]
+	set data [riscv repeat_read $length $daddr 4] 
+	set packed ""
+	foreach value [split $data "\r\n "] {
+		if {$value != ""} {
+			pack w 0x$value -intle 32
+			append packed $w
 		}
-		puts $fp $packed
 	}
+	puts $fp $packed
 }
 
 proc getCapturedTraceSize { core } {
@@ -2205,7 +2206,6 @@ proc wtb {{file "trace.rtd"} {limit 0}} {
     global num_cores
     global verbose
 
-	riscv set_prefer_sba off
     if  { $verbose > 0 } {
 		echo -n "collecting trace..."
     }
@@ -2219,7 +2219,6 @@ proc wtb {{file "trace.rtd"} {limit 0}} {
 		if { $verbose > 0 } {
 			echo "done."
 		}
-		riscv set_prefer_sba on
     } else {
 		set coreList [parseCoreList "all"]
 
@@ -2240,7 +2239,6 @@ proc wtb {{file "trace.rtd"} {limit 0}} {
 				echo "done."
 			}
 		}
-		riscv set_prefer_sba on
 		if {$file == "stdout"} {
 			return $f
 		}
