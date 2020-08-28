@@ -710,6 +710,8 @@ public:
 	uint8_t coreId;
 	uint32_t cycles;
 	int valid;
+	bool haveFRF;
+	TraceDqr::ADDRESS frfAddr;
 	TraceDqr::ADDRESS pc;
 	bool wvf;
 	int wReg;

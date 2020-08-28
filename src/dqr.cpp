@@ -89,7 +89,7 @@ static int asymbol_compare_func(const void *arg1,const void *arg2)
 	return bfd_asymbol_value((asymbol*)first) - bfd_asymbol_value((asymbol*)second);
 }
 
-// should probably delete this
+// should probably delete this function
 
 __attribute__((unused)) static void dump_syms(asymbol **syms, int num_syms) // @suppress("Unused static function")
 {
@@ -97,6 +97,10 @@ __attribute__((unused)) static void dump_syms(asymbol **syms, int num_syms) // @
 
     for (int i = 0; i < num_syms; i++) {
     	printf("%d: 0x%llx '%s'",i,bfd_asymbol_value(syms[i]),syms[i]->name);
+
+    	if (syms[i]->flags == 0) {
+    		printf(" NOTYPE");
+    	}
 
         if (syms[i]->flags & BSF_LOCAL) {
           printf(" LOCAL");
@@ -860,11 +864,6 @@ const char *Symtab::getSymbolByAddress(TraceDqr::ADDRESS addr)
 	for (int i = 0; i < number_of_symbols; i++) {
 		section = symbol_table[i]->section;
 	    section_base_vma = section->vma;
-
-//	    if (section_base_vma + symbol_table[i]->value == vma) {
-//	    	printf("symabol match for address %p, name: %s\n",vma,symbol_table[i]->name);
-////	    	&& (symbol_table[i]->flags & BSF_FUNCTION))
-//	    }
 
 	    if ((section_base_vma + symbol_table[i]->value == vma) && (symbol_table[i]->flags & BSF_FUNCTION)) {
 	    	index = i;
@@ -7198,16 +7197,24 @@ Disassembler::Disassembler(bfd *abfd)
 
     	number_of_syms = bfd_canonicalize_symtab(abfd,symbol_table);
 
-//    	printf("symbol table @ %08x, num syms: %d\n",symbol_table,number_of_syms);
-
     	if (number_of_syms > 0) {
     		sorted_syms = new (std::nothrow) asymbol*[number_of_syms];
 
     		assert(sorted_syms != nullptr);
 
-//    		printf("sorted syms @ %08x\n",sorted_syms);
+//        	make sure all symbols with no type info in code sections have function type added!
 
     		for (int i = 0; i < number_of_syms; i++) {
+    			struct bfd_section *section;
+
+    			section = symbol_table[i]->section;
+
+//    			printf("sym %d, section flags: %08x, name: %s, flags: %08x, value: %08x, base:%08x (%08x)\n",i,section->flags,symbol_table[i]->name,symbol_table[i]->flags,symbol_table[i]->value,section->vma,section->vma+symbol_table[i]->value);
+
+    			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags == BSF_GLOBAL))) {
+    				symbol_table[i]->flags |= BSF_FUNCTION;
+    			}
+
     			sorted_syms[i] = symbol_table[i];
     		}
 
@@ -9125,6 +9132,7 @@ TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 	srec->validLine = false;
 	srec->valid = false;
 	srec->line = l;
+	srec->haveFRF = false;
 
 	// No syntax errors until find first line that starts with 'C'
 
@@ -9192,7 +9200,95 @@ TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 	}
 
 	if (strncmp("frf",&lp[ci],3) == 0) {
-		// bail for now! Ignore line!
+		ci += 3;
+
+		if (lp[ci] != '[') {
+			printf("Simulator::parseLine(): syntax error. Execpted '[' after frf\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		srec->wReg = strtoull(&lp[ci],&ep,16);
+
+		if (&lp[ci] == ep) {
+			printf("Simulator::parseLine(): syntax error parsing frf register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci = ep - lp;
+
+		if (lp[ci] != ']') {
+			printf("Simulator::parseLine(): syntax error. Expected ']' after frf register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != '=') {
+			printf("Simulator::parseLine(): syntax error. Expected '=' after frf register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != '[') {
+			printf("Simulator::parseLine(): syntax error. Expected '[' after frf '='\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		srec->frfAddr = strtoull(&lp[ci],&ep,16);
+
+		if (&lp[ci] == ep) {
+			printf("Simulator::parseLine(): syntax error parsing frf address\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci = ep - lp;
+
+		if (lp[ci] != ']') {
+			printf("Simulator::parseLine(): syntax error. Expected ']' after frf address\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != 0) {
+			printf("Simulator::parseLine(): extra input on end of line; ignoring\n");
+		}
+
+		// don't set srec->valid to true because frf records are different
+
+		srec->haveFRF = true;
+		srec->validLine = true;
 
 		return TraceDqr::DQERR_OK;
 	}
@@ -9728,7 +9824,12 @@ TraceDqr::DQErr Simulator::buildInstructionFromSrec(SRec *srec,TraceDqr::BranchF
 	instructionInfo.r1Val = srec->r2Val;
 	instructionInfo.wVal = srec->wVal;
 
-	instructionInfo.cycles = srec->cycles - currentTime[srec->coreId];
+	if (currentTime[srec->coreId] == 0) {
+		instructionInfo.cycles = 0;
+	}
+	else {
+		instructionInfo.cycles = srec->cycles - currentTime[srec->coreId];
+	}
 
 	currentTime[srec->coreId] = srec->cycles;
 
@@ -9904,6 +10005,13 @@ TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage 
 						done = true;
 					}
 				}
+				else if (nextSrec.validLine && nextSrec.haveFRF) {
+					// for now, just ignore frf records. Don't update time because cycle
+					// count time for frf records does not seem to be associated with an
+					// instruction
+
+					// currentTime[nextSrec.coreId] = nextSrec.cycles;
+				}
 			}
 		} while (((nextSrec.validLine == false) || (nextSrec.valid == false)) && !done);
 	}
@@ -9952,12 +10060,11 @@ TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage 
 		}
 	}
 
+	// possible improvements:
 	// caching of instruction/address
 	// improve print callback disassembly routines to use stream as a pointer to a struct with a buffer and
 	// and length to improve performance and allow multithreading (or multi object)
 	// improve disassembly to not print 32 bit literals as 64 bits
-
-	// create synthetic nexus messages? Do we really need this?
 
 	return TraceDqr::DQERR_OK;
 }
