@@ -278,17 +278,19 @@ public:
 	void instructionToText(char *dst,size_t len,int labelLevel);
 	std::string instructionToString(int labelLevel);
 
-	int               CRFlag;
-
-	uint8_t           coreId;
-	TraceDqr::ADDRESS address;
-	TraceDqr::RV_INST instruction;
-	int               brFlags; // this is an int instead of TraceDqr::BancheFlags because it is easier to work with in java
-	char              instructionText[64];
-	int               instSize;
 	static int        addrSize;
 	static uint32_t   addrDispFlags;
 	static int        addrPrintWidth;
+
+	uint8_t           coreId;
+
+	int               CRFlag;
+	int               brFlags; // this is an int instead of TraceDqr::BancheFlags because it is easier to work with in java
+
+	TraceDqr::ADDRESS address;
+	int               instSize;
+	TraceDqr::RV_INST instruction;
+	char              instructionText[64];
 #ifdef SWIG
 	%immutable		addressLabel;
 #endif // SWIG
@@ -301,6 +303,13 @@ public:
 #endif // SWIG
 	const char       *operandLabel;
 	int               operandLabelOffset;
+
+	TraceDqr::TIMESTAMP timestamp;
+	int               cycles;
+
+	uint32_t r0Val;
+	uint32_t r1Val;
+	uint32_t wVal;
 };
 
 // class Source: Helper class for source code information for an address
@@ -616,6 +625,8 @@ public:
 	TraceDqr::DQErr NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
 	TraceDqr::DQErr NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags);
 
+	TraceDqr::DQErr getTraceFileOffset(int &size,int &offset);
+
 	TraceDqr::DQErr haveITCPrintData(int numMsgs[DQR_MAXCORES], bool havePrintData[DQR_MAXCORES]);
 	bool        getITCPrintMsg(int core,char *dst, int dstLen,TraceDqr::TIMESTAMP &startTime,TraceDqr::TIMESTAMP &endTime);
 	bool        flushITCPrintMsg(int core,char *dst, int dstLen,TraceDqr::TIMESTAMP &startTime,TraceDqr::TIMESTAMP &endTime);
@@ -663,7 +674,7 @@ private:
 	int              currentCore;
 	int              srcbits;
 	bool             bufferItc;
-	int              enterISR;
+	int              enterISR[DQR_MAXCORES];
 
 	int              startMessageNum;
 	int              endMessageNum;
@@ -689,6 +700,94 @@ private:
 
 	TraceDqr::ADDRESS computeAddress();
 	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts);
+};
+
+class SRec {
+public:
+	void dump();
+	bool validLine;
+	int line;
+	uint8_t coreId;
+	uint32_t cycles;
+	int valid;
+	bool haveFRF;
+	TraceDqr::ADDRESS frfAddr;
+	TraceDqr::ADDRESS pc;
+	bool wvf;
+	int wReg;
+	uint32_t wVal;
+	int r1Reg;
+	int r2Reg;
+	uint32_t r1Val;
+	uint32_t r2Val;
+	TraceDqr::RV_INST inst;
+	TraceDqr::RV_INST dasm;
+};
+
+#ifdef SWIG
+	%ignore Simulator::NextInstruction(Instruction **instInfo,NexusMessage **msgInfo,Source **srcInfo);
+#endif // SWIG
+
+class Simulator {
+public:
+	Simulator(char *f_name,int arch_size = 32);
+	Simulator(char *f_name,char *e_name);
+	~Simulator();
+
+	void cleanUp();
+	TraceDqr::DQErr getStatus() {return status;}
+
+	TraceDqr::DQErr getTraceFileOffset(int &size,int &offset);
+	int Disassemble(SRec *srec);
+
+	TraceDqr::DQErr NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
+	TraceDqr::DQErr NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags);
+
+	void analyticsToText(char *dst,int dst_len,int detailLevel) {/*analytics.toText(dst,dst_len,detailLevel);*/ }
+//	std::string analyticsToString(int detailLevel) { /* return analytics.toString(detailLevel);*/ }
+
+private:
+	TraceDqr::DQErr status;
+
+	int archSize;
+
+	char *vf_name;
+	char *lineBuff;
+	char **lines;
+	int numLines;
+	int nextLine;
+	int currentCore;
+	bool flushing;
+
+	bool haveCurrentSrec[DQR_MAXCORES];
+	SRec currentSrec[DQR_MAXCORES];
+	TraceDqr::DQErr deferredStatus;
+
+	Instruction  instructionInfo;
+	Source       sourceInfo;
+	NexusMessage messageInfo;
+
+	class ElfReader    *elfReader; // need this class to create disassembler class
+	class Disassembler *disassembler;
+
+	disassemble_info disasm_info;
+	disassembler_ftype disasm_func;
+	uint32_t instructionBuffer[2];
+
+	TraceDqr::ADDRESS currentAddress[DQR_MAXCORES];
+	TraceDqr::ADDRESS currentTime[DQR_MAXCORES];
+
+	int  enterISR[DQR_MAXCORES];
+
+	TraceDqr::DQErr readFile(char *file);
+	TraceDqr::DQErr parseFile();
+	TraceDqr::DQErr parseLine(int l,SRec *srec);
+	TraceDqr::DQErr getNextSrec(int nextLine,SRec &srec);
+
+//	need to rename nextAddr to compueFlags or something
+	TraceDqr::DQErr computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint32_t currentInst,TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag);
+	TraceDqr::DQErr flushNextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo);
+	TraceDqr::DQErr buildInstructionFromSrec(SRec *srec,TraceDqr::BranchFlags brFlags,int crFlag);
 };
 
 #endif /* DQR_HPP_ */

@@ -234,6 +234,9 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
   instructionInfo.operandLabel = nullptr;
   instructionInfo.operandLabelOffset = 0;
 
+  instructionInfo.timestamp = 0;
+  instructionInfo.cycles = 0;
+
   sourceInfo.sourceFile = nullptr;
   sourceInfo.sourceFunction = nullptr;
   sourceInfo.sourceLineNum = 0;
@@ -244,7 +247,9 @@ Trace::Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_
   tsSize = 40;
   tsBase = 0;
 
-  enterISR = TraceDqr::isNone;
+  for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
+	  enterISR[i] = TraceDqr::isNone;
+  }
 
   status = TraceDqr::DQERR_OK;
 }
@@ -386,6 +391,11 @@ TraceDqr::TIMESTAMP Trace::adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TI
 	}
 
 	return ts;
+}
+
+TraceDqr::DQErr Trace::getTraceFileOffset(int &size,int &offset)
+{
+	return sfp->getFileOffset(size,offset);
 }
 
 TraceDqr::ADDRESS Trace::computeAddress()
@@ -1736,7 +1746,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 
 				if (b_type == TraceDqr::BTYPE_EXCEPTION) {
-					enterISR = TraceDqr::isInterrupt;
+					enterISR[currentCore] = TraceDqr::isInterrupt;
 				}
 
 				readNewTraceMessage = true;
@@ -1893,7 +1903,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //			decode instruction/decode instruction size should cache their results (at least last one)
 //			because it gets called a few times here!
 
-			rc = decodeInstructionSize(inst,inst_size);
+			rc = decodeInstructionSize(inst,inst_size);	// inst and inst_size are only used for analytics?
 			if (rc != 0) {
 				printf("Error: Cann't decode size of instruction %04x\n",inst);
 
@@ -1958,9 +1968,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			if (instInfo != nullptr) {
 				instructionInfo.coreId = currentCore;
 				*instInfo = &instructionInfo;
-				(*instInfo)->CRFlag = (crFlag | enterISR);
-				enterISR = TraceDqr::isNone;
+				(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
+				enterISR[currentCore] = TraceDqr::isNone;
 				(*instInfo)->brFlags = brFlags;
+
+				(*instInfo)->timestamp = lastTime[currentCore];
+				(*instInfo)->cycles = 0;
 			}
 
 			if (srcInfo != nullptr) {
