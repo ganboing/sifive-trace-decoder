@@ -89,7 +89,7 @@ static int asymbol_compare_func(const void *arg1,const void *arg2)
 	return bfd_asymbol_value((asymbol*)first) - bfd_asymbol_value((asymbol*)second);
 }
 
-// should probably delete this
+// should probably delete this function
 
 __attribute__((unused)) static void dump_syms(asymbol **syms, int num_syms) // @suppress("Unused static function")
 {
@@ -97,6 +97,10 @@ __attribute__((unused)) static void dump_syms(asymbol **syms, int num_syms) // @
 
     for (int i = 0; i < num_syms; i++) {
     	printf("%d: 0x%llx '%s'",i,bfd_asymbol_value(syms[i]),syms[i]->name);
+
+    	if (syms[i]->flags == 0) {
+    		printf(" NOTYPE");
+    	}
 
         if (syms[i]->flags & BSF_LOCAL) {
           printf(" LOCAL");
@@ -201,6 +205,9 @@ static int stringify_callback(FILE *stream, const char *format, ...)
 	char buffer[128];
 	va_list vl;
 	int rc;
+
+	// need a smarter struct for dis_output that contains a pointer for where to put the data and a lenght of thedata already in the string
+	// then don't need to strcat, but just print into the buffer indexed by length
 
 	if (dis_output == nullptr) {
 		return 0;
@@ -858,11 +865,6 @@ const char *Symtab::getSymbolByAddress(TraceDqr::ADDRESS addr)
 		section = symbol_table[i]->section;
 	    section_base_vma = section->vma;
 
-//	    if (section_base_vma + symbol_table[i]->value == vma) {
-//	    	printf("symabol match for address %p, name: %s\n",vma,symbol_table[i]->name);
-////	    	&& (symbol_table[i]->flags & BSF_FUNCTION))
-//	    }
-
 	    if ((section_base_vma + symbol_table[i]->value == vma) && (symbol_table[i]->flags & BSF_FUNCTION)) {
 	    	index = i;
 
@@ -941,7 +943,7 @@ ElfReader::ElfReader(char *elfname)
 
   aitp = bfd_get_arch_info(abfd);
   if (aitp == nullptr) {
-	  printf("Error: ElfReader(): Cannot get arch in for file %s\n",elfname);
+	  printf("Error: ElfReader(): Cannot get arch info for file %s\n",elfname);
 
 	  status = TraceDqr::TraceDqr::DQERR_ERR;
 	  return;
@@ -976,6 +978,7 @@ ElfReader::ElfReader(char *elfname)
 	  status = TraceDqr::TraceDqr::DQERR_ERR;
 	  return;
   }
+
   symtab = nullptr;
   codeSectionLst = nullptr;
 
@@ -5087,6 +5090,8 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 
 	this->binary = binary;
 
+	tfSize = 0;
+
 	if (binary) {
 		tf.open(filename, std::ios::in | std::ios::binary);
 	}
@@ -5102,6 +5107,10 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 		status = TraceDqr::DQERR_OK;
 	}
 
+	tf.seekg (0, tf.end);
+	tfSize = tf.tellg();
+	tf.seekg (0, tf.beg);
+
 #if	0
 	// read entire slice file, create multiple quese base on src field
 
@@ -5114,6 +5123,18 @@ SliceFileParser::~SliceFileParser()
 	if (tf.is_open()) {
 		tf.close();
 	}
+}
+
+TraceDqr::DQErr SliceFileParser::getFileOffset(int &size,int &offset)
+{
+	if (!tf.is_open()) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	size = tfSize;
+	offset = tf.tellg();
+
+	return TraceDqr::DQERR_OK;
 }
 
 void SliceFileParser::dump()
@@ -7176,16 +7197,24 @@ Disassembler::Disassembler(bfd *abfd)
 
     	number_of_syms = bfd_canonicalize_symtab(abfd,symbol_table);
 
-//    	printf("symbol table @ %08x, num syms: %d\n",symbol_table,number_of_syms);
-
     	if (number_of_syms > 0) {
     		sorted_syms = new (std::nothrow) asymbol*[number_of_syms];
 
     		assert(sorted_syms != nullptr);
 
-//    		printf("sorted syms @ %08x\n",sorted_syms);
+//        	make sure all symbols with no type info in code sections have function type added!
 
     		for (int i = 0; i < number_of_syms; i++) {
+    			struct bfd_section *section;
+
+    			section = symbol_table[i]->section;
+
+//    			printf("sym %d, section flags: %08x, name: %s, flags: %08x, value: %08x, base:%08x (%08x)\n",i,section->flags,symbol_table[i]->name,symbol_table[i]->flags,symbol_table[i]->value,section->vma,section->vma+symbol_table[i]->value);
+
+    			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags == BSF_GLOBAL))) {
+    				symbol_table[i]->flags |= BSF_FUNCTION;
+    			}
+
     			sorted_syms[i] = symbol_table[i];
     		}
 
@@ -7293,11 +7322,6 @@ Disassembler::Disassembler(bfd *abfd)
    	info->buffer_length = codeSectionLst->size;
    	info->section = codeSectionLst->asecptr;
    	info->buffer = (bfd_byte*)codeSectionLst->code;
-
-//   	info->buffer_vma = text->vma;
-//   	info->buffer_length = text->size;
-//   	info->section = text;
-//   	bfd_malloc_and_get_section(abfd,text,&info->buffer);
 
    	info->application_data = (void*)this;
 
@@ -7449,7 +7473,6 @@ int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index
 		return 0;
 	}
 
-	//asymbol **syms;
 	int i;
 
 	// check for a cache hit
@@ -7527,7 +7550,8 @@ void Disassembler::overridePrintAddress(bfd_vma addr, struct disassemble_info *i
 	// use field in info to point to disassembler object so we can call member funcs
 
 	if (info != this->info) {
-		printf("Error: overridePrintAddress(): info does not match\n");
+//		printf("Error: overridePrintAddress(): info does not match (0x%08x, 0x%08x)\n",this->info,info);
+//		this may be okay. Different info.
 	}
 
 	instruction.operandAddress = addr;
@@ -7540,8 +7564,11 @@ void Disassembler::overridePrintAddress(bfd_vma addr, struct disassemble_info *i
 	rc = lookup_symbol_by_address(addr,BSF_FUNCTION,&index,&offset);
 
 	if (rc != 0) {
-
 		// found symbol
+
+//		printf("found symbol @0x%08x '%s' %x\n",addr,sorted_syms[index]->name,offset);
+
+		// putting in wrong instrction object!!!!!
 
 		instruction.operandLabel = sorted_syms[index]->name;
 		instruction.operandLabelOffset = offset;
@@ -7640,6 +7667,35 @@ void Disassembler::print_address_and_instruction(bfd_vma vma)
 	else {
 		 printf("       %04x                    ",ins);
 	}
+}
+
+void Disassembler::getAddressSyms(bfd_vma vma)
+{
+	// find closest preceeding function symbol and print with offset
+
+	int index;
+	int offset;
+	int rc;
+
+	rc = lookup_symbol_by_address(vma,BSF_FUNCTION,&index,&offset);
+	if (rc == 0) {
+		// did not find symbol
+
+		instruction.addressLabel = nullptr;
+		instruction.addressLabelOffset = 0;
+	}
+	else {
+
+		// found symbol
+
+		instruction.addressLabel = sorted_syms[index]->name;
+		instruction.addressLabelOffset = offset;
+	}
+}
+
+void Disassembler::clearOperandAddress()
+{
+	instruction.haveOperandAddress = false;
 }
 
 void Disassembler::setInstructionAddress(bfd_vma vma)
@@ -8416,7 +8472,7 @@ int Disassembler::decodeInstruction(uint32_t instruction,int archSize,int &inst_
 		}
 		break;
 	default:
-		printf("Error: decodeInstruction(): Unknown arch size %d\n",archSize);
+		printf("Error: (): Unknown arch size %d\n",archSize);
 
 		rc = 1;
 	}
@@ -8656,6 +8712,9 @@ int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 		instruction.operandLabel = cii->operandLabel;
 		instruction.operandLabelOffset = cii->operandLabelOffset;
 
+		// instruction.timestamp = 0;
+		// instruction.cycles = 0;
+
 		return 0;
 	}
 
@@ -8749,3 +8808,1263 @@ NexusMessageSync::NexusMessageSync()
 	index = 0;
 }
 
+Simulator::Simulator(char *f_name,int arch_size)
+{
+	TraceDqr::DQErr ec;
+
+	vf_name = nullptr;
+	lineBuff = nullptr;
+	lines = nullptr;
+	numLines = 0;
+	nextLine = 0;
+	currentCore = 0;
+	flushing = false;
+
+	elfReader = nullptr;
+	disassembler = nullptr;
+
+	if (f_name == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	ec = readFile(f_name);
+	if (ec != TraceDqr::DQERR_OK) {
+		status = ec;
+		return;
+	}
+
+//	ec = parseFile();
+//	if (ec != TraceDqr::DQERR_OK) {
+//		status = ec;
+//		return;
+//	}
+
+	// prep the dissasembler
+
+	archSize = arch_size;
+
+	init_disassemble_info(&disasm_info,stdout,(fprintf_ftype)stringify_callback);
+
+	disasm_info.arch = bfd_arch_riscv;
+
+	int mach;
+
+	if (archSize == 64) {
+		disasm_info.mach = bfd_mach_riscv64;
+		mach = bfd_mach_riscv64;
+	}
+	else {
+		disasm_info.mach = bfd_mach_riscv32;
+		mach = bfd_mach_riscv32;
+	}
+
+	disasm_func = ::disassembler((bfd_architecture)67/*bfd_arch_riscv*/,false,mach,nullptr);
+	if (disasm_func == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	disasm_info.read_memory_func = buffer_read_memory;
+	disasm_info.buffer = (bfd_byte*)instructionBuffer;
+	disasm_info.buffer_vma = 0;
+	disasm_info.buffer_length = sizeof instructionBuffer;
+
+	disassemble_init_for_target(&disasm_info);
+
+	for (int i = 0; (size_t)i < sizeof currentAddress / sizeof currentAddress[0]; i++) {
+		currentAddress[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof currentTime / sizeof currentTime[0]; i++) {
+		currentTime[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof haveCurrentSrec / sizeof haveCurrentSrec[0]; i++) {
+		haveCurrentSrec[i] = false;
+	}
+
+	for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
+		enterISR[i] = 0;
+	}
+
+	status = TraceDqr::DQERR_OK;
+	return;
+}
+
+Simulator::Simulator(char *f_name,char *e_name)
+{
+	TraceDqr::DQErr ec;
+
+	vf_name = nullptr;
+	lineBuff = nullptr;
+	lines = nullptr;
+	numLines = 0;
+	nextLine = 0;
+	currentCore = 0;
+	flushing = false;
+	elfReader = nullptr;
+	disassembler = nullptr;
+
+	if (f_name == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	ec = readFile(f_name);
+	if (ec != TraceDqr::DQERR_OK) {
+		status = ec;
+		return;
+	}
+
+    elfReader = new (std::nothrow) ElfReader(e_name);
+
+    assert(elfReader != nullptr);
+
+    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
+    	delete elfReader;
+    	elfReader = nullptr;
+
+    	status = TraceDqr::DQERR_ERR;
+
+    	return;
+    }
+
+    bfd *abfd;
+    abfd = elfReader->get_bfd();
+
+	disassembler = new (std::nothrow) Disassembler(abfd);
+
+	assert(disassembler != nullptr);
+
+	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+		if (elfReader != nullptr) {
+			delete elfReader;
+			elfReader = nullptr;
+		}
+
+		delete disassembler;
+		disassembler = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
+	archSize = elfReader->getArchSize();
+
+	for (int i = 0; (size_t)i < sizeof currentAddress / sizeof currentAddress[0]; i++) {
+		currentAddress[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof currentTime / sizeof currentTime[0]; i++) {
+		currentTime[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof haveCurrentSrec / sizeof haveCurrentSrec[0]; i++) {
+		haveCurrentSrec[i] = false;
+	}
+
+	for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
+		enterISR[i] = 0;
+	}
+
+	status = TraceDqr::DQERR_OK;
+	return;
+}
+
+Simulator::~Simulator()
+{
+	cleanUp();
+}
+
+void Simulator::cleanUp()
+{
+	if (vf_name != nullptr) {
+		delete [] vf_name;
+		vf_name = nullptr;
+	}
+
+	if (lineBuff != nullptr) {
+		delete [] lineBuff;
+		lineBuff = nullptr;
+	}
+
+	if (elfReader != nullptr) {
+		delete elfReader;
+		elfReader = nullptr;
+	}
+
+	if (disassembler != nullptr) {
+		delete disassembler;
+		disassembler = nullptr;
+	}
+}
+
+TraceDqr::DQErr Simulator::readFile(char *file)
+{
+	if (file == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+//	printf("Simulator::readFile(%s)\n",file);
+
+	int l = strlen(file);
+	vf_name = new char [l+1];
+
+	strcpy(vf_name,file);
+
+	std::ifstream  f(file, std::ifstream::binary);
+
+	if (!f) {
+		printf("Error: Simulator::readAndParse(): could not open verilator file %s for input\n",vf_name);
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	// get length of file:
+
+	f.seekg (0, f.end);
+	int length = f.tellg();
+	f.seekg (0, f.beg);
+
+	// allocate memory:
+
+	lineBuff = new char [length];
+
+	// read file into buffer
+
+	f.read(lineBuff,length);
+
+	f.close();
+
+	// count lines
+
+	int lc = 1;
+
+	for (int i = 0; i < length; i++) {
+		if (lineBuff[i] == '\n') {
+			lc += 1;
+		}
+	}
+
+	lines = new char *[lc];
+
+	// initialize arry of ptrs
+
+	int s;
+
+	l = 0;
+	s = 1;
+
+	lines[0] = &lineBuff[0];
+
+	for (int i = 1; i < length;i++) {
+		if (s != 0) {
+			lines[l] = &lineBuff[i];
+			l += 1;
+			s = 0;
+		}
+
+		// strip out CRs and LFs
+
+		if (lineBuff[i] == '\r') {
+			lineBuff[i] = 0;
+		}
+		else if (lineBuff[i] == '\n') {
+			lineBuff[i] = 0;
+			s = 1;
+		}
+	}
+
+	if (l >= lc) {
+		delete [] lines;
+		delete [] lineBuff;
+
+		lines = nullptr;
+		lineBuff = nullptr;
+
+		printf("Error: Simulator::readAndParse(): Error computing line count for file\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+
+	lines[l] = nullptr;
+
+	numLines = l;
+
+
+	return TraceDqr::DQERR_OK;
+}
+
+void SRec::dump()
+{
+	printf("SRec: %d",validLine);
+
+	if (validLine) {
+		printf(" line:%d",line);
+		printf(" core:%d",coreId);
+		printf(" cycles: %d",cycles);
+		printf(" valid: %d",valid);
+		printf(" pc=[%08llx]",pc);
+		printf(" W[r%2d=%08x][%d]",wReg,wVal,wvf);
+		printf(" R[r%2d=%08x]",r1Reg,r1Val);
+		printf(" R[r%2d=%08x]",r2Reg,r2Val);
+		printf(" inst=[%08x]",inst);
+		printf(" DASM(%08x)\n",dasm);
+	}
+}
+
+TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
+{
+	if (l >= numLines) {
+		return TraceDqr::DQERR_EOF;
+	}
+
+	char *lp = lines[l];
+	int ci = 0;
+	char *ep;
+
+	srec->validLine = false;
+	srec->valid = false;
+	srec->line = l;
+	srec->haveFRF = false;
+
+	// No syntax errors until find first line that starts with 'C'
+
+	// strip ws
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	// check for core specifyer
+
+	if (lp[ci] != 'C') {
+		return TraceDqr::DQERR_OK;
+	}
+
+	ci += 1;
+
+	// Skip whitespace (seen out files with "C:     0")
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (!isdigit(lp[ci])) {
+		// Still a comment line
+		return TraceDqr::DQERR_OK;
+	}
+
+	srec->coreId = strtoul(&lp[ci],&ep,10);
+
+	if (ep == &lp[ci]) {
+		printf("Simulator::parseLine(): syntax error. Expected core number\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci = ep - lp;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (lp[ci] != ':') {
+		printf("Simulator::parseLine(): syntax error. Expected ':' at end of core number\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	srec->cycles = strtoul(&lp[ci],&ep,10);
+
+	if (ep == &lp[ci]) {
+		printf("Simulator::parseLine(): syntax error. Expected cycle count\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci = ep - lp;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (strncmp("frf",&lp[ci],3) == 0) {
+		ci += 3;
+
+		if (lp[ci] != '[') {
+			printf("Simulator::parseLine(): syntax error. Execpted '[' after frf\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		srec->wReg = strtoull(&lp[ci],&ep,16);
+
+		if (&lp[ci] == ep) {
+			printf("Simulator::parseLine(): syntax error parsing frf register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci = ep - lp;
+
+		if (lp[ci] != ']') {
+			printf("Simulator::parseLine(): syntax error. Expected ']' after frf register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != '=') {
+			printf("Simulator::parseLine(): syntax error. Expected '=' after frf register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != '[') {
+			printf("Simulator::parseLine(): syntax error. Expected '[' after frf '='\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		srec->frfAddr = strtoull(&lp[ci],&ep,16);
+
+		if (&lp[ci] == ep) {
+			printf("Simulator::parseLine(): syntax error parsing frf address\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci = ep - lp;
+
+		if (lp[ci] != ']') {
+			printf("Simulator::parseLine(): syntax error. Expected ']' after frf address\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != 0) {
+			printf("Simulator::parseLine(): extra input on end of line; ignoring\n");
+		}
+
+		// don't set srec->valid to true because frf records are different
+
+		srec->haveFRF = true;
+		srec->validLine = true;
+
+		return TraceDqr::DQERR_OK;
+	}
+
+	if (lp[ci] != '[') {
+		printf("Simulator::parseLine(): syntax error. Expected '[' after cycle count\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	if ((lp[ci] >= '0') && (lp[ci] <= '1')) {
+		srec->valid = lp[ci] - '0';
+	}
+	else {
+		printf("Simulator::parseLine(): syntax error. Expected valid flag of either 0 or 1\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	if (lp[ci] != ']') {
+		printf("Simulator::parseLine(): syntax error. Expected ']' after valid flag\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (strncmp("pc=[",&lp[ci],sizeof "pc=[" - 1) != 0) {
+		printf("Simulator::parseLine(): syntax error. Expected pc=[\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += sizeof "pc=[" - 1;
+
+	srec->pc = strtoull(&lp[ci],&ep,16);
+
+	if (&lp[ci] == ep) {
+		printf("Simulator::parseLine(): syntax error parsing PC value\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci = ep - lp;
+
+	if (lp[ci] != ']') {
+		printf("Simulator::parseLine(): syntax error. Expected ']' after PC address\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	int numReads = 0;
+
+	for (int i = 0; i < 3; i++) { // get dst and two src operands
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		bool wf = false;
+		bool rf = false;
+
+		if (lp[ci] == 'W') {
+			wf = true;
+		}
+		else if (lp[ci] == 'R') {
+			rf = true;
+			numReads += 1;
+		}
+
+		if ((rf != true) && (wf != true)) {
+			printf("Simulator::parseLine(): syntax error. Expected read or write specifier\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		if (lp[ci] != '[') {
+			printf("Simulator::parseLine(): syntax error. Expected '[' after read or write specifier\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		if (lp[ci] != 'r') {
+			printf("Simulator::parseLine(): syntax error. Expected register specifier\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		uint32_t regNum;
+		regNum = strtoul(&lp[ci],&ep,10);
+
+		if (ep == &lp[ci]) {
+			printf("Simulator::parseLine(): syntax error. Expected register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci = ep - lp;
+
+		if (lp[ci] != '=') {
+			printf("Simulator::parseLine(): syntax error. Expected '='\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		uint32_t regVal;
+		regVal = strtoul(&lp[ci],&ep,16);
+
+		if (&lp[ci] == ep) {
+			printf("Simulator::parseLine(): syntax error. Expected register value\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci = ep - lp;
+
+		if (lp[ci] != ']') {
+			printf("Simulator::parseLine(): syntax error. Expected ']' after register value\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		if (wf) {
+			// for writes
+
+			srec->wReg = regNum;
+			srec->wVal = regVal;
+
+			if (lp[ci] != '[') {
+				printf("Simulator::parseLine(): syntax error. Expected '[' for write valid flag\n");
+				printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+				return TraceDqr::DQERR_ERR;
+			}
+
+			ci += 1;
+
+			if ((lp[ci] < '0') || (lp[ci] > '1')) {
+				printf("Simulator::parseLine(): syntax error. Expected write valid flag of either '0' or '1'\n");
+				printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+				return TraceDqr::DQERR_ERR;
+			}
+
+			srec->wvf = lp[ci] - '0';
+			ci += 1;
+
+			if (lp[ci] != ']') {
+				printf("Simulator::parseLine(): syntax error. Expected ']' after write valid flag\n");
+				printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+				return TraceDqr::DQERR_ERR;
+			}
+
+			ci += 1;
+		}
+		else {
+			// for reads
+
+			if (numReads == 1) {
+				srec->r1Reg = regNum;
+				srec->r1Val = regVal;
+			}
+			else {
+				srec->r2Reg = regNum;
+				srec->r2Val = regVal;
+			}
+		}
+	}
+
+	ci += 1;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (strncmp(&lp[ci],"inst=[",sizeof "inst=[" - 1) != 0) {
+		printf("Simulator::parseLine(): syntax error. Expected 'inst='\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += sizeof "inst=[" - 1;
+
+	srec->inst = strtoul(&lp[ci],&ep,16);
+	if (ep == &lp[ci]) {
+		printf("Simulator::parseLine(): syntax error parsing instruction\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci = ep - lp;
+
+	if (lp[ci] != ']') {
+		printf("Simulator::parseLine(): syntax error parsing instruction. Expected ']'\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (strncmp(&lp[ci],"DASM(",sizeof "DASM(" - 1) != 0) {
+		printf("Simulator::parseLine(): syntax error. Expected 'DASM('\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += sizeof "DASM(" - 1;
+
+	srec->dasm = strtoul(&lp[ci],&ep,16);
+	if (ep == &lp[ci]) {
+		printf("Simulator::parseLine(): syntax error parsing DASM\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci = ep - lp;
+
+	if (lp[ci] != ')') {
+		printf("Simulator::parseLine(): syntax error parsing DASM. Expected ')'\n");
+		printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ci += 1;
+
+	while (lp[ci] == ' ') {
+		ci += 1;
+	}
+
+	if (lp[ci] != 0) {
+		printf("Simulator::parseLine(): extra input on end of line; ignoring\n");
+	}
+
+	srec->validLine = true;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Simulator::parseFile()
+{
+	TraceDqr::DQErr s;
+	SRec srec;
+
+	for (int i = 0; i < numLines; i++) {
+		s = parseLine(i,&srec);
+		if (s != TraceDqr::DQERR_OK) {
+			status = s;
+			printf("Error parsing file!\n");
+			return s;
+		}
+		srec.dump();
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Simulator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint32_t currentInst, TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag)
+{
+	int inst_size;
+	TraceDqr::InstType inst_type;
+	int32_t immediate;
+	bool isBranch;
+	int rc;
+	TraceDqr::Reg rs1;
+	TraceDqr::Reg rd;
+
+	brFlag = TraceDqr::BRFLAG_none;
+	crFlag = enterISR[currentCore];
+	enterISR[currentCore] = 0;
+
+//	if ((expectedAddress != -1) &&(expectedAddress != currentAddress) {
+//		crFlag |= TraceDqr::isInterrupt;
+//	}
+
+	// figure out how big the instruction is
+	// Note: immediate will already be adjusted - don't need to mult by 2 before adding to address
+
+	rc = Disassembler::decodeInstruction(currentInst,archSize,inst_size,inst_type,rs1,rd,immediate,isBranch);
+	if (rc != 0) {
+		printf("Error: computeBranchFlags(): Cannot decode instruction %04x\n",currentInst);
+
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	switch (inst_type) {
+	case TraceDqr::INST_UNKNOWN:
+		if ((currentAddr + inst_size/8) != nextAddr) {
+			enterISR[currentCore] = TraceDqr::isInterrupt;
+		}
+		break;
+	case TraceDqr::INST_JAL:
+		// rd = pc+4 (rd can be r0)
+		// pc = pc + (sign extended immediate offset)
+		// plain unconditional jumps use rd -> r0
+		// inferrable unconditional
+
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			crFlag |= TraceDqr::isCall;
+		}
+
+		if (currentAddr + immediate != nextAddr) {
+			enterISR[currentCore] = TraceDqr::isInterrupt;
+		}
+		break;
+	case TraceDqr::INST_JALR:
+		// rd = pc+4 (rd can be r0)
+		// pc = pc + ((sign extended immediate offset) + rs) & 0xffe
+		// plain unconditional jumps use rd -> r0
+		// not inferrable unconditional
+
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
+				crFlag |= TraceDqr::isCall;
+			}
+			else if (rd != rs1) { // rd == link; rs1 == link; rd != rs1
+				crFlag |= TraceDqr::isSwap;
+			}
+			else { // rd == link; rs1 == link; rd == rs1
+				crFlag |= TraceDqr::isCall;
+			}
+		}
+		else if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) { // rd != link; rs1 == link
+			crFlag |= TraceDqr::isReturn;
+		}
+
+		// without more info, don't know if enterISR should be set or not, so we leave it alone for now
+		// could include register info and then we could tell
+		break;
+	case TraceDqr::INST_BEQ:
+	case TraceDqr::INST_BNE:
+	case TraceDqr::INST_BLT:
+	case TraceDqr::INST_BGE:
+	case TraceDqr::INST_BLTU:
+	case TraceDqr::INST_BGEU:
+	case TraceDqr::INST_C_BEQZ:
+	case TraceDqr::INST_C_BNEZ:
+		// pc = pc + (sign extend immediate offset) (BLTU and BGEU are not sign extended)
+		// inferrable conditional
+
+		if (nextAddr == (currentAddr + inst_size / 8)) {
+			brFlag = TraceDqr::BRFLAG_notTaken;
+		}
+		else if (nextAddr == (currentAddr + immediate)) {
+			brFlag = TraceDqr::BRFLAG_taken;
+		}
+		else {
+			enterISR[currentCore] = TraceDqr::isInterrupt;
+		}
+		break;
+	case TraceDqr::INST_C_J:
+		// pc = pc + (signed extended immediate offset)
+		// inferrable unconditional
+
+		if (currentAddr + immediate != nextAddr) {
+			enterISR[currentCore] = TraceDqr::isInterrupt;
+		}
+		break;
+	case TraceDqr::INST_C_JAL:
+		// btm, htm same
+
+		// x1 = pc + 2
+		// pc = pc + (signed extended immediate offset)
+		// inferrable unconditional
+
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			crFlag |= TraceDqr::isCall;
+		}
+
+		if (currentAddr + immediate != nextAddr) {
+			enterISR[currentCore] = TraceDqr::isInterrupt;
+		}
+		break;
+	case TraceDqr::INST_C_JR:
+		// pc = pc + rs1
+		// not inferrable unconditional
+
+		if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
+			crFlag |= TraceDqr::isReturn;
+		}
+
+		// without more info, don't know if enterISR should be set or not, so we leave it alone for now
+		// could include register info and then we could tell
+		break;
+	case TraceDqr::INST_C_JALR:
+		// x1 = pc + 2
+		// pc = pc + rs1
+		// not inferrble unconditional
+
+		if (rs1 == TraceDqr::REG_5) {
+			crFlag |= TraceDqr::isSwap;
+		}
+		else {
+			crFlag |= TraceDqr::isCall;
+		}
+
+		// without more info, don't know if enterISR should be set or not, so we leave it alone for now
+		// could include register info and then we could tell
+		break;
+	case TraceDqr::INST_EBREAK:
+	case TraceDqr::INST_ECALL:
+		crFlag |= TraceDqr::isException;
+
+		// without more info, don't know if enterISR should be set or not, so we leave it alone for now
+		// could include register info and then we could tell
+		break;
+	case TraceDqr::INST_MRET:
+	case TraceDqr::INST_SRET:
+	case TraceDqr::INST_URET:
+		crFlag |= TraceDqr::isExceptionReturn;
+
+		// without more info, don't know if enterISR should be set or not, so we leave it alone for now
+		// could include register info and then we could tell
+		break;
+	default:
+		if (currentAddr + immediate != nextAddr) {
+			enterISR[currentCore] = TraceDqr::isInterrupt;
+		}
+		break;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Simulator::getTraceFileOffset(int &size,int &offset)
+{
+	size = numLines;
+	offset = nextLine;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Simulator::getNextSrec(int nextLine,SRec &srec)
+{
+	TraceDqr::DQErr rc;
+
+	do {
+		rc = parseLine(nextLine,&srec);
+		nextLine += 1;
+
+		if (rc != TraceDqr::DQERR_OK) {
+			return rc;
+		}
+	} while ((srec.validLine == false) || (srec.valid == false));
+
+	// when we get here, we have read the next valid SRec in the input. Could be for any core
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Simulator::flushNextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo)
+{
+	TraceDqr::DQErr rc;
+
+	for (int i = 0; i < DQR_MAXCORES; i++) {
+		if (haveCurrentSrec[i]){
+			haveCurrentSrec[i] = false;
+
+			// don't need to compute branch flags for call/return because this is the last instrucition
+			// and we can't tell if a branch is taken or not. But e could determine call/return info.
+			// We should be doing that. Dang!
+
+			rc = buildInstructionFromSrec(&currentSrec[i],TraceDqr::BRFLAG_none,TraceDqr::isNone);
+
+			return rc;
+		}
+	}
+
+	return deferredStatus;
+}
+
+TraceDqr::DQErr Simulator::buildInstructionFromSrec(SRec *srec,TraceDqr::BranchFlags brFlags,int crFlag)
+{
+	// at this point we have two srecs for same core
+
+	int rc;
+
+	rc = Disassemble(srec);
+	if (rc != 0) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	instructionInfo.brFlags = brFlags;
+	instructionInfo.CRFlag = crFlag;
+
+	instructionInfo.timestamp = srec->cycles;
+
+	instructionInfo.r0Val = srec->r1Val;
+	instructionInfo.r1Val = srec->r2Val;
+	instructionInfo.wVal = srec->wVal;
+
+	if (currentTime[srec->coreId] == 0) {
+		instructionInfo.cycles = 0;
+	}
+	else {
+		instructionInfo.cycles = srec->cycles - currentTime[srec->coreId];
+	}
+
+	currentTime[srec->coreId] = srec->cycles;
+
+	return TraceDqr::DQERR_OK;
+}
+
+int Simulator::Disassemble(SRec *srec)
+{
+	TraceDqr::DQErr ec;
+
+	if (disassembler != nullptr) {
+		disassembler->Disassemble(srec->pc);
+
+		ec = disassembler->getStatus();
+
+		if (ec != TraceDqr::DQERR_OK ) {
+			status = ec;
+			return 0;
+		}
+
+		// the two lines below copy each structure completely. This is probably
+		// pretty inefficient, and just returning pointers and using pointers
+		// would likely be better
+
+		instructionInfo = disassembler->getInstructionInfo();
+		sourceInfo = disassembler->getSourceInfo();
+	}
+	else {
+		// hafta do it all ourselves!
+
+		disasm_info.buffer_vma = srec->pc;
+		instructionBuffer[0] = srec->inst;
+
+		instructionInfo.instructionText[0] = 0;
+		dis_output = instructionInfo.instructionText;
+
+		// don't need to use global dis_output to point to where to print. Instead, override stream to point to char
+		// buffer of where to print data to. This will give multi-instance safe code for verilator and trace objects
+
+		// not easy to cache disassembly because we don't know the address range for the program (can't read
+		// the elf file if we don't have one! So can't allocate a block of memory for the code region unless
+		// we read through the verilator file and collect info on pc addresses first
+
+		size_t instSize = disasm_func(srec->pc,&disasm_info)*8;
+
+		if (instSize == 0) {
+			status = TraceDqr::DQERR_ERR;
+			return 1;
+		}
+
+		instructionInfo.haveOperandAddress = false;
+		instructionInfo.operandAddress = 0;
+		instructionInfo.operandLabel = nullptr;
+		instructionInfo.operandLabelOffset = 0;
+		instructionInfo.addressLabel = nullptr;
+		instructionInfo.addressLabelOffset = 0;
+
+		// now turn srec into instrec
+
+		instructionInfo.address = srec->pc;
+		instructionInfo.instruction = srec->inst;
+		instructionInfo.instSize = instSize;
+	}
+
+	instructionInfo.coreId = srec->coreId;
+
+	return 0;
+}
+
+TraceDqr::DQErr Simulator::NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags)
+{
+	TraceDqr::DQErr ec;
+
+	Instruction  *instInfop = nullptr;
+	NexusMessage *msgInfop  = nullptr;
+	Source       *srcInfop  = nullptr;
+
+	Instruction  **instInfopp = nullptr;
+	NexusMessage **msgInfopp  = nullptr;
+	Source       **srcInfopp  = nullptr;
+
+	if (instInfo != nullptr) {
+		instInfopp = &instInfop;
+	}
+
+	if (msgInfo != nullptr) {
+		msgInfopp = &msgInfop;
+	}
+
+	if (srcInfo != nullptr) {
+		srcInfopp = &srcInfop;
+	}
+
+	ec = NextInstruction(instInfopp, msgInfopp, srcInfopp);
+
+	*flags = 0;
+
+	if (ec == TraceDqr::DQERR_OK) {
+		if (instInfo != nullptr) {
+			if (instInfop != nullptr) {
+				*instInfo = *instInfop;
+				*flags |= TraceDqr::TRACE_HAVE_INSTINFO;
+			}
+		}
+
+		if (msgInfo != nullptr) {
+			if (msgInfop != nullptr) {
+				*msgInfo = *msgInfop;
+				*flags |= TraceDqr::TRACE_HAVE_MSGINFO;
+			}
+		}
+
+		if (srcInfo != nullptr) {
+			if (srcInfop != nullptr) {
+				*srcInfo = *srcInfop;
+				*flags |= TraceDqr::TRACE_HAVE_SRCINFO;
+			}
+		}
+	}
+
+	return ec;
+}
+
+TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo)
+{
+	TraceDqr::DQErr rc;
+	int crFlag = 0;
+	TraceDqr::BranchFlags brFlags = TraceDqr::BRFLAG_none;
+	SRec nextSrec;
+
+	if (instInfo != nullptr) {
+		*instInfo = nullptr;
+	}
+
+	if (msgInfo != nullptr) {
+		*msgInfo = nullptr;
+	}
+
+	if (srcInfo != nullptr) {
+		*srcInfo = nullptr;
+	}
+
+	if (nextLine >= numLines) {
+		return TraceDqr::DQERR_EOF;
+	}
+
+	if (!flushing) {
+		bool done = false;
+
+		do {
+			rc = getNextSrec(nextLine,nextSrec);
+
+			if (rc != TraceDqr::DQERR_OK) {
+				deferredStatus = rc;
+				flushing = true;
+				done = true;
+			}
+			else {
+				nextLine = nextSrec.line+1;	// as long as rc is not an error, nextSrec.line is valid
+
+				if (nextSrec.validLine && nextSrec.valid) {
+					if (haveCurrentSrec[nextSrec.coreId] == false) {
+						currentSrec[nextSrec.coreId] = nextSrec;
+						haveCurrentSrec[nextSrec.coreId] = true;
+
+						nextSrec.valid = false;
+
+						// don't set done to true, because we still don't have current and new srecs!
+					}
+					else {
+						// have two consecutive srecs for the same core. We are done looping
+
+						done = true;
+					}
+				}
+				else if (nextSrec.validLine && nextSrec.haveFRF) {
+					// for now, just ignore frf records. Don't update time because cycle
+					// count time for frf records does not seem to be associated with an
+					// instruction
+
+					// currentTime[nextSrec.coreId] = nextSrec.cycles;
+				}
+			}
+		} while (((nextSrec.validLine == false) || (nextSrec.valid == false)) && !done);
+	}
+
+	if (flushing) {
+		rc = flushNextInstruction(&instructionInfo,&messageInfo,&sourceInfo);
+
+		if (instInfo != nullptr) {
+			*instInfo = &instructionInfo;
+		}
+
+		if (srcInfo != nullptr) {
+			if (disassembler != nullptr) {
+//				shouldn't need to call getsrclines. FlushNextInstruciotn should be callingbuildinstructionfromsrec which fills it all in
+//
+//				disassembler->getSrcLines(instructionInfo.address, &sourceInfo.sourceFile, &sourceInfo.sourceFunction, &sourceInfo.sourceLineNum, &sourceInfo.sourceLine);
+//
+				*srcInfo = &sourceInfo;
+			}
+		}
+
+		return rc;
+	}
+
+	rc = computeBranchFlags(currentSrec[currentCore].pc,currentSrec[currentCore].inst,nextSrec.pc,crFlag,brFlags);
+	if (rc != TraceDqr::DQERR_OK) {
+		printf("Error: Simulator::NextInstruction(): could not compute branch flags\n");
+
+		status = rc;
+		return status;
+	}
+
+	currentCore = nextSrec.coreId;
+
+	rc = buildInstructionFromSrec(&currentSrec[currentCore],brFlags,crFlag);
+
+	currentSrec[currentCore] = nextSrec;
+
+	if (instInfo != nullptr) {
+		*instInfo = &instructionInfo;
+	}
+
+	if (disassembler != nullptr) {
+		if (srcInfo != nullptr) {
+			*srcInfo = &sourceInfo;
+		}
+	}
+
+	// possible improvements:
+	// caching of instruction/address
+	// improve print callback disassembly routines to use stream as a pointer to a struct with a buffer and
+	// and length to improve performance and allow multithreading (or multi object)
+	// improve disassembly to not print 32 bit literals as 64 bits
+
+	return TraceDqr::DQERR_OK;
+}
