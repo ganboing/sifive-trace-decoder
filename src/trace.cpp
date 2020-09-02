@@ -1495,12 +1495,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					return status;
 				}
 
-				if (srcInfo != nullptr) {
-					Disassemble(currentAddress[currentCore]);
-
-					sourceInfo.coreId = currentCore;
-					*srcInfo = &sourceInfo;
-				}
+// don't want the code below. Never return srcInfo unless we have instInfo also.
+//				if (srcInfo != nullptr) {
+//					Disassemble(currentAddress[currentCore]);
+//
+//					sourceInfo.coreId = currentCore;
+//					*srcInfo = &sourceInfo;
+//				}
 
 				state[currentCore] = TRACE_STATE_GETSECONDMSG;
 				break;
@@ -1621,12 +1622,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					}
 				}
 
-				if (srcInfo != nullptr) {
-					Disassemble(currentAddress[currentCore]);
-
-					sourceInfo.coreId = currentCore;
-					*srcInfo = &sourceInfo;
-				}
+// don't return srcInfo unless we have instInfo also
+//				if (srcInfo != nullptr) {
+//					Disassemble(currentAddress[currentCore]);
+//
+//					sourceInfo.coreId = currentCore;
+//					*srcInfo = &sourceInfo;
+//				}
 
 				readNewTraceMessage = true;
 
