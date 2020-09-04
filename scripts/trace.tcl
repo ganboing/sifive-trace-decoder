@@ -2330,19 +2330,20 @@ proc getTraceBufferSize {core} {
     global te_sinkwp_offset
     global te_sinkbase_offset
     global te_sinklimit_offset
+	global trace_buffer_width
 
     switch [string toupper [getSink $core]] {
 		"SRAM" { 
 			set t [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
 			mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] 0xfffffffc
-			set size [expr [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]] + 4]
+			set size [expr [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]] + $trace_buffer_width]
 			mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
 			return $size
 			}
 		"SBA"  { 
 			set start [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
 			set end [word [expr $traceBaseAddrArray($core) + $te_sinklimit_offset]]
-			set size [expr $end - $start + 4]
+			set size [expr $end - $start + $trace_buffer_width]
 			return $size
 			}
     }
