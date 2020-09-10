@@ -1634,6 +1634,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 			case TraceDqr::TCODE_ERROR:
+			case TraceDqr::TCODE_DATA_ACQUISITION:
 				// these message have no address or count info, so we still need to get
 				// another message.
 
@@ -1659,7 +1660,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				return status;
 			default:
-				printf("Error: bad tcode type in sate TRACE_STATE_GETNEXTMSG.TCODE_DIRECT_BRANCH\n");
+				printf("Error: bad tcode type in state TRACE_STATE_GETSECONDMSG. TCODE (%d)\n",nm.tcode);
 
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
