@@ -1614,16 +1614,29 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
-					messageInfo.currentAddress = currentAddress[currentCore];
+
+					// use lastFaddr[] and not currentAddress[] for currentAddress
+
+					messageInfo.currentAddress = lastFaddr[currentCore];
 
 					if (messageInfo.processITCPrintData(itcPrint) == false) {
 						*msgInfo = &messageInfo;
 					}
 				}
 
-				if (srcInfo != nullptr) {
-					Disassemble(currentAddress[currentCore]);
+				Disassemble(lastFaddr[currentCore]);
 
+				if (instInfo != nullptr) {
+					instructionInfo.coreId = currentCore;
+					*instInfo = &instructionInfo;
+					(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
+					enterISR[currentCore] = TraceDqr::isNone;
+					(*instInfo)->brFlags = brFlags;
+
+					(*instInfo)->timestamp = lastTime[currentCore];
+				}
+
+				if (srcInfo != nullptr) {
 					sourceInfo.coreId = currentCore;
 					*srcInfo = &sourceInfo;
 				}
