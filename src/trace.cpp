@@ -971,6 +971,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		faddr = nm.sync.f_addr << 1;
 		pc = faddr;
 		counts->resetStack(nm.coreId);
+		counts->resetCounts(nm.coreId);
 		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 		if (nm.haveTimestamp) {
@@ -979,6 +980,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		faddr = nm.directBranchWS.f_addr << 1;
 		pc = faddr;
 		counts->resetStack(nm.coreId);
+		counts->resetCounts(nm.coreId);
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 		if (nm.haveTimestamp) {
@@ -987,6 +989,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		faddr = nm.indirectBranchWS.f_addr << 1;
 		pc = faddr;
 		counts->resetStack(nm.coreId);
+		counts->resetCounts(nm.coreId);
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
 		if (nm.haveTimestamp) {
@@ -1002,6 +1005,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		faddr = nm.indirectHistoryWS.f_addr << 1;
 		pc = faddr;
 		counts->resetStack(nm.coreId);
+		counts->resetCounts(nm.coreId);
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 		if (nm.haveTimestamp) {
