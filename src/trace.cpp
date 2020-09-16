@@ -1012,14 +1012,19 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			ts = adjustTsForWrap(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 		faddr = faddr ^ (nm.ict.ckdata << 1);
-		pc = faddr;
+
+		// don't update pc for INCIRCUITTRACE messages
+		//pc = faddr;
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 		if (nm.haveTimestamp) {
 			ts = adjustTsForWrap(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 		faddr = nm.ictWS.ckdata << 1;
-		pc = faddr;
+
+		// don't update pc for INCIRCUITTRACE messages
+		//pc = faddr;
+
 		// don't reset call/return stack for this message
 		break;
 	case TraceDqr::TCODE_DEBUG_STATUS:
@@ -1488,7 +1493,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
-			case TraceDqr::TCODE_INCIRCUITTRACE_WS:	// If we are looking for a starting sync and see this, all is cool!!
 				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
@@ -1504,6 +1508,38 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					sourceInfo.coreId = currentCore;
 					*srcInfo = &sourceInfo;
+				}
+
+				state[currentCore] = TRACE_STATE_GETSECONDMSG;
+				break;
+			case TraceDqr::TCODE_INCIRCUITTRACE_WS: // If we are looking for a starting sync and see this, all is cool!!
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+
+				if ((instInfo != nullptr) || (srcInfo != nullptr)) {
+					Disassemble(lastFaddr[currentCore]);
+
+					if (instInfo != nullptr) {
+						instructionInfo.coreId = currentCore;
+						*instInfo = &instructionInfo;
+						(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
+						enterISR[currentCore] = TraceDqr::isNone;
+						(*instInfo)->brFlags = brFlags;
+
+						(*instInfo)->timestamp = lastTime[currentCore];
+					}
+
+					if (srcInfo != nullptr) {
+						sourceInfo.coreId = currentCore;
+						*srcInfo = &sourceInfo;
+					}
 				}
 
 				state[currentCore] = TRACE_STATE_GETSECONDMSG;
@@ -1615,6 +1651,25 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					return status;
 				}
 
+				if ((instInfo != nullptr) || (srcInfo != nullptr)) {
+					Disassemble(lastFaddr[currentCore]);
+
+					if (instInfo != nullptr) {
+						instructionInfo.coreId = currentCore;
+						*instInfo = &instructionInfo;
+						(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
+						enterISR[currentCore] = TraceDqr::isNone;
+						(*instInfo)->brFlags = brFlags;
+
+						(*instInfo)->timestamp = lastTime[currentCore];
+					}
+
+					if (srcInfo != nullptr) {
+						sourceInfo.coreId = currentCore;
+						*srcInfo = &sourceInfo;
+					}
+				}
+
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
 					messageInfo.time = lastTime[currentCore];
@@ -1626,23 +1681,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					if (messageInfo.processITCPrintData(itcPrint) == false) {
 						*msgInfo = &messageInfo;
 					}
-				}
-
-				Disassemble(lastFaddr[currentCore]);
-
-				if (instInfo != nullptr) {
-					instructionInfo.coreId = currentCore;
-					*instInfo = &instructionInfo;
-					(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
-					enterISR[currentCore] = TraceDqr::isNone;
-					(*instInfo)->brFlags = brFlags;
-
-					(*instInfo)->timestamp = lastTime[currentCore];
-				}
-
-				if (srcInfo != nullptr) {
-					sourceInfo.coreId = currentCore;
-					*srcInfo = &sourceInfo;
 				}
 
 				readNewTraceMessage = true;
