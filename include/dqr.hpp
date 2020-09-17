@@ -447,6 +447,9 @@ public:
     	} ictWS;
     };
 
+    uint32_t offset;
+    uint8_t  rawData[32];
+
     int getI_Cnt();
     TraceDqr::ADDRESS    getU_Addr();
     TraceDqr::ADDRESS    getF_Addr();

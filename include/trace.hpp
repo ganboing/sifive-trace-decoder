@@ -239,6 +239,7 @@ private:
   int           tfSize;
   int           bitIndex;
   int           msgSlices;
+  uint32_t      msgOffset;
   uint8_t       msg[64];
   bool          eom = false;
 

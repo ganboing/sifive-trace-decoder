@@ -105,6 +105,7 @@ static void usage(char *name)
 	printf("-pathwindows: Show all file paths using windows-type '\\' path separators\n");
 	printf("              Also cleans up path, removing // -> /, /./ -> /, and uplevels for each /../\n");
 	printf("-pathraw:     Show all file path in the format stored in the elf file\n");
+	printf("-msgLevel=n:  Set the nexus trace message detail level. n must be >= 0, <= 3\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -183,6 +184,7 @@ int main(int argc, char *argv[])
 	bool showBranches = false;
 	TraceDqr::pathType pt = TraceDqr::PATH_TO_UNIX;
 	int archSize = 32;
+	int msgLevel = 2;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -462,6 +464,14 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
+		else if (strncmp("-msglevel=",argv[i],sizeof "-msglevel") == 0) {
+			msgLevel = atoi(argv[i]+strlen("-msglevel="));
+
+			if ((msgLevel < 0) || (msgLevel > 3)) {
+				printf("Error: msgLevel must be >=0, <= 3\n");
+				return 1;
+			}
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -573,7 +583,6 @@ int main(int argc, char *argv[])
 	Source *srcInfo;
 	char dst[10000];
 	int instlevel = 1;
-	int msgLevel = 2;
 	const char *lastSrcFile = nullptr;
 	const char *lastSrcLine = nullptr;
 	unsigned int lastSrcLineNum = 0;
