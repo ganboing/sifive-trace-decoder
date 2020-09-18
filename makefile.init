@@ -34,6 +34,9 @@ ifeq ($(OS),Windows_NT)
         JNIINCLUDEPATHS :=
     else
         LIBSEARCHPATH := $(shell $(CROSSPREFIX)gcc -print-search-dirs | grep -i "libraries: =" 2> /dev/null)
+        LIBSEARCHPATH2 := $(shell which $(CROSSPRIFIX)gcc 2> /dev/null)
+        LIBSEARCHPATH2 := $(subst /gcc,/,$(LIBSEARCHPATH2))
+        LIBSEARCHPATH := $(LIBSEARCHPATH) $(LIBSEARCHPATH2)
         LIBSEARCHPATH := $(patsubst libraries:%,%,$(LIBSEARCHPATH))
         LIBSEARCHPATH := $(patsubst =%,%,$(LIBSEARCHPATH))
         LIBSEARCHPATH := $(subst ;, ,$(LIBSEARCHPATH))
