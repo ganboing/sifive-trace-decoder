@@ -44,7 +44,7 @@
 
 //#define DO_TIMES	1
 
-#define DQR_MAXCORES	8
+#define DQR_MAXCORES	16
 
 extern const char * const DQR_VERSION;
 
