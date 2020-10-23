@@ -14,6 +14,8 @@ CONFIG := Debug
 
 CROSSPREFIX :=
 
+include version.mk
+
 $(TOPTARGETS): $(CONFIG)
 
 $(CONFIG): libs

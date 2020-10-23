@@ -35,7 +35,8 @@
 
 //#define DQR_MAXCORES	8
 
-const char * const DQR_VERSION = "0.9.41";
+// DECODER_VERSION is passed in from the Makefile, from version.mk in the root.
+const char *const DQR_VERSION = DECODER_VERSION;
 
 // static C type helper functions
 

@@ -1,4 +1,5 @@
 -include ../makefile.init
+-include ../version.mk
 
 ifneq ($(MINGWLIBS),)
         pathsearch = $(firstword $(wildcard $(addsuffix $(1),$(LIBSEARCHPATH))))
@@ -7,8 +8,8 @@ endif
 
 RM := rm -rf
 
-CFLAGS += -O3 -Wall -Wformat=0
-SWIGCFLAGS += -O -Wall -Wformat=0
+CFLAGS += -DDECODER_VERSION=\"$(TRACE_DECODER_VERSION)\" -O3 -Wall -Wformat=0
+SWIGCFLAGS += -DDECODER_VERSION=\"$(TRACE_DECODER_VERSION)\" -O -Wall -Wformat=0
 
 # All Target
 Release release all: $(EXECUTABLE) $(SWIGLIB)
