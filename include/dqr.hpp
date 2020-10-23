@@ -306,6 +306,7 @@ public:
 
 	TraceDqr::TIMESTAMP timestamp;
 	int               cycles;
+	int               pipe;
 
 	uint32_t r0Val;
 	uint32_t r1Val;
@@ -595,6 +596,60 @@ private:
 	} core[DQR_MAXCORES];
 };
 
+class CATraceRec {
+public:
+	void dump();
+	void dumpWithCycle();
+	int consume(int &pipe,uint32_t &cycles);
+	int offset;
+	TraceDqr::ADDRESS address;
+	uint32_t data[32];
+};
+
+class CATrace {
+public:
+	CATrace(char *caf_name);
+	~CATrace();
+	TraceDqr::DQErr consume(int &numConsumed,int &pipe, uint32_t &cycles);
+	TraceDqr::DQErr rewind();
+	TraceDqr::ADDRESS getCATraceStartAddr();
+
+	TraceDqr::DQErr parseCATrace();
+	TraceDqr::DQErr parseNextCATraceRec(CATraceRec &car);
+	TraceDqr::DQErr dumpCurrentCARecord(int level);
+
+	TraceDqr::DQErr getStatus() {return status;}
+
+private:
+	TraceDqr::DQErr status;
+
+	int      caBufferSize;
+	uint8_t *caBuffer;
+	int      caBufferIndex;
+
+	TraceDqr::ADDRESS startAddr;
+	uint32_t baseCycles;
+	CATraceRec catr;
+};
+
+class ObjFile {
+public:
+	ObjFile(char *ef_name);
+	~ObjFile();
+	void cleanUp();
+
+	TraceDqr::DQErr getStatus() {return status;}
+	TraceDqr::DQErr sourceInfo(TraceDqr::ADDRESS addr,Instruction &instInfo,Source &srcInfo);
+	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
+	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
+
+private:
+	TraceDqr::DQErr        status;
+
+	class ElfReader       *elfReader;
+	class Disassembler    *disassembler;
+};
+
 // class Trace: high level class that performs the raw trace data to dissasemble and decorated instruction trace
 
 #ifdef SWIG
@@ -608,7 +663,7 @@ private:
 
 class Trace {
 public:
-    Trace(char *tf_name,bool binaryFlag,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
+    Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
     ~Trace();
     void cleanUp();
     static const char *version();
@@ -616,6 +671,9 @@ public:
 	TraceDqr::DQErr setTSSize(int size);
 	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
+	TraceDqr::DQErr setCATraceFile(char *caf_name);
+
+	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
 	enum TraceFlags {
 		TF_INSTRUCTION = 0x01,
@@ -644,12 +702,13 @@ public:
 	int         Disassemble(TraceDqr::ADDRESS addr);
 	int         getArchSize();
 	int         getAddressSize();
-	void analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
+	void        analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
 	std::string analyticsToString(int detailLevel) { return analytics.toString(detailLevel); }
 	TraceDqr::TIMESTAMP adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
 
 private:
 	enum state {
+		TRACE_STATE_SYNCCATE,
 		TRACE_STATE_GETFIRSTSYNCMSG,
 		TRACE_STATE_GETSECONDMSG,
 		TRACE_STATE_GETSTARTTRACEMSG,
@@ -695,11 +754,18 @@ private:
 	Instruction      instructionInfo;
 	Source           sourceInfo;
 
+	int              syncCount;
+	TraceDqr::ADDRESS caSyncAddr;
+	class CATrace   *caTrace;
+	TraceDqr::TIMESTAMP lastCycle[DQR_MAXCORES];
+	int               eCycleCount[DQR_MAXCORES];
+
 	class NexusMessageSync *messageSync[DQR_MAXCORES];
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
 	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag);
+	TraceDqr::DQErr nextCAAddr(TraceDqr::ADDRESS &addr,TraceDqr::ADDRESS &savedAddr);
 
 	TraceDqr::ADDRESS computeAddress();
 	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts);
@@ -748,6 +814,7 @@ public:
 
 	void analyticsToText(char *dst,int dst_len,int detailLevel) {/*analytics.toText(dst,dst_len,detailLevel);*/ }
 //	std::string analyticsToString(int detailLevel) { /* return analytics.toString(detailLevel);*/ }
+	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
 private:
 	TraceDqr::DQErr status;

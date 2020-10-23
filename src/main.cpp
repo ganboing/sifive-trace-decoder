@@ -40,12 +40,13 @@ static void usage(char *name)
 	printf("           [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path]\n");
 	printf("           [-itcprint | -itcprint=n] [-noitcprint] [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+]\n");
 	printf("           [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n] [-noanalytics] [-freq nn] [-tssize=n]\n");
-	printf("           [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-v] [-h]\n");
+	printf("           [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n] [-v] [-h]\n");
 	printf("\n");
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
 	printf("-s simfile:   Specify the name of the simulator output file. When using a simulator output file, cannot use\n");
 	printf("              a tracefile (-t option). Can provide an elf file (-e option), but is not required.\n");
+	printf("-ca cafile:   Specify the name of the cycle accurate trace file. Must also specify the -t and -e switches.\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
 	printf("-start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is\n");
@@ -87,8 +88,10 @@ static void usage(char *name)
 	printf("-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'\n");
 	printf("-noaddrsep:   Do not add a separator for addresses greater than 32 bit between the upper bits and the lower 32 bits\n");
 	printf("              (default).\n");
-	printf("-srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables\n");
+	printf("-srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 16. Setting srcbits to 0 disables\n");
 	printf("              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.\n");
+	printf("-labels:      Treat labels as functions for source information and disassembly. On by default.\n");
+	printf("-nolables:    Do not use local labels as function names when returning source information or instruction location information.\n");
 	printf("-analytics:   Compute and display detail level 1 trace analytics.\n");
 	printf("-analytics=n: Specify the detail level for trace analytics display. N sets the level to either 0 (no analytics display)\n");
 	printf("              1 (sort system totals), or 2 (display analytics by core).\n");
@@ -105,7 +108,7 @@ static void usage(char *name)
 	printf("-pathwindows: Show all file paths using windows-type '\\' path separators\n");
 	printf("              Also cleans up path, removing // -> /, /./ -> /, and uplevels for each /../\n");
 	printf("-pathraw:     Show all file path in the format stored in the elf file\n");
-	printf("-msgLevel=n:  Set the nexus trace message detail level. n must be >= 0, <= 3\n");
+	printf("-msglevel=n:  Set the nexus trace message detail level. n must be >= 0, <= 3\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -155,11 +158,11 @@ static const char *stripPath(const char *prefix,const char *srcpath)
 
 int main(int argc, char *argv[])
 {
-	bool binary_flag = true;
 	char *tf_name = nullptr;
 	char *base_name = nullptr;
 	char *ef_name = nullptr;
 	char *sf_name = nullptr;
+	char *ca_name = nullptr;
 	char buff[128];
 	int buff_index = 0;
 	bool usage_flag = false;
@@ -185,6 +188,7 @@ int main(int argc, char *argv[])
 	TraceDqr::pathType pt = TraceDqr::PATH_TO_UNIX;
 	int archSize = 32;
 	int msgLevel = 2;
+	bool labelFlag = true;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -226,11 +230,15 @@ int main(int argc, char *argv[])
 
 			ef_name = argv[i];
 		}
-		else if (strcmp("-binary",argv[i]) == 0) {
-			binary_flag = true;
-		}
-		else if (strcmp("-text",argv[i]) == 0) {
-			binary_flag = false;
+		else if (strcmp("-ca",argv[i]) == 0) {
+			i += 1;
+			if (i >= argc) {
+				printf("Error: option -ca reques a file name\n");
+				usage(argv[0]);
+				return 1;
+			}
+
+			ca_name = argv[i];
 		}
 		else if (strcmp("-start",argv[i]) == 0) {
 			i += 1;
@@ -472,6 +480,66 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
+		else if (strcmp("-r",argv[i]) == 0) {
+			i += 1;
+			if (i >= argc) {
+				printf("Error: option -r requires an address\n");
+				return 1;
+			}
+
+			if (ef_name == nullptr) {
+				printf("option -r requires first specifing the elffile name (with the -e flag)\n");
+				return 1;
+			}
+
+			ObjFile *of;
+			TraceDqr::DQErr rc;
+
+			of = new ObjFile(ef_name);
+			rc = of->getStatus();
+			if (rc != TraceDqr::DQERR_OK) {
+				printf("Error: cannot create ObjFile object\n");
+				return 1;
+			}
+
+			of->setLabelMode(labelFlag);
+
+			while (i < argc) {
+				uint32_t addr;
+				char *endptr;
+
+				addr = strtoul(argv[i],&endptr,0);
+				if (endptr[0] != 0) {
+					printf("Error: option -r requires a valid address\n");
+					return 1;
+				}
+
+				Instruction instInfo;
+				Source srcInfo;
+
+				rc = of->sourceInfo(addr,instInfo,srcInfo);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: cannot get sourceInfo for address 0x%08x\n");
+				}
+
+				printf("For address 0x%08x\n",addr);
+				printf("File: %s:%d\n",srcInfo.sourceFile,srcInfo.sourceLineNum);
+				printf("Function: %s\n",srcInfo.sourceFunction);
+				printf("Src: %s\n",srcInfo.sourceLine);
+
+				printf("Label: %s+0x%08x\n",instInfo.addressLabel,instInfo.addressLabelOffset);
+
+				i += 1;
+			}
+
+			return 0;
+		}
+		else if (strcmp("-labels",argv[i]) == 0) {
+			labelFlag = true;
+		}
+		else if (strcmp("-nolabels",argv[i]) == 0) {
+			labelFlag = false;
+		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
 			usage_flag = true;
@@ -529,9 +597,11 @@ int main(int argc, char *argv[])
 
 			return 1;
 		}
+
+		sim->setLabelMode(labelFlag);
 	}
 	else {
-		trace = new (std::nothrow) Trace(tf_name,binary_flag,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
+		trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
 
 		assert(trace != nullptr);
 
@@ -544,6 +614,15 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 
+		if (ca_name != nullptr) {
+			TraceDqr::DQErr rc;
+			rc = trace->setCATraceFile(ca_name);
+			if (rc != TraceDqr::DQERR_OK) {
+				printf("Error: Could not set cycle accurate trace file\n");
+				return 1;
+			}
+		}
+
 		trace->setTraceRange(start_msg_num,stop_msg_num);
 		trace->setTSSize(tssize);
 		trace->setPathType(pt);
@@ -551,6 +630,8 @@ int main(int argc, char *argv[])
 		if (itcprint_flag) {
 			trace->setITCPrintOptions(4096,itcprint_channel);
 		}
+
+		trace->setLabelMode(labelFlag);
 	}
 
 	TraceDqr::DQErr ec;
@@ -601,6 +682,8 @@ int main(int argc, char *argv[])
 		}
 
 		if (ec == TraceDqr::DQERR_OK) {
+//			printf("-> m:%d, s:%d, i:%d\n",msgInfo!=nullptr,srcInfo!=nullptr,instInfo!=nullptr);
+
 			if (srcInfo != nullptr) {
 				if ((lastSrcFile != srcInfo->sourceFile) || (lastSrcLine != srcInfo->sourceLine) || (lastSrcLineNum != srcInfo->sourceLineNum)) {
 					lastSrcFile = srcInfo->sourceFile;
@@ -670,7 +753,7 @@ int main(int argc, char *argv[])
 
 				int n;
 
-				if ((sim != nullptr) && (instInfo->timestamp != 0)) {
+				if (((sim != nullptr) || (ca_name != nullptr)) && (instInfo->timestamp != 0)) {
 					n = printf("t:%d ",instInfo->timestamp);
 
 					n += printf("[%d] ",instInfo->cycles);

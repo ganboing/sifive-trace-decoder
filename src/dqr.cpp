@@ -35,7 +35,7 @@
 
 //#define DQR_MAXCORES	8
 
-const char * const DQR_VERSION = "0.9.3";
+const char * const DQR_VERSION = "0.9.41";
 
 // static C type helper functions
 
@@ -562,6 +562,96 @@ const char *Source::stripPath(const char *path)
 
 std::string Source::sourceFileToString(std::string path)
 {
+	// foodog
+
+	if (sourceFile != nullptr) {
+		// check for garbage in path/file name
+
+		const char *sf = stripPath(path.c_str());
+		if (sf == nullptr) {
+			printf("Error: sourceFileToString(): stripPath() returned nullptr\n");
+		}
+		else {
+			for (int i = 0; sf[i] != 0; i++) {
+				switch (sf[i]) {
+				case 'a':
+				case 'b':
+				case 'c':
+				case 'd':
+				case 'e':
+				case 'f':
+				case 'g':
+				case 'h':
+				case 'i':
+				case 'j':
+				case 'k':
+				case 'l':
+				case 'm':
+				case 'n':
+				case 'o':
+				case 'p':
+				case 'q':
+				case 'r':
+				case 's':
+				case 't':
+				case 'u':
+				case 'v':
+				case 'w':
+				case 'x':
+				case 'y':
+				case 'z':
+				case 'A':
+				case 'B':
+				case 'C':
+				case 'D':
+				case 'E':
+				case 'F':
+				case 'G':
+				case 'H':
+				case 'I':
+				case 'J':
+				case 'K':
+				case 'L':
+				case 'M':
+				case 'N':
+				case 'O':
+				case 'P':
+				case 'Q':
+				case 'R':
+				case 'S':
+				case 'T':
+				case 'U':
+				case 'V':
+				case 'W':
+				case 'X':
+				case 'Y':
+				case 'Z':
+				case '0':
+				case '1':
+				case '2':
+				case '3':
+				case '4':
+				case '5':
+				case '6':
+				case '7':
+				case '8':
+				case '9':
+				case '/':
+				case '\\':
+				case '.':
+				case '_':
+				case '-':
+				case '+':
+				case ':':
+					break;
+				default:
+					printf("Error: source::srouceFileToSTring(): File name '%s' contains bogus char (0x%02x) in position %d!\n",sf,sf[i],i);
+					break;
+				}
+			}
+		}
+	}
+
 	if (sourceFile != nullptr) {
 
 		const char *sf = stripPath(path.c_str());
@@ -3352,6 +3442,7 @@ NexusMessage::NexusMessage()
 	timestamp      = 0;
 	currentAddress = 0;
 	time = 0;
+
 	offset = 0;
 	for (int i = 0; (size_t)i < sizeof rawData/sizeof rawData[0]; i++) {
 		rawData[i] = 0xff;
@@ -4825,6 +4916,8 @@ TraceDqr::CountType Count::getCurrentCountType(int core)
 		return TraceDqr::COUNTTYPE_i_cnt;
 	}
 
+//	printf("count type: hist: %d taken:%d not taken:%d i_cnt: %d\n",histBit[core],takenCount[core],notTakenCount[core],i_cnt[core]);
+
 	return TraceDqr::COUNTTYPE_none;
 }
 
@@ -5099,7 +5192,7 @@ void Count::dumpCounts(int core)
 	printf("Count::dumpCounts(): core: %d, i_cnt: %d, history: 0x%08llx, histBit: %d, takenCount: %d, notTakenCount: %d\n",core,i_cnt[core],history[core],histBit[core],takenCount[core],notTakenCount[core]);
 }
 
-SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
+SliceFileParser::SliceFileParser(char *filename,int srcBits)
 {
 	assert(filename != nullptr);
 
@@ -5108,17 +5201,9 @@ SliceFileParser::SliceFileParser(char *filename, bool binary, int srcBits)
 	msgSlices      = 0;
 	bitIndex       = 0;
 
-	this->binary = binary;
-
 	tfSize = 0;
 
-	if (binary) {
-		tf.open(filename, std::ios::in | std::ios::binary);
-	}
-	else {
-		tf.open(filename, std::ios::in);
-	}
-
+	tf.open(filename, std::ios::in | std::ios::binary);
 	if (!tf) {
 		printf("Error: SliceFileParder(): could not open file %s for input\n",filename);
 		status = TraceDqr::DQERR_OPEN;
@@ -6855,6 +6940,7 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg()
 			return status;
 		}
 
+
 		if (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff)) {
 			printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
 		}
@@ -6990,63 +7076,6 @@ TraceDqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr SliceFileParser::readAscMsg()
-{
-	std::cout << "Error: SliceFileP{arser::readAscMsg(): not implemented" << std::endl;
-	status = TraceDqr::DQERR_ERR;
-
-	return TraceDqr::DQERR_ERR;
-
-	// strip off idle bytes
-
-	do {
-		if (readNextByte(&msg[0]) != TraceDqr::DQERR_OK) {
-			return status;
-		}
-	} while ((msg[0] & 0x3) == TraceDqr::MSEO_END);
-
-	// make sure this is start of nexus message
-
-	if ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) {
-		status = TraceDqr::DQERR_ERR;
-
-		std::cout << "Error: SliceFileParser::readAscMsg(): expected start of message; got" << std::hex << static_cast<uint8_t>(msg[0] & 0x3) << std::dec << std::endl;
-
-		return TraceDqr::DQERR_ERR;
-	}
-
-	// now get bytes
-
-	bool done = false;
-
-	for (int i = 1; !done; i++) {
-		if (i >= (int)(sizeof msg / sizeof msg[0])) {
-			tf.close();
-
-			std::cout << "Error: SliceFileParser::readAscMsg(): msg buffer overflow" << std::endl;
-
-			status = TraceDqr::DQERR_ERR;
-
-			return TraceDqr::DQERR_ERR;
-		}
-
-		if (readNextByte(&msg[i]) != TraceDqr::DQERR_OK) {
-			return status;
-		}
-
-		if ((msg[i] & 0x03) == TraceDqr::MSEO_END) {
-			done = true;
-			msgSlices = i+1;
-		}
-	}
-
-	eom = false;
-
-	bitIndex = 0;
-
-	return TraceDqr::DQERR_OK;
-}
-
 TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics)	// generator to read trace messages one at a time
 {
 	if (status != TraceDqr::DQERR_OK) {
@@ -7064,32 +7093,18 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 
 		// read from file, store in object, compute and fill out full fields, such as address and more later
 
-		if (binary) {
-			rc = readBinaryMsg();
-			if (rc != TraceDqr::DQERR_OK) {
+		rc = readBinaryMsg();
+		if (rc != TraceDqr::DQERR_OK) {
 
-				// all errors from readBinaryMsg() are non-recoverable.
+			// all errors from readBinaryMsg() are non-recoverable.
 
-				if (rc != TraceDqr::DQERR_EOF) {
-					std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
-				}
-
-				status = rc;
-
-				return status;
+			if (rc != TraceDqr::DQERR_EOF) {
+				std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
 			}
-		}
-		else {	// text trace messages
-			rc = readAscMsg();
-			if (rc != TraceDqr::DQERR_OK) {
-				if (rc != TraceDqr::DQERR_EOF) {
-					std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
-				}
 
-				status = rc;
+			status = rc;
 
-				return status;
-			}
+			return status;
 		}
 
 		nm.offset = msgOffset;
@@ -7201,7 +7216,161 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 	return status;
 }
 
-Disassembler::Disassembler(bfd *abfd)
+ObjFile::ObjFile(char *ef_name)
+{
+	elfReader = nullptr;
+//	symtab = nullptr;
+	disassembler = nullptr;
+
+	if (ef_name == nullptr) {
+		printf("Error: ObjFile::ObjFile(): null of_name argument\n");
+
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
+	elfReader = new (std::nothrow) ElfReader(ef_name);
+
+	assert(elfReader != nullptr);
+
+	if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
+		delete elfReader;
+		elfReader = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
+	bfd *abfd;
+	abfd = elfReader->get_bfd();
+
+	disassembler = new (std::nothrow) Disassembler(abfd,true);
+
+	assert(disassembler != nullptr);
+
+	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+		if (elfReader != nullptr) {
+			delete elfReader;
+			elfReader = nullptr;
+		}
+
+		delete disassembler;
+		disassembler = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
+	status = TraceDqr::DQERR_OK;
+
+    // get symbol table
+
+//    symtab = elfReader->getSymtab();
+//    if (symtab == nullptr) {
+//    	delete elfReader;
+//    	elfReader = nullptr;
+//
+//    	delete disassembler;
+//    	disassembler = nullptr;
+//
+//    	status = TraceDqr::DQERR_ERR;
+//
+//    	return;
+//    }
+}
+
+ObjFile::~ObjFile()
+{
+	cleanUp();
+}
+
+void ObjFile::cleanUp()
+{
+	if (elfReader != nullptr) {
+		delete elfReader;
+		elfReader = nullptr;
+	}
+
+	if (disassembler != nullptr) {
+		delete disassembler;
+		disassembler = nullptr;
+	}
+}
+
+TraceDqr::DQErr ObjFile::sourceInfo(TraceDqr::ADDRESS addr,Instruction &instInfo,Source &srcInfo)
+{
+	TraceDqr:: DQErr s;
+
+	assert(disassembler != nullptr);
+
+	disassembler->Disassemble(addr);
+
+	s = disassembler->getStatus();
+	if (s != TraceDqr::DQERR_OK) {
+		status = s;
+		return s;
+	}
+
+//	instructionInfo = disassembler->getInstructionInfo();
+	srcInfo = disassembler->getSourceInfo();
+	instInfo = disassembler->getInstructionInfo();
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr ObjFile::setPathType(TraceDqr::pathType pt)
+{
+	if (disassembler != nullptr) {
+		disassembler->setPathType(pt);
+
+		return TraceDqr::DQERR_OK;
+	}
+
+	return TraceDqr::DQERR_ERR;
+}
+
+TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
+{
+	if (elfReader == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+
+	bfd *abfd;
+	abfd = elfReader->get_bfd();
+
+	if (disassembler != nullptr) {
+		delete disassembler;
+		disassembler = nullptr;
+	}
+
+	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
+
+	assert(disassembler != nullptr);
+
+	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+		if (elfReader != nullptr) {
+			delete elfReader;
+			elfReader = nullptr;
+		}
+
+		delete disassembler;
+		disassembler = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	status = TraceDqr::DQERR_OK;
+
+	return status;
+}
+
+Disassembler::Disassembler(bfd *abfd,bool labelsAreFunctions)
 {
 	assert(abfd != nullptr);
 
@@ -7241,20 +7410,19 @@ Disassembler::Disassembler(bfd *abfd)
 
     			section = symbol_table[i]->section;
 
-//    			printf("sym %d, section flags: %08x, name: %s, flags: %08x, value: %08x, base:%08x (%08x)\n",i,section->flags,symbol_table[i]->name,symbol_table[i]->flags,symbol_table[i]->value,section->vma,section->vma+symbol_table[i]->value);
-
-    			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags == BSF_GLOBAL))) {
-    				symbol_table[i]->flags |= BSF_FUNCTION;
+    			if (labelsAreFunctions) {
+        			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL) || (symbol_table[i]->flags & BSF_LOCAL))) {
+        				symbol_table[i]->flags |= BSF_FUNCTION;
+        			}
+    			}
+    			else {
+        			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL))) {
+        				symbol_table[i]->flags |= BSF_FUNCTION;
+        			}
     			}
 
     			sorted_syms[i] = symbol_table[i];
     		}
-
-    		// could probably use C++ template sort here, but this works for now
-
-//    		for (int i = 0; i < number_of_syms; i++) {
-//    			printf("symbol[%d]:%s, addr:%08x, flags:%08x\n",i,sorted_syms[i]->name,bfd_asymbol_value(sorted_syms[i]),sorted_syms[i]->flags);
-//    		}
 
     		// note: qsort does not preserver order on equal items!
 
@@ -7501,6 +7669,9 @@ int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index
 	// find the function closest to the address. Address should either be start of function, or in body
 	// of function.
 
+//	lookup symbol by address needs to select between function names and locals+function names
+//	do we build two array and use the correct one?
+
 	if ( vma == 0) {
 		return 0;
 	}
@@ -7521,7 +7692,7 @@ int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index
 	//syms = sorted_syms;
 
 	for (i = 0; i < number_of_syms; i++) {
-		if ((func_info[i].sym_flags & (BSF_FUNCTION | BSF_OBJECT)) != 0) {
+		if ((func_info[i].sym_flags & flags) != 0) {
 
 			// note: func_vma already has the base+offset address in it
 
@@ -7532,7 +7703,7 @@ int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index
 //				printf("\n->vma:%08x size: %d, i=%d, name: %s\n",vma,func_info[i].func_size,i,sorted_syms[i]->name);
 
 				for (int j = i+1; j < number_of_syms; j++) {
-					if ((func_info[j].sym_flags & (BSF_FUNCTION | BSF_OBJECT)) != 0) {
+					if ((func_info[j].sym_flags & flags) != 0) {
 						if (func_info[i].func_vma == func_info[j].func_vma) {
 							i = j;
 						}
@@ -7593,7 +7764,7 @@ void Disassembler::overridePrintAddress(bfd_vma addr, struct disassemble_info *i
 	int offset;
 	int rc;
 
-	rc = lookup_symbol_by_address(addr,BSF_FUNCTION,&index,&offset);
+	rc = lookup_symbol_by_address(addr,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
 
 	if (rc != 0) {
 		// found symbol
@@ -7629,7 +7800,7 @@ void Disassembler::print_address(bfd_vma vma)
 	int offset;
 	int rc;
 
-	rc = lookup_symbol_by_address(vma,BSF_FUNCTION,&index,&offset);
+	rc = lookup_symbol_by_address(vma,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
 	if (rc != 0) {
 		// found symbol
 
@@ -7709,7 +7880,7 @@ void Disassembler::getAddressSyms(bfd_vma vma)
 	int offset;
 	int rc;
 
-	rc = lookup_symbol_by_address(vma,BSF_FUNCTION,&index,&offset);
+	rc = lookup_symbol_by_address(vma,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
 	if (rc == 0) {
 		// did not find symbol
 
@@ -7742,7 +7913,7 @@ void Disassembler::setInstructionAddress(bfd_vma vma)
 
 	lookupInstructionByAddress(vma,&instruction.instruction,&instruction.instSize);
 
-	rc = lookup_symbol_by_address(vma,BSF_FUNCTION,&index,&offset);
+	rc = lookup_symbol_by_address(vma,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
 	if (rc == 0) {
 		// did not find symbol
 
@@ -8635,6 +8806,21 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 		return 0;
 	}
 
+	// bfd_find_nearest_line_discriminator() does not always return the correct function name (or at least the one we want). Use
+	// the lookup_symbol_by_address() function and see if we get a hit. If we do, use that. Otherwise, use what
+	// bfd_find_nearest_line_discriminator() returned
+
+	int rc;
+	int index;
+	int offset;
+
+	rc = lookup_symbol_by_address(addr,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
+	if (rc != 0) {
+		// found symbol
+
+		function = sorted_syms[index]->name;
+	}
+
 	*linenumber = line;
 
 	if (file == nullptr) {
@@ -8663,7 +8849,7 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 	*filename = fl->name;
 
 	// save function name and line src in function list struct so it will be saved for reuse, or later use throughout the
-	// life of the object. Won't be overwritten.
+	// life of the object. Won't be overwritten. This is not caching.
 
 	if (function != nullptr) {
 		// find the function name in fncList
@@ -8699,8 +8885,94 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 	}
 
 	if (sane != fprime) {
-		delete sane;
+		delete [] sane;
 		sane = nullptr;
+	}
+
+	{
+		// foodog
+		// check for garbage in path/file name
+
+		if (*filename != nullptr) {
+			const char *cp = *filename;
+			for (int i = 0; cp[i] != 0; i++) {
+				switch (cp[i]) {
+				case 'a':
+				case 'b':
+				case 'c':
+				case 'd':
+				case 'e':
+				case 'f':
+				case 'g':
+				case 'h':
+				case 'i':
+				case 'j':
+				case 'k':
+				case 'l':
+				case 'm':
+				case 'n':
+				case 'o':
+				case 'p':
+				case 'q':
+				case 'r':
+				case 's':
+				case 't':
+				case 'u':
+				case 'v':
+				case 'w':
+				case 'x':
+				case 'y':
+				case 'z':
+				case 'A':
+				case 'B':
+				case 'C':
+				case 'D':
+				case 'E':
+				case 'F':
+				case 'G':
+				case 'H':
+				case 'I':
+				case 'J':
+				case 'K':
+				case 'L':
+				case 'M':
+				case 'N':
+				case 'O':
+				case 'P':
+				case 'Q':
+				case 'R':
+				case 'S':
+				case 'T':
+				case 'U':
+				case 'V':
+				case 'W':
+				case 'X':
+				case 'Y':
+				case 'Z':
+				case '0':
+				case '1':
+				case '2':
+				case '3':
+				case '4':
+				case '5':
+				case '6':
+				case '7':
+				case '8':
+				case '9':
+				case '/':
+				case '\\':
+				case '.':
+				case '_':
+				case '-':
+				case '+':
+				case ':':
+					break;
+				default:
+					printf("Error: getSrcLines(): File name '%s' contains bogus char (0x%02x) in position %d!\n",cp,cp[i],i);
+					break;
+				}
+			}
+		}
 	}
 
 	return 1;
@@ -8965,7 +9237,7 @@ Simulator::Simulator(char *f_name,char *e_name)
     bfd *abfd;
     abfd = elfReader->get_bfd();
 
-	disassembler = new (std::nothrow) Disassembler(abfd);
+	disassembler = new (std::nothrow) Disassembler(abfd,true);
 
 	assert(disassembler != nullptr);
 
@@ -9031,6 +9303,44 @@ void Simulator::cleanUp()
 		delete disassembler;
 		disassembler = nullptr;
 	}
+}
+
+TraceDqr::DQErr Simulator::setLabelMode(bool labelsAreFuncs)
+{
+	if (elfReader == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+
+	bfd *abfd;
+	abfd = elfReader->get_bfd();
+
+	if (disassembler != nullptr) {
+		delete disassembler;
+		disassembler = nullptr;
+	}
+
+	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
+
+	assert(disassembler != nullptr);
+
+	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+		if (elfReader != nullptr) {
+			delete elfReader;
+			elfReader = nullptr;
+		}
+
+		delete disassembler;
+		disassembler = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return status;
+	}
+
+	status = TraceDqr::DQERR_OK;
+
+	return status;
 }
 
 TraceDqr::DQErr Simulator::readFile(char *file)
