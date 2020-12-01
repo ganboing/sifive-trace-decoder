@@ -2105,7 +2105,7 @@ proc writeSBA {core file limit} {
     }
 
     set tracewp [gettracewp $core]
-    if {$tracewp & 1) == 0} {
+    if {($tracewp & 1) == 0} {
         set wrap 0
     }
     else {
