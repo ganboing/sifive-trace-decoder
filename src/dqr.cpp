@@ -7412,12 +7412,16 @@ Disassembler::Disassembler(bfd *abfd,bool labelsAreFunctions)
     			section = symbol_table[i]->section;
 
     			if (labelsAreFunctions) {
-        			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL) || (symbol_table[i]->flags & BSF_LOCAL))) {
+        			if ((section->flags & SEC_CODE)
+        				&& ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL) || (symbol_table[i]->flags & BSF_LOCAL))
+						&& ((symbol_table[i]->flags & BSF_SECTION_SYM) == 0)) {
         				symbol_table[i]->flags |= BSF_FUNCTION;
         			}
     			}
     			else {
-        			if ((section->flags & SEC_CODE) && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL))) {
+        			if ((section->flags & SEC_CODE)
+        			    && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL))
+						&& ((symbol_table[i]->flags & BSF_SECTION_SYM) == 0)) {
         				symbol_table[i]->flags |= BSF_FUNCTION;
         			}
     			}
