@@ -35,6 +35,8 @@
 
 //#define DQR_MAXCORES	8
 
+int globalDebugFlag = 0;
+
 // DECODER_VERSION is passed in from the Makefile, from version.mk in the root.
 const char *const DQR_VERSION = DECODER_VERSION;
 
@@ -563,8 +565,6 @@ const char *Source::stripPath(const char *path)
 
 std::string Source::sourceFileToString(std::string path)
 {
-	// foodog
-
 	if (sourceFile != nullptr) {
 		// check for garbage in path/file name
 
@@ -4786,6 +4786,24 @@ double NexusMessage::seconds()
 	return (double)time;
 }
 
+void NexusMessage::dumpRawMessage()
+{
+	int i;
+
+	printf("Raw Message # %d: ",msgNum);
+
+	for (i = 0; ((size_t)i < sizeof rawData / sizeof rawData[0]) && ((rawData[i] & 0x03) != TraceDqr::MSEO_END); i++) {
+		printf("%02x ",rawData[i]);
+	}
+
+	if ((size_t)i < sizeof rawData / sizeof rawData[0]) {
+		printf("%02x\n",rawData[i]);
+	}
+	else {
+		printf("no end of message\n");
+	}
+}
+
 void NexusMessage::dump()
 {
 	switch (tcode) {
@@ -7716,8 +7734,6 @@ int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index
 				}
 
 				// have a match with a function
-
-				//printf("have match. Index %d\n",i);
 
 				// cache it for re-lookup speed improvement
 

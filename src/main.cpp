@@ -488,7 +488,7 @@ int main(int argc, char *argv[])
 			}
 
 			if (ef_name == nullptr) {
-				printf("option -r requires first specifing the elffile name (with the -e flag)\n");
+				printf("option -r requires first specifying the elf file name (with the -e flag)\n");
 				return 1;
 			}
 
@@ -539,6 +539,12 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp("-nolabels",argv[i]) == 0) {
 			labelFlag = false;
+		}
+		else if (strcmp("-debug",argv[i]) == 0) {
+			globalDebugFlag = 1;
+		}
+		else if (strcmp("-nodebug",argv[i]) == 0) {
+			globalDebugFlag = 0;
 		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
@@ -837,6 +843,10 @@ int main(int argc, char *argv[])
 				// got the goods! Get to it!
 
 				core_mask |= 1 << msgInfo->coreId;
+
+				if (globalDebugFlag) {
+					msgInfo->dumpRawMessage();
+				}
 
 				msgInfo->messageToText(dst,sizeof dst,msgLevel);
 

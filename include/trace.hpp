@@ -349,6 +349,7 @@ public:
 	void reset();
 	int push(TraceDqr::ADDRESS addr);
 	TraceDqr::ADDRESS pop();
+	int getNumOnStack() { return stackSize - sp; }
 
 private:
 	int stackSize;
@@ -384,11 +385,17 @@ public:
 	int consumeTakenCount(int core);
 	int consumeNotTakenCount(int core);
 
-	int getICnt(int core);
+	int getICnt(int core) {return i_cnt[core]; }
+	uint32_t getHistory(int core) { return history[core]; }
+	uint32_t getNumHistoryBits(int core) { return histBit[core]; }
+	uint32_t getTakenCount(int core) {return takenCount[core]; }
+	uint32_t getNotTakenCount(int core) { return notTakenCount[core]; }
+	uint32_t isTaken(int core) { return (history[core] & (1 << histBit[core])) != 0; }
 
 	int push(int core,TraceDqr::ADDRESS addr) { return stack[core].push(addr); }
 	TraceDqr::ADDRESS pop(int core) { return stack[core].pop(); }
 	void resetStack(int core) { stack[core].reset(); }
+	int getNumOnStack(int core) { return stack[core].getNumOnStack(); }
 
 	void dumpCounts(int core);
 

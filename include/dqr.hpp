@@ -46,6 +46,7 @@
 
 #define DQR_MAXCORES	16
 
+extern int globalDebugFlag;
 extern const char * const DQR_VERSION;
 
 class TraceDqr {
@@ -356,6 +357,7 @@ public:
 	std::string messageToString(int detailLevel);
 	double seconds();
 
+	void dumpRawMessage();
 	void dump();
 
 	static uint32_t targetFrequency;

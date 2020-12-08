@@ -1061,6 +1061,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
 			counts->push(core,addr + inst_size/8);
+			if (globalDebugFlag) printf("Debug: call: core %d, pushing address %08llx, %d item now on stack\n",core,addr+inst_size/8,counts->getNumOnStack(core));
 			crFlag |= TraceDqr::isCall;
 		}
 
@@ -1078,22 +1079,26 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
 			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
 				counts->push(core,addr+inst_size/8);
+				if (globalDebugFlag) printf("Debug: indirect call: core %d, pushing address %08llx, %d item now on stack\n",core,addr+inst_size/8,counts->getNumOnStack(core));
 				pc = -1;
 				crFlag |= TraceDqr::isCall;
 			}
 			else if (rd != rs1) { // rd == link; rs1 == link; rd != rs1
 				pc = counts->pop(core);
 				counts->push(core,addr+inst_size/8);
+				if (globalDebugFlag) printf("Debug: indirect call: core %d, pushing address %08llx, %d item now on stack\n",core,addr+inst_size/8,counts->getNumOnStack(core));
 				crFlag |= TraceDqr::isSwap;
 			}
 			else { // rd == link; rs1 == link; rd == rs1
 				counts->push(core,addr+inst_size/8);
+				if (globalDebugFlag) printf("Debug: indirect call: core %d, pushing address %08llx, %d item now on stack\n",core,addr+inst_size/8,counts->getNumOnStack(core));
 				pc = -1;
 				crFlag |= TraceDqr::isCall;
 			}
 		}
 		else if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) { // rd != link; rs1 == link
 			pc = counts->pop(core);
+			if (globalDebugFlag) printf("Debug: return: core %d, new address %08llx, %d item now on stack\n",core,pc,counts->getNumOnStack(core));
 			crFlag |= TraceDqr::isReturn;
 		}
 		else {
@@ -1136,6 +1141,8 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 				return TraceDqr::DQERR_ERR;
 			case TraceDqr::COUNTTYPE_i_cnt:
+				if (globalDebugFlag) printf("Debug: Conditional branch: No history. I-cnt: %d\n",counts->getICnt(core));
+
 				// don't know if the branch is taken or not, so we don't know the next addr
 
 				// This can happen with resource full messages where an i-cnt type resource full
@@ -1156,6 +1163,8 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			case TraceDqr::COUNTTYPE_history:
 				//consume history bit here and set pc accordingly
 
+				if (globalDebugFlag) printf("Debug: Conditional branch: Have history, taken mask: %08x, bit %d, taken: %d\n",counts->getHistory(core),counts->getNumHistoryBits(core),counts->isTaken(core));
+
 				rc = counts->consumeHistory(core,isTaken);
 				if ( rc != 0) {
 					printf("Error: nextAddr(): consumeHistory() failed\n");
@@ -1175,6 +1184,8 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 				}
 				break;
 			case TraceDqr::COUNTTYPE_taken:
+				if (globalDebugFlag) printf("Debug: Conditional branch: Have takenCount: %d, taken: %d\n",counts->getTakenCount(core), counts->getTakenCount(core) > 0);
+
 				rc = counts->consumeTakenCount(core);
 				if ( rc != 0) {
 					printf("Error: nextAddr(): consumeTakenCount() failed\n");
@@ -1188,6 +1199,8 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 				brFlag = TraceDqr::BRFLAG_taken;
 				break;
 			case TraceDqr::COUNTTYPE_notTaken:
+				if (globalDebugFlag) printf("Debug: Conditional branch: Have notTakenCount: %d, not taken: %d\n",counts->getNotTakenCount(core), counts->getNotTakenCount(core) > 0);
+
 				rc = counts->consumeNotTakenCount(core);
 				if ( rc != 0) {
 					printf("Error: nextAddr(): consumeTakenCount() failed\n");
@@ -1251,6 +1264,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
 			counts->push(core,addr + inst_size/8);
+			if (globalDebugFlag) printf("Debug: call: core %d, pushing address %08llx, %d item now on stack\n",core,addr+inst_size/8,counts->getNumOnStack(core));
 			crFlag |= TraceDqr::isCall;
 		}
 
@@ -1262,6 +1276,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 		if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
 			pc = counts->pop(core);
+			if (globalDebugFlag) printf("Debug: return: core %d, new address %08llx, %d item now on stack\n",core,pc,counts->getNumOnStack(core));
 			crFlag |= TraceDqr::isReturn;
 		}
 		else {
@@ -1287,10 +1302,12 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		if (rs1 == TraceDqr::REG_5) {
 			pc = counts->pop(core);
 			counts->push(core,addr+inst_size/8);
+			if (globalDebugFlag) printf("Debug: return/call: core %d, new address %08llx, pushing %08xllx, %d item now on stack\n",core,pc,addr+inst_size/8,counts->getNumOnStack(core));
 			crFlag |= TraceDqr::isSwap;
 		}
 		else {
 			counts->push(core,addr+inst_size/8);
+			if (globalDebugFlag) printf("Debug: call: core %d, new address %08llx (don't know dst yet), %d item now on stack\n",core,pc,counts->getNumOnStack(core));
 			pc = -1;
 			crFlag |= TraceDqr::isCall;
 		}
@@ -2693,6 +2710,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			break;
 		case TRACE_STATE_GETNEXTINSTRUCTION:
 			if (counts->getCurrentCountType(currentCore) == TraceDqr::COUNTTYPE_none) {
+				if (globalDebugFlag) {
+					printf("NextInstruction: counts are exhausted\n");
+				}
+
 				state[currentCore] = TRACE_STATE_RETIREMESSAGE;
 				break;
 			}
@@ -2753,6 +2774,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// branches, retiring the current trace message (should be an indirect branch or indirect
 			// brnach with sync) will set the next address correclty.
 
+//			foodog
+
 			status = nextAddr(currentCore,currentAddress[currentCore],addr,nm.tcode,crFlag,brFlags);
 			if (status != TraceDqr::DQERR_OK) {
 				printf("Error: nextAddr() failed\n");
@@ -2783,7 +2806,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					// error
 					// must have a JR/JALR or exception/exception return to get here, and the CR stack is empty
 
-					printf("Error: getCurrentCountType(core:%d) still has counts; have countType: %d\n",currentCore,counts->getCurrentCountType(currentCore));
+					printf("Error: getCurrentCountType(core:%d) still has counts; call/return stack is empty; have countType: %d\n",currentCore,counts->getCurrentCountType(currentCore));
+
+					char d[64];
+
+					instructionInfo.instructionToText(d,sizeof d,2);
+					printf("%08llx:    %s\n",currentAddress[currentCore],d);
+
 					state[currentCore] = TRACE_STATE_ERROR;
 
 					status = TraceDqr::DQERR_ERR;
