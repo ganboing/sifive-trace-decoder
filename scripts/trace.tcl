@@ -44,6 +44,8 @@ set traceBufferAddr 0x00000000
 
 set verbose 0
 
+set fs_enable_trace "on"
+
 # local helper functions not intented to be called directly
 
 proc wordhex {addr} {
@@ -298,12 +300,37 @@ proc getTracingEnable {core} {
     return "off"
 }
 
+proc manualtrace {{f "help"}} {
+    global fs_enable_trace
+
+    if {$f == "on"} {
+        set fs_enable_trace "on"
+    } elseif {$f == "off"} {
+        set fs_enable_trace "off"
+    } elseif {$f == "help} {
+	echo "Manual trace is $fs_enable_trace"
+    } else {
+        echo "Error: usage: manualtrace [on | off]"
+    }
+}
 proc clearAndEnableTrace { core } {
 	cleartrace $core
 	enableTraceEncoder $core
 }
 
 proc enableTraceEncoder {core} {
+    global traceBaseAddrArray
+    global te_control_offset
+    global fs_enable_trace
+
+    if {$fs_enable_trace == "on"} {
+        set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+        set t [expr $t | 0x00000003]
+        mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+    }
+}
+
+proc enableTraceEncoderManual {core} {
     global traceBaseAddrArray
     global te_control_offset
 
@@ -315,13 +342,29 @@ proc enableTraceEncoder {core} {
 proc enableTracing {core} {
     global traceBaseAddrArray
     global te_control_offset
+    global fs_enable_trace
 
-    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-    set t [expr $t | 0x00000005]
-    mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+    if {$fs_enable_trace == "on"} {
+        set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+        set t [expr $t | 0x00000005]
+        mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+    }
 }
 
 proc disableTraceEncoder {core} {
+    global traceBaseAddrArray
+    global te_control_offset
+    global fs_enable_trace
+
+    if {$fs_enable_trace == "on"} {
+        set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+        set t [expr $t & ~0x00000002]
+        set t [expr $t | 0x00000001]
+        mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+    }
+}
+
+proc disableTraceEncoderManual {core} {
     global traceBaseAddrArray
     global te_control_offset
 
@@ -334,11 +377,14 @@ proc disableTraceEncoder {core} {
 proc disableTracing {core} {
     global traceBaseAddrArray
     global te_control_offset
+    global fs_enable_trace
 
-    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-    set t [expr $t & ~0x00000004]
-    set t [expr $t | 0x00000001]
-    mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+    if {$fs_enable_trace == "on"} {
+        set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+        set t [expr $t & ~0x00000004]
+        set t [expr $t | 0x00000001]
+        mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+    }
 }
 
 proc resetTrace {core} {
@@ -2927,11 +2973,11 @@ proc trace {{cores "all"} {opt ""}} {
 		echo ""
     } elseif {$opt == "on"} {
 		foreach core $coreList {
-			enableTraceEncoder $core
+			enableTraceEncoderManual $core
 		}
     } elseif {$opt == "off"} {
 		foreach core $coreList {
-			disableTraceEncoder $core
+			disableTraceEncoderManual $core
 		}
     } elseif {$opt == "reset"} {
 		foreach core $coreList {
