@@ -6416,7 +6416,7 @@ TraceDqr::DQErr SliceFileParser::parseCorrelation(NexusMessage &nm,Analytics &an
 
 		bits += width;
 
-		nm.correlation.history = (int)tmp;
+		nm.correlation.history = tmp;
 
 		break;
 	default:

@@ -387,7 +387,7 @@ public:
 
 	int getICnt(int core) {return i_cnt[core]; }
 	uint32_t getHistory(int core) { return history[core]; }
-	uint32_t getNumHistoryBits(int core) { return histBit[core]; }
+	int getNumHistoryBits(int core) { return histBit[core]; }
 	uint32_t getTakenCount(int core) {return takenCount[core]; }
 	uint32_t getNotTakenCount(int core) { return notTakenCount[core]; }
 	uint32_t isTaken(int core) { return (history[core] & (1 << histBit[core])) != 0; }
