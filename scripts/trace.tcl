@@ -304,11 +304,17 @@ proc manualtrace {{f "help"}} {
     global fs_enable_trace
 
     if {$f == "on"} {
-        set fs_enable_trace "on"
-    } elseif {$f == "off"} {
         set fs_enable_trace "off"
-    } elseif {$f == "help} {
-	echo "Manual trace is $fs_enable_trace"
+    } elseif {$f == "off"} {
+        set fs_enable_trace "on"
+    } elseif {$f == "help"} {
+        if {$fs_enable_trace == "on"} {
+            echo "Manual trace is off"
+        } elseif {$fs_enable_trace == "off"} {
+            echo "Manual trace is on"
+        } else {
+            echo "Bad value for fs_enable_trace: $fs_enable_trace"
+        }
     } else {
         echo "Error: usage: manualtrace [on | off]"
     }
