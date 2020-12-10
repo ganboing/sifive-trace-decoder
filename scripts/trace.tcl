@@ -2159,8 +2159,7 @@ proc writeSBA {core file limit} {
     set tracewp [gettracewp $core]
     if {($tracewp & 1) == 0} {
         set wrap 0
-    }
-    else {
+    } else {
         set wrap 1
         set tracewp [expr $tracewp & 0xfffffffe]
     }
@@ -2222,7 +2221,7 @@ proc writeSBA {core file limit} {
                 echo "Trace from [format 0x%08x $start2] to [format 0x%08x $end2], [expr $end2 - $start2] bytes"
             }
 
-            writeSBAdataX $tracebegin2 $traceend2 $fp
+            writeSBAdataX $start2 $end2 $fp
         }
 
         close $fp
