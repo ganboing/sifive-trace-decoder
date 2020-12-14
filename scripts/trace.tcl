@@ -40,7 +40,7 @@ set have_htm 0
 
 set trace_buffer_width 0
 
-set traceBufferAddr 0x00000000
+#set traceBufferAddr 0x00000000
 
 set verbose 0
 
@@ -61,6 +61,8 @@ proc word {addr} {
 proc setAllTeControls {offset val} {
     global traceBaseAddresses
 
+#    echo "setAllTeControls([format 0x%08lx $offset] [format 0x%08lx $val])"
+
     foreach controlReg $traceBaseAddresses {
 	mww [expr $controlReg + $offset] $val
     }
@@ -68,6 +70,8 @@ proc setAllTeControls {offset val} {
 
 proc setAllTfControls {offset val} {
     global traceFunnelAddress
+
+#    echo "setAllTfControls([format 0x%08lx $offset] [format 0x%08lx $val])"
 
     if {$traceFunnelAddress != 0} {
 	mww [expr $traceFunnelAddress + $offset] $val
@@ -174,6 +178,8 @@ proc checkHaveHTM {} {
     global te_control_offset
 	global verbose
 
+#    echo "checkHaveHTM()"
+
     set baseAddress [lindex $traceBaseAddresses 0]
     set tracectl [word [expr $baseAddress + $te_control_offset]]
     set saved $tracectl
@@ -208,6 +214,8 @@ proc ite {} {
 
     set rc 0
 
+#    echo "ite()"
+
     foreach baseAddress $traceBaseAddresses {
 		set tracectl [word [expr $baseAddress + $te_control_offset]]
 		if {($tracectl & 0x6) != 0} {
@@ -231,6 +239,8 @@ proc setTraceBufferWidth {} {
     global te_sinkbase_offset
     global has_funnel
     global trace_buffer_width
+
+#    echo "setTraceBufferWidth()"
 
     if {$has_funnel != 0} {
 		set impl [word [expr $traceBaseAddrArray(funnel) + $te_impl_offset]]
@@ -278,6 +288,8 @@ proc getTraceEnable {core} {
     global traceBaseAddrArray
     global te_control_offset
 
+#    echo "getTraceEnable($core)"
+
     set tracectl [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
 
     if {($tracectl & 0x2) != 0} {
@@ -286,10 +298,22 @@ proc getTraceEnable {core} {
 
     return "off"
 }
+proc getSBABaseAddress {core} {
+    global traceBaseAddrArray
+    global te_sinkbase_offset
+
+#    echo "getSBABaseAddress($core)"
+
+    set tracebase [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
+
+    return $tracebase
+}
 
 proc getTracingEnable {core} {
     global traceBaseAddrArray
     global te_control_offset
+
+#    echo "getTracingEnable($core)"
 
     set tracectl [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
 
@@ -302,6 +326,8 @@ proc getTracingEnable {core} {
 
 proc manualtrace {{f "help"}} {
     global fs_enable_trace
+
+#    echo "manualtrace($f)"
 
     if {$f == "on"} {
         set fs_enable_trace "off"
@@ -318,16 +344,23 @@ proc manualtrace {{f "help"}} {
     } else {
         echo "Error: usage: manualtrace [on | off]"
     }
+
+    echo -n ""
 }
 proc clearAndEnableTrace { core } {
-	cleartrace $core
-	enableTraceEncoder $core
+
+#    echo "clearAndEnableTrace($core)"
+
+    cleartrace $core
+    enableTraceEncoder $core
 }
 
 proc enableTraceEncoder {core} {
     global traceBaseAddrArray
     global te_control_offset
     global fs_enable_trace
+
+#    echo "enableTraceEncoder($core)"
 
     if {$fs_enable_trace == "on"} {
         set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
@@ -340,6 +373,8 @@ proc enableTraceEncoderManual {core} {
     global traceBaseAddrArray
     global te_control_offset
 
+#    echo "enableTraceEncoderManual($core)"
+
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr $t | 0x00000003]
     mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
@@ -350,6 +385,8 @@ proc enableTracing {core} {
     global te_control_offset
     global fs_enable_trace
 
+#    echo "enableTraceing($core)"
+
     if {$fs_enable_trace == "on"} {
         set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
         set t [expr $t | 0x00000005]
@@ -357,10 +394,24 @@ proc enableTracing {core} {
     }
 }
 
+proc enableTracingManual {core} {
+    global traceBaseAddrArray
+    global te_control_offset
+    global fs_enable_trace
+
+#    echo "enableTraceingManual($core)"
+
+    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
+    set t [expr $t | 0x00000005]
+    mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+}
+
 proc disableTraceEncoder {core} {
     global traceBaseAddrArray
     global te_control_offset
     global fs_enable_trace
+
+#    echo "disableTraceEncoder($core)"
 
     if {$fs_enable_trace == "on"} {
         set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
@@ -374,6 +425,8 @@ proc disableTraceEncoderManual {core} {
     global traceBaseAddrArray
     global te_control_offset
 
+#    echo "disableTraceEncoderManual($core)"
+
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr $t & ~0x00000002]
     set t [expr $t | 0x00000001]
@@ -384,6 +437,8 @@ proc disableTracing {core} {
     global traceBaseAddrArray
     global te_control_offset
     global fs_enable_trace
+
+#    echo "disableTracing($core)"
 
     if {$fs_enable_trace == "on"} {
         set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
@@ -397,6 +452,8 @@ proc resetTrace {core} {
     global traceBaseAddrArray
     global te_control_offset
 
+#    echo "resetTrace($core)"
+
     mww [expr $traceBaseAddrArray($core) + $te_control_offset] 0
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr $t & ~0x00000001]
@@ -407,6 +464,8 @@ proc resetTrace {core} {
 proc getSinkError {core} {
     global traceBaseAddrArray
     global te_control_offset
+
+#    echo "getSinkError($core)"
 
     set tracectl [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
 
@@ -420,6 +479,8 @@ proc getSinkError {core} {
 proc clearSinkError {core} {
     global traceBaseAddrArray
     global te_control_offset
+
+#    echo "clearSinkError($core)"
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr $t | (1 << 27)]
@@ -444,6 +505,8 @@ proc enableTs {core} {
     global traceBaseAddrArray
     global ts_control_offset
 
+#    echo "enableTs($core)"
+
     if {$core != "funnel"} {
 		set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
 		set tsctl [expr $tsctl | 0x00008003]
@@ -455,6 +518,8 @@ proc disableTs {core} {
     global traceBaseAddrArray
     global ts_control_offset
 
+#    echo "diableTs($core)"
+
     set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set tsctl [expr $tsctl & ~0x00008001]
     mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
@@ -463,6 +528,8 @@ proc disableTs {core} {
 proc resetTs {core} {
     global traceBaseAddrArray
     global ts_control_offset
+
+#    echo "resetTs($core)"
 
     if {$core != "funnel"} {
 		set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
@@ -477,6 +544,8 @@ proc getTsDebug {core} {
     global traceBaseAddrArray
     global ts_control_offset
 
+#    echo "getTsDebug($core)"
+
     set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     if {[expr $tsctl & 0x00000008] != 0} {
 		return "on"
@@ -489,12 +558,16 @@ proc getTsLower {core} {
     global traceBaseAddrArray
     global ts_lower_offset
 
+#    echo "getTsLower($core)"
+
     return [format 0x%08x [word [expr $traceBaseAddrArray($core) + $ts_lower_offset]]]
 }
 
 proc enableTsDebug {core} {
     global traceBaseAddrArray
     global ts_control_offset
+
+#    echo "enableTsDebug($core)"
 
     set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set tsctl [expr $tsctl | 0x0000008]
@@ -505,6 +578,8 @@ proc disableTsDebug {core} {
     global traceBaseAddrArray
     global ts_control_offset
 
+#    echo "disableTsDebug($core)"
+
     set tsctl [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set tsctl [expr $tsctl & ~0x0000008]
     mww [expr $traceBaseAddrArray($core) + $ts_control_offset] $tsctl
@@ -513,6 +588,8 @@ proc disableTsDebug {core} {
 proc getTsClockSrc {core} {
     global traceBaseAddrArray
     global ts_control_offset
+
+#    echo "getTsClockSrc($core)"
 
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set t [expr ($t >> 4) & 0x7]
@@ -551,6 +628,8 @@ proc getTsPrescale {core} {
     global traceBaseAddrArray
     global ts_control_offset
 
+#    echo "getTsPrescale($core)"
+
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set t [expr ($t >> 8) & 0x3]
     switch $t {
@@ -564,6 +643,8 @@ proc getTsPrescale {core} {
 proc setTsPrescale {core prescl} {
     global traceBaseAddrArray
     global ts_control_offset
+
+#    echo "setTsPrescale($core $prescl)"
 
     switch $prescl {
 		1       { set ps 0 }
@@ -583,6 +664,8 @@ proc getTsBranch {core} {
     global traceBaseAddrArray
     global ts_control_offset
 
+#    echo "getTsBranch($core)"
+
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set t [expr ($t >> 16) & 0x3]
     switch $t {
@@ -596,6 +679,8 @@ proc getTsBranch {core} {
 proc setTsBranch {core branch} {
     global traceBaseAddrArray
     global ts_control_offset
+
+#    echo "setTsBranch($core $branch)"
 
     switch $branch {
 		"off"                { set br 0 }
@@ -615,6 +700,8 @@ proc setTsITC {core itc} {
     global traceBaseAddrArray
     global ts_control_offset
 
+#    echo "setTsITC($core $itc)"
+
     switch $itc {
 		"on"    { set f 1 }
 		"off"   { set f 0 }
@@ -631,6 +718,8 @@ proc getTsITC {core} {
     global traceBaseAddrArray
     global ts_control_offset
 
+#    echo "getTsITC($core)"
+
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set t [expr ($t >> 18) & 0x1]
 
@@ -643,6 +732,8 @@ proc getTsITC {core} {
 proc setTsOwner {core owner} {
     global traceBaseAddrArray
     global ts_control_offset
+
+#    echo "setTsOwner($core $owner)"
 
     switch $owner {
 		"on"    { set f 1 }
@@ -660,6 +751,8 @@ proc getTsOwner {core} {
     global traceBaseAddrArray
     global ts_control_offset
 
+#    echo "getTsOwner($core)"
+
     set t [word [expr $traceBaseAddrArray($core) + $ts_control_offset]]
     set t [expr ($t >> 19) & 0x1]
 
@@ -672,6 +765,8 @@ proc getTsOwner {core} {
 proc setTeStopOnWrap {core wrap} {
     global traceBaseAddrArray
     global te_control_offset
+
+#    echo "setTeStopOnWrap($core $wrap)"
 
     switch $wrap {
 		"on"    { set sow 1 }
@@ -689,6 +784,8 @@ proc getTeStopOnWrap {core} {
     global traceBaseAddrArray
     global te_control_offset
 
+#    echo "getTeStopOnWrap($core)"
+
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr ($t >> 14) & 0x1]
 
@@ -702,6 +799,8 @@ proc getCAStopOnWrap {core} {
     global CABaseAddrArray
     global ca_control_offset
 
+#    echo "getCAStopOnWrap($core)"
+
     set t [word [expr $CABaseAddrArray($core) + $ca_control_offset]]
     set t [expr ($t >> 14) & 0x1]
 
@@ -714,6 +813,8 @@ proc getCAStopOnWrap {core} {
 proc setTeStallEnable {core enable} {
     global traceBaseAddrArray
     global te_control_offset
+
+#    echo "setTeStallEnable($core $enable)"
 
     switch $enable {
 		"on"    { set en 1 }
@@ -731,6 +832,8 @@ proc getTeStallEnable {core} {
     global traceBaseAddrArray
     global te_control_offset
 
+#    echo "getTeStallEnable($core)"
+
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr ($t >> 13) & 0x1]
 
@@ -742,6 +845,8 @@ proc getTeStallEnable {core} {
 
 proc setTraceMode { core usermode } {
 	global have_htm
+
+#    echo "setTraceMode($core $usermode)"
 
 	switch $usermode {
 		"off" 
@@ -768,7 +873,8 @@ proc setTargetTraceMode {core mode} {
     global traceBaseAddrArray
     global te_control_offset
 
-	#echo "Setting target trace mode to $mode"
+#    echo "setTargetTraceMode($core $mode)"
+
     switch $mode {
        "none"       { set tm 0 }
        "sample"     { set tm 1 }
@@ -789,6 +895,9 @@ proc setTargetTraceMode {core mode} {
 
 proc getTraceMode {core} {
 	set tm [getTargetTraceMode $core]
+
+#	echo "getTraceMode($core)"
+
 	switch $tm {
        "none"       { return "off" }
        "sample"     { return "sample" }
@@ -802,6 +911,8 @@ proc getTraceMode {core} {
 proc getTargetTraceMode {core} {
     global traceBaseAddrArray
     global te_control_offset
+
+#    echo "getTargetTraceMode($core)"
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr ($t >> 4) & 0x7]
@@ -819,6 +930,8 @@ proc getTargetTraceMode {core} {
 proc setITC {core mode} {
     global traceBaseAddrArray
     global te_control_offset
+
+#    echo "setITC($core $mode)"
 
     switch $mode {
 		"off"           { set itc 0 }
@@ -838,6 +951,8 @@ proc getITC {core} {
     global traceBaseAddrArray
     global te_control_offset
 
+#    echo "getITC($core)"
+
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr ($t >> 7) & 0x3]
 
@@ -854,12 +969,16 @@ proc setITCMask {core mask} {
     global traceBaseAddrArray
     global itc_traceenable_offset
 
+#    echo "setITCMask($core $mask)"
+
     mww [expr $traceBaseAddrArray($core) + $itc_traceenable_offset] [expr $mask]
 }
 
 proc getITCMask {core} {
     global traceBaseAddrArray
     global itc_traceenable_offset
+
+#    echo "getITCMask($core)"
 
     set t [wordhex [expr $traceBaseAddrArray($core) + $itc_traceenable_offset]]
 
@@ -870,12 +989,16 @@ proc setITCTriggerMask {core mask} {
     global traceBaseAddrArray
     global itc_trigenable_offset
 
+#    echo "setITCTriggerMask($core $mask)"
+
     mww [expr $traceBaseAddrArray($core) + $itc_trigenable_offset] [expr $mask]
 }
 
 proc getITCTriggerMask {core} {
     global traceBaseAddrArray
     global itc_trigenable_offset
+
+#    echo "getITCTriggerMask($core)"
 
     set t [wordhex [expr $traceBaseAddrArray($core) + $itc_trigenable_offset]]
 
@@ -885,6 +1008,8 @@ proc getITCTriggerMask {core} {
 proc setMaxIcnt {core maxicnt} {
     global traceBaseAddrArray
     global te_control_offset
+
+#    echo "setMaxIcnt($core $maxicnt)"
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr $t & ~0xf00000]
@@ -896,6 +1021,8 @@ proc getMaxIcnt {core} {
     global traceBaseAddrArray
     global te_control_offset
 
+#    echo "getMaxIcnt($core)"
+
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr $t & 0xf00000]
     set t [expr $t >> 20]
@@ -904,6 +1031,8 @@ proc getMaxIcnt {core} {
 }
 
 proc findMaxICnt { core }  {
+#	echo "findMaxIcnt($core)"
+
 	# Start at 15 and work down until one sticks.
 	for {set x 15} { $x > 0 } {set x [expr {$x - 1}]} {
 		setMaxIcnt $core $x
@@ -917,6 +1046,8 @@ proc setMaxBTM {core maxicnt} {
     global traceBaseAddrArray
     global te_control_offset
 
+#    echo "setMaxBTM($core $masicnt)"
+
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr $t & ~0x0f0000]
     set t [expr $t | ($maxicnt << 16)]
@@ -926,6 +1057,8 @@ proc setMaxBTM {core maxicnt} {
 proc getMaxBTM {core} {
     global traceBaseAddrArray
     global te_control_offset
+
+#    echo "getMaxBTM($core)"
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr $t & 0x0f0000]
@@ -940,6 +1073,8 @@ proc srcbits {} {
     global te_impl_offset
     global traceBaseAddresses
 
+#    echo "srcbits()"
+
     set numbits [expr [word [expr [lindex $traceBaseAddresses 0] + $te_impl_offset]] >> 24 & 7]
     return $numbits
 }
@@ -949,6 +1084,8 @@ proc srcbits {} {
 proc printtracebaseaddresses {} {
     global traceBaseAddresses
     global traceFunnelAddress
+
+#    echo "printtracebaseaddresses()"
 
     set core 0
 
@@ -967,6 +1104,8 @@ proc printtracebaseaddresses {} {
 proc getTeVersion {core} {
     global te_impl_offset
     global traceBaseAddresses
+
+#    echo "getTeVersion($core)"
 
     set version [expr [word [expr [lindex $traceBaseAddresses 0] + $te_impl_offset]] & 7]
     return $version
@@ -1777,12 +1916,16 @@ proc setreadptr {core ptr} {
     global traceBaseAddrArray
     global te_sinkrp_offset
 
+#    echo "setreadptr($core [format 0x%08lx $ptr])"
+
     mww [expr $traceBaseAddrArray($core) + $te_sinkrp_offset] $ptr
 }
 
 proc setcareadptr {core ptr} {
     global CABaseAddrArray
     global ca_sink_rp_offset
+
+#    echo "setcareadptr($core [format 0x%08lx $ptr])"
 
     mww [expr $CABaseAddrArray($core) + $ca_sink_rp_offset] $ptr
 }
@@ -1798,86 +1941,112 @@ proc readCASRAMData {core} {
     global CABaseAddrArray
     global ca_sink_data_offset
 
+#    echo "redCASRAMData($core)"
+
     return [word [expr $CABaseAddrArray($core) + $ca_sink_data_offset]]
 }
 
-proc computeStartEnd {wIdx buffSize wrap sow numWant start1 end1 start2 end2} {
+proc computeStartEnd {buffStart writePtr buffSize wrap sow numWant start1 end1 start2 end2} {
 # if sow == on, want oldest (first - forwards from beginning (0) )
-# if sow == off, want newest (last - backwards from end (wIdx))
+# if sow == off, want newest (last - backwards from end (writePtr))
 
     upvar $start1 s1
     upvar $end1 e1
     upvar $start2 s2
     upvar $end2 e2
 
+    set buffEnd [expr $buffStart + $buffSize]
+
     if {$wrap == 0 } {
         # buffer has not wrapped
 
         if {$numWant == 0} {
-            # want whole buffer
+            # want whole buffer buffStart to writePtr
 
-            set s1 0
-            set e1 $wIdx
+            set s1 $buffStart
+            set e1 $writePtr
         } else {
             # numWant != 0
 
-            if {$numWant > $wIdx} {
-                # don't have numWant bytes in buffer. Set end to number we have
+            if {$numWant >= [expr $buffStart - $writePtr]} {
+                # don't have numWant bytes in buffer. Set end to number we have want buffStart to writePtr
 
-
-                set s1 0
-                set e1 $wIdx
+                set s1 $buffStart
+                set e1 $writePtr
             } elseif {$sow == "on"} {
-                # want beginning of buffer (oldest)
+                # want beginning of buffer (oldest) buffStart to buffStart + numwant
 
-                set s1 0
-                set e1 $numWant
+                set s1 $buffStart
+                set e1 [expr $buffStart + $numWant]
             } else {
-                # want end of buffer (newest)
+                # want end of buffer (newest) want writPtr - numWant to writePtr
 
-                set s1 [expr $wIdx - $numWant]
-                set e1 $wIdx
+                set s1 [expr $writePtr - $numWant]
+                set e1 $writePtr
             }
         }
-
         set s2 0;
         set e2 0;
     } else {
         # buffer has wrapped
 
         if {($numWant == 0) || ($numWant >= $buffSize)} {
-            # want it all
+            # want it all want writePtr to buffEnd, then buffStart to writePtr
 
-            set s1 $wIdx
-            set e1 $buffSize
-            set s2 0
-            set e2 $wIdx
+            set s1 $writePtr
+            set e1 $buffEnd
+            set s2 $buffStart
+            set e2 $writePtr
         } else {
             if {$sow == "on"} {
                 # want beginning of buffer (oldest)
 
-                set s1 $wIdx
+                if {$numWant >= $buffSize} {
+                    # want whole buffer
+                    # want writePtr to buffEnd, then buffStart to writePtr
 
-                if {$numWant > [expr $buffSize - $wIdx]} {
-                    set e1 $buffSize
-                    set s2 0
-                    set e2 [expr $numWant - ($e1 - $s1)]
+                    set s1 $writePtr
+                    set e1 $buffEnd
+                    set s2 $buffStart
+                    set e2 $writePtr
                 } else {
-                    set e1 [expr $s1 + $numWant]
-                    set s2 0
-                    set e2 0
+                    # numWant < buffSize
+
+		    if {($writePtr + $numWant) > $buffEnd} {
+			# want writePtr to buffEnd, buffSart to (buffStart + (buffEnd - writePtr)
+
+                        set s1 $writePtr
+                        set e1 $buffEnd
+			set s2 $buffStart
+			set remaining [expr $numWant - ($buffEnd - $writePtr)]
+			set e2 [expr $buffStart + $remaining]
+		    } else {
+			# want writePtr to writePtr + numWant
+
+                        set s1 $writePtr
+                        set e1 [expr $writePtr + $numWant]
+                        set s2 0
+                        set e2 0
+		    }
                 }
             } else {
                 # want end of buffer (newest)
 
-                if {$numWant > $wIdx} {
-                    set s1 [expr $buffSize - ($numWant - $wIdx)]
-                    set e1 $buffSize
-                    set s2 0
-                    set e2 $wIdx
+		# remember, buffer has wrapped, numWant < buffSize
+
+                if {($buffStart + $numWant) > $writePtr} {
+                    # want buffEnd - (numWant - (writePtr - BuffSart) to buffEnd, buffStart to writePtr
+
+                    set s1 [expr $buffEnd - ($numWant - ($writePtr - $buffStart)]
+                    set e1 $buffEnd
+
+                    set s2 $buffStart
+                    set e2 $writePtr
                 } else {
-                    set s1 [expr $wIdx - $numWant]
-                    set e1 $wIdx
+	            # want writePtr - numWant to writePtr
+
+                    set s1 [expr $writePtr - $numWant]
+                    set e1 $writePtr
                     set e2 0
                     set s2 0
                 }
@@ -1907,7 +2076,15 @@ proc writeSRAM {core file limit} {
 
     set stop_on_wrap [getTeStopOnWrap $core]
 
-    computeStartEnd $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
+    if {$verbose > 1} {
+        echo "computeStartEnd: [format 0x%08lx 0] [format 0x%08lx $tracewp] [format 0x%08lx $buffersize] $wrap $stop_on_wrap [format 0x%08lx $limit]"
+    }
+
+    computeStartEnd 0 $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
+
+    if {$verbose > 1} {
+	echo "start1: [format 0x%08lx $start1] end1: [format 0x%08lx $end1] start2: [format 0x%08lx $start2] end2: [format 0x%08lx $end2]"
+    }
 
     if {$file == "stdout"} {
 	# write start1 to end1, start2 to end2
@@ -1988,7 +2165,7 @@ proc writeCASRAM {core file limit} {
 
     set stop_on_wrap [getCAStopOnWrap $core]
 
-    computeStartEnd $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
+    computeStartEnd 0 $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
 
     if {$file == "stdout"} {
 	# write start1 to end1, start2 to end2
@@ -2107,6 +2284,8 @@ proc getCapturedTraceSize { core } {
     global num_cores
     global verbose
 
+#    echo "getCapturedTraceSize($core)"
+
     if {$has_funnel != 0} {
 		set s [getSink funnel]
 		switch [string toupper $s] {
@@ -2125,6 +2304,8 @@ proc getCapturedTraceSize { core } {
 proc getTraceBufferSizeSRAM {core} {
 	set tracewp [gettracewp $core]
 
+#	echo "getTraceBufferSizeSRAM($core)"
+
 	if {($tracewp & 1) == 0 } { ;
 		# buffer has not wrapped
 		set tracebegin 0
@@ -2139,6 +2320,9 @@ proc getTraceBufferSizeSBA {core} {
     global traceBaseAddrArray
     global te_sinkbase_offset
     global te_sinklimit_offset
+
+#    echo "getTraceBufferSizeSBA($core)"
+
     set tracewp [gettracewp $core]
     if { ($tracewp & 1) == 0 } { 
 		# buffer has not wrapped
@@ -2170,7 +2354,17 @@ proc writeSBA {core file limit} {
 
     set stop_on_wrap [getTeStopOnWrap $core]
 
-    computeStartEnd $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
+    set baseAddr [getSBABaseAddress $core]
+
+    if {$verbose > 1} {
+        echo "computeStartEnd: [format 0x%08lx $baseAddr] [format 0x%08lx $tracewp] [format 0x%08lx $buffersize] $wrap $stop_on_wrap [format 0x%08lx $limit]"
+    }
+
+    computeStartEnd $baseAddr $tracewp $buffersize $wrap $stop_on_wrap $limit start1 end1 start2 end2
+
+    if {$verbose > 1} {
+        echo "start1: [format 0x%08lx $start1] end1: [format 0x%08lx $end1] start2: [format 0x%08lx $start2] end2: [format 0x%08lx $end2]"
+    }
 
     if {$file == "stdout"} {
 	# write start1 to end1, start2 to end2
@@ -2313,6 +2507,8 @@ proc wtb {{file "trace.rtd"} {limit 0}} {
     global num_cores
     global verbose
 
+#    echo "wtb($file $limit)"
+
     if  { $verbose > 0 } {
         echo -n "collecting trace..."
     }
@@ -2361,6 +2557,8 @@ proc wcab {{file "trace.cat"} {limit 0}} {
     global num_cores
     global verbose
 
+#    echo "wcab($file $limit)"
+
     if  { $verbose > 0 } {
         echo -n "collecting CA trace..."
     }
@@ -2403,6 +2601,8 @@ proc clearTraceBuffer {core} {
     global te_sinkwp_offset
     global te_sinkbase_offset
 
+#    echo "clearTraceBuffer($core)"
+
     set s [getSink $core]
     switch [string toupper $s] {
 		"SRAM" { 
@@ -2412,12 +2612,15 @@ proc clearTraceBuffer {core} {
 		"SBA" { 
 			set t [word [expr $traceBaseAddrArray($core) + $te_sinkbase_offset]]
 	    	mww [expr $traceBaseAddrArray($core) + $te_sinkwp_offset] $t
+	    	mww [expr $traceBaseAddrArray($core) + $te_sinkrp_offset] $t
 		}
     }
 }
 
 proc cleartrace {{cores "all"}} {
     set coreList [parseCoreFunnelList $cores]
+
+#    echo "cleartrace($cores)"
 
     if {$coreList == "error"} {
 		echo {Error: Usage: cleartrace [corelist]}
@@ -2433,12 +2636,16 @@ proc readts {} {
     global traceBaseAddrArray
     global ts_control_offset
 
+#    echo "readts()"
+
     echo "[wordhex [expr $traceBaseAddrArray(0) + $ts_control_offset]]"
 }
 
 proc gettracewp {core} {
     global te_sinkwp_offset
     global traceBaseAddrArray
+
+#    echo "gettracewp($core)"
 
     set tracewp [word [expr $traceBaseAddrArray($core) + $te_sinkwp_offset]]
 
@@ -2448,6 +2655,8 @@ proc gettracewp {core} {
 proc getCASink {core} {
     global CABaseAddrArray
     global ca_control_offset
+
+#    echo "getCASink($core)"
 
     set t [word [expr $CABaseAddrArray($core) + $ca_control_offset]]
     set t [expr ($t >> 28) & 0x0f]
@@ -2462,6 +2671,8 @@ proc getcatracewp {core} {
     global ca_sink_wp_offset
     global CABaseAddrArray
 
+#    echo "getcatracewp($core)"
+
     set tracewp [word [expr $CABaseAddrArray($core) + $ca_sink_wp_offset]]
 
     return $tracewp
@@ -2474,6 +2685,8 @@ proc getSink {core} {
 
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr ($t >> 28) & 0x0f]
+
+#    echo "getSink($core)"
 
     switch $t {
 		0 { 
@@ -2502,7 +2715,9 @@ proc getTraceBufferSize {core} {
     global te_sinkwp_offset
     global te_sinkbase_offset
     global te_sinklimit_offset
-	global trace_buffer_width
+    global trace_buffer_width
+
+#    echo "getTraceBufferSize($core)"
 
     switch [string toupper [getSink $core]] {
 		"SRAM" { 
@@ -2529,6 +2744,8 @@ proc getCATraceBufferSize {core} {
     global ca_sinkbase_offset
     global ca_sinklimit_offset
 
+#    echo "getCATraceBufferSize($core)"
+
     switch [string toupper [getCASink $core]] {
     "SRAM" { set t [word [expr $CABaseAddrArray($core) + $ca_sink_wp_offset]]
              mww [expr $CABaseAddrArray($core) + $ca_sink_wp_offset] 0xfffffffc
@@ -2551,6 +2768,8 @@ proc setSink {core type {base ""} {size ""}} {
     global te_sinklimit_offset
     global trace_buffer_width
     global te_sinkwp_offset
+
+#    echo "setSink($core $type base: $base size: $size)"
 
     switch [string toupper $type] {
 		"SRAM"   { set b 4 }
@@ -2610,6 +2829,8 @@ proc setSink {core type {base ""} {size ""}} {
 
 proc sinkstatus {{cores "all"} {action ""}} {
     set coreList [parseCoreFunnelList $cores]
+
+#    echo "sinkstatus($cores $action)";
 
     if {$coreList == "error"} {
 		if {$action == ""} {
@@ -2979,6 +3200,7 @@ proc trace {{cores "all"} {opt ""}} {
     } elseif {$opt == "on"} {
 		foreach core $coreList {
 			enableTraceEncoderManual $core
+			enableTracingManual $core
 		}
     } elseif {$opt == "off"} {
 		foreach core $coreList {
@@ -3031,6 +3253,8 @@ proc wordscollected {core} {
     global traceBaseAddrArray
     global te_sinkbase_offset
 
+#    echo "wordscollected($core)"
+
     set tracewp [gettracewp $core]
 
     switch [string toupper [getSink $core]] {
@@ -3060,6 +3284,8 @@ proc is_itc_implmented {core} {
     # Caller is responsible for enabling trace before calling this
     # proc, otherwise behavior is undefined
 
+#    echo "is_itc_implmented($core)"
+
     global itc_traceenable_offset
     global traceBaseAddrArray
 
@@ -3078,6 +3304,8 @@ proc is_itc_implmented {core} {
 proc get_num_external_trigger_outputs {core} {
     global xto_control_offset
     global traceBaseAddrArray
+
+#    echo "get_num_external_trigger_output($core)"
 
     # We'll write non-zero nibbles to xto_control, count
     # non-zero nibbles on readback,
@@ -3104,6 +3332,8 @@ proc get_num_external_trigger_outputs {core} {
 proc get_num_external_trigger_inputs {core} {
     global xti_control_offset
     global traceBaseAddrArray
+
+#    echo "get_num_external_trigger_inputs($core)"
 
     # We'll write non-zero nibbles to xti_control, count
     # non-zero nibbles on readback,
@@ -3143,6 +3373,8 @@ proc wp_control_set {core bit} {
     global wp_control_offset
     global traceBaseAddresses
 
+#    echo "wp_control_set($core $bit)"
+
     foreach baseAddress $traceBaseAddresses {
 		set newval [expr [word [expr $baseAddress + $wp_control_offset]] | (1 << $bit)]
 		mww [expr $baseAddress + $wp_control_offset] $newval
@@ -3152,6 +3384,8 @@ proc wp_control_set {core bit} {
 proc wp_control_clear {core bit} {
     global wp_control_offset
     global traceBaseAddresses
+
+#    echo "wp_control_clear($core $bit)"
 
     foreach baseAddress $traceBaseAddresses {
 		set newval [expr [word [expr $baseAddress + $wp_control_offset]] & ~(1 << $bit)]
@@ -3163,11 +3397,15 @@ proc wp_control_get_bit {core bit} {
     global wp_control_offset
     global traceBaseAddresses
 
+#    echo "wp_control_get_bit($core $bit)"
+
     set baseAddress [lindex $traceBaseAddresses 0]
     return [expr ([word [expr $baseAddress + $wp_control_offset]] >> $bit) & 0x01]
 }
 
 proc wp_control {cores {bit ""} {val ""}} {
+#    echo "wp_control($cores $bit $val)"
+
     if {$bit == ""} {
 		set bit $cores
 		set cores "all"
@@ -3225,12 +3463,16 @@ proc xti_action_read {core idx} {
     global xti_control_offset
     global traceBaseAddrArray
 
+#    echo "xti_action_read($core $idx)"
+
     return [expr ([word [expr $traceBaseAddrArray($core) + $xti_control_offset]] >> ($idx*4)) & 0xF]
 }
 
 proc xti_action_write {core idx val} {
     global xti_control_offset
     global traceBaseAddrArray
+
+#    echo "xti_action_write($core [format 0x%08lx $idx] [format 0x%08lx $val])"
 
     set zeroed [expr ([word [expr $traceBaseAddrArray($core) + $xti_control_offset]] & ~(0xF << ($idx*4)))]
     set ored [expr ($zeroed | (($val & 0xF) << ($idx*4)))]
@@ -3240,6 +3482,9 @@ proc xti_action_write {core idx val} {
 proc xto_event_read {core idx} {
     global xto_control_offset
     global traceBaseAddrArray
+
+#    echo "xto_event_read($core $idx)"
+
     return [expr ([word [expr $traceBaseAddrArray($core) + $xto_control_offset]] >> ($idx*4)) & 0xF]
 }
 
@@ -3247,12 +3492,16 @@ proc xto_even_write {core idx val} {
     global xto_control_offset
     global traceBaseAddrArray
 
+#    echo "xto_even_write($core [format 0x%08lx $idx] [format 0x%08lx $val])"
+
     set zeroed [expr ([word [expr $traceBaseAddrArray($core) + $xto_control_offset]] & ~(0xF << ($idx*4)))]
     set ored [expr ($zeroed | (($val & 0xF) << ($idx*4)))]
     mww [expr $traceBaseAddrArray($core) + $xto_control_offset] $ored
 }
 
 proc xti_action {cores {idx ""} {val ""}} {
+#    echo "xti_action($cores $idx $val)"
+
     if {$idx == ""} {
 		set idx $cores
 		set cores "all"
@@ -3329,7 +3578,9 @@ proc init {} {
     global CABaseAddrArray
     global num_cores
     global has_funnel
-	global have_htm
+    global have_htm
+
+#    echo "init()"
 
     # put all cores and funnel in a known state
 
@@ -3595,6 +3846,12 @@ proc dtr {{cores "all"}} {
     global te_sinkrp_offset
     global te_sinkdata_offset
 
+    global xti_control_offset
+    global xto_control_offset
+    global itc_traceenable_offset
+    global itc_trigenable_offset
+    global ts_control_offset
+
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
@@ -3715,6 +3972,87 @@ proc dtr {{cores "all"}} {
     }
 
     echo "$rv"
+
+    set rv "itcTraceEnable:"
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $itc_traceenable_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+
+    set rv "itcTrigEnable:"
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $itc_trigenable_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+
+    set rv "tsControl:"
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $ts_control_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+
+    set rv "xtiControl:"
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $xti_control_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+
+    set rv "xtoControl:"
+
+    foreach core $coreList {
+		set tse "core $core: "
+
+		lappend tse [wordhex [expr $traceBaseAddrArray($core) + $xto_control_offset]]
+
+		if {$rv != ""} {
+			append rv "; $tse"
+		} else {
+			set rv $tse
+		}
+    }
+
+    echo "$rv"
+
 }
 
 # program chip to collect a trace in the sba buffer
@@ -3734,8 +4072,8 @@ proc sba {{addr ""} {size ""}} {
 			tracemode 0 btm
 		}
 		tracedst 0 sba $addr $size
-		cleartrace
-		trace on
+	        cleartrace 0
+		trace 0 on
 	}
 }
 
@@ -3753,12 +4091,15 @@ proc sram {} {
 		tracemode 0 btm
 	}
 	tracedst 0 sram
-	cleartrace
-	trace on
+	cleartrace 0
+	trace 0 on
 }
 
 proc sample {} {
 	global verbose
+
+#	echo "sample()"
+
 	set verbose 2
 	stoponwrap 0 on
 	setTeStallEnable 0 on
@@ -3769,6 +4110,8 @@ proc sample {} {
 }
 
 proc tsallon {} {
+#	echo "tsallon()"
+
 	ts all on
 	tsbranch all all
 	tsitc all on
@@ -3779,7 +4122,9 @@ proc haspcsampling {core} {
     global traceBaseAddrArray
     global pcs_control_offset
 
-	set current [word [expr $traceBaseAddrArray($core) + $pcs_control_offset]]
+#    echo "haspcsamping($core)"
+
+    set current [word [expr $traceBaseAddrArray($core) + $pcs_control_offset]]
 
     mww [expr $traceBaseAddrArray($core) + $pcs_control_offset] 0x1
 	set t [word [expr $traceBaseAddrArray($core) + $pcs_control_offset]]
@@ -3796,7 +4141,9 @@ proc haspcsampling {core} {
 proc enablepcsampling {core size} {
     global traceBaseAddrArray
     global pcs_control_offset
-	global pcs_sample
+    global pcs_sample
+
+#    echo "enablepcsampoing($core [format 0x%08lx $size])"
 
 	set samp_ofs [expr $pcs_sample - $size + 4]
 
@@ -3808,11 +4155,16 @@ proc disablepcsampling {core} {
     global traceBaseAddrArray
     global pcs_control_offset
 
+#    echo "disablepcsampling($core)"
+
     mww [expr $traceBaseAddrArray($core) + $pcs_control_offset] 0x0
 }
 
 proc fetchsampledata {fn} {
 	#echo "fetching sample data to $fn"
+
+#    echo "fetchsampledata($fn)"
+
 	set fp [open $fn w]
 	set result [riscv dump_sample_buf base64]
 	puts -nonewline $fp $result
