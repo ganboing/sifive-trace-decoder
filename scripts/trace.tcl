@@ -2037,7 +2037,7 @@ proc computeStartEnd {buffStart writePtr buffSize wrap sow numWant start1 end1 s
                 if {($buffStart + $numWant) > $writePtr} {
                     # want buffEnd - (numWant - (writePtr - BuffSart) to buffEnd, buffStart to writePtr
 
-                    set s1 [expr $buffEnd - ($numWant - ($writePtr - $buffStart)]
+                    set s1 [expr $buffEnd - ($numWant - ($writePtr - $buffStart))]
                     set e1 $buffEnd
 
                     set s2 $buffStart
@@ -2337,7 +2337,8 @@ proc writeSBA {core file limit} {
     global verbose
 	
     if { $verbose > 1 } {
-        echo ""
+		echo ""
+        echo "limit: $limit"
     }
 
     set tracewp [gettracewp $core]
