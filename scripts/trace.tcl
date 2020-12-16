@@ -3489,7 +3489,7 @@ proc xto_event_read {core idx} {
     return [expr ([word [expr $traceBaseAddrArray($core) + $xto_control_offset]] >> ($idx*4)) & 0xF]
 }
 
-proc xto_even_write {core idx val} {
+proc xto_event_write {core idx val} {
     global xto_control_offset
     global traceBaseAddrArray
 
