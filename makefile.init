@@ -67,7 +67,7 @@ ifeq ($(OS),Windows_NT)
     LIBPATH = ../lib/windows
     PICLIBFLAGS :=
     LNFLAGS = -static
-    LIBS := -lbfd -lopcodes -lintl -liberty -lz
+    LIBS := -lbfd -lopcodes -lintl -liberty -lz -lws2_32
     EXECUTABLE := dqr.exe
 else
     UNAME_S := $(shell uname -s)
