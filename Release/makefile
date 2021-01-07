@@ -18,7 +18,7 @@ Release release all: $(EXECUTABLE) $(SWIGLIB) $(SWTEXECUTABLE)
 $(EXECUTABLE): $(OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	$(CROSSPREFIX)g++ -L$(LIBPATH) $(LNFLAGS) -o $(EXECUTABLE) $(OBJS) $(USER_OBJS) $(LIBS)
+	$(CROSSPREFIX)g++ $(PICLIBFLAGS) -L$(LIBPATH) $(LNFLAGS) -o $(EXECUTABLE) $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -32,7 +32,7 @@ $(SWIGLIB): $(SWIGLIBOBJS)
 $(SWTEXECUTABLE): $(SWTOBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	$(CROSSPREFIX)g++ -L$(LIBPATH) $(LNFLAGS) -o $(SWTEXECUTABLE) $(SWTOBJS)
+	$(CROSSPREFIX)g++ -L$(LIBPATH) $(LNFLAGS) -o $(SWTEXECUTABLE) $(SWTOBJS) $(SWTLIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 

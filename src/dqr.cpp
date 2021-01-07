@@ -32,7 +32,9 @@
 
 #include <unistd.h>
 #include <fcntl.h>
-#ifndef WINDOWS
+#ifdef WINDOWS
+#include <winsock2.h>
+#else // WINDOWS
 #include <netdb.h>
 #include <sys/ioctl.h>
 #include <errno.h>
@@ -40,7 +42,6 @@
 
 #include "dqr.hpp"
 #include "trace.hpp"
-#include "swt.hpp"
 
 //#define DQR_MAXCORES	8
 

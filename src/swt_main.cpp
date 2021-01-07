@@ -1,4 +1,3 @@
-#include "swt.hpp"
 #include <iostream>
 #include <cstdio>
 #include <string.h>
@@ -13,10 +12,14 @@
 #include <fcntl.h>
 #include <time.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #ifdef WINDOWS
+#include <winsock2.h>
 #include <windows.h>
 #endif
+
+#include "swt.hpp"
 
 #define USE_CLOSE_AND_REOPEN_HACK 1  // This is an interim workaround to avoid an issue with bogus all-zero data emerging from
 // a PL2303 based adapter on the initial open() but not on subsequent open()/close() calls.

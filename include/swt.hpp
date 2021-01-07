@@ -2,6 +2,7 @@
 #include <list>
 #include <string>
 #include <stdint.h>
+#include <sys/types.h>
 #if defined(LINUX) || defined(OSX)
 #include <netinet/in.h>
 #elif defined(WINDOWS)

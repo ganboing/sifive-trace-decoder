@@ -1,5 +1,3 @@
-#include "swt.hpp"
-
 #include <string.h>
 #include <algorithm>
 #include <memory>
@@ -9,17 +7,18 @@
 
 #include <time.h>
 #if defined(LINUX) || defined(OSX)
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
-#include <sys/types.h>
 #include <sys/stat.h>
 #define closesocket close
 #endif
+#include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <pthread.h>
+
+#include "swt.hpp"
 
 #ifdef WINDOWS
 typedef int socklen_t;

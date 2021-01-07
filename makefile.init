@@ -68,7 +68,6 @@ ifeq ($(OS),Windows_NT)
     SWIGCFLAGS += -D WINDOWS -std=c++11
     LIBPATH = ../lib/windows
     PICLIBFLAGS :=
-#    LNFLAGS = -static
     LNFLAGS =
     LIBS := -lbfd -lopcodes -lintl -liberty -lz -lws2_32
     SWTLIBS := -lws2_32 -lpthread
@@ -257,8 +256,8 @@ else
                 SWIGCFLAGS += -D WINDOWS -std=c++11
                 LIBPATH = ../lib/windows
                 PICLIBFLAGS :=
-                LNFLAGS = -static
-                LIBS := -lbfd -lopcodes -lintl -liberty -lz
+                LNFLAGS =
+		LIBS := -lbfd -lopcodes -lintl -liberty -lz -lws2_32
                 SWTLIBS := -lws2_32 -lpthread
                 EXECUTABLE := dqr.exe
                 SWTEXECUTABLE := swt.exe
