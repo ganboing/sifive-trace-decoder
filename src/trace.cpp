@@ -438,71 +438,73 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 
 //    printf("ef_name:%s\n",ef_name);
 
-    elfReader = new (std::nothrow) ElfReader(ef_name);
+	  elfReader = new (std::nothrow) ElfReader(ef_name);
 
-    assert(elfReader != nullptr);
+	  assert(elfReader != nullptr);
 
-    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
-    	if (sfp != nullptr) {
-    		delete sfp;
-    		sfp = nullptr;
-    	}
+	  if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
+		  if (sfp != nullptr) {
+			  delete sfp;
+			  sfp = nullptr;
+		  }
 
-    	delete elfReader;
-    	elfReader = nullptr;
+		  delete elfReader;
+		  elfReader = nullptr;
 
-    	status = TraceDqr::DQERR_ERR;
+		  status = TraceDqr::DQERR_ERR;
 
-    	return;
-    }
+		  return;
+	  }
 
-    // create disassembler object
+	  // create disassembler object
 
-    bfd *abfd;
-    abfd = elfReader->get_bfd();
+	  bfd *abfd;
+	  abfd = elfReader->get_bfd();
 
-	disassembler = new (std::nothrow) Disassembler(abfd,true);
+	  disassembler = new (std::nothrow) Disassembler(abfd,true);
 
-	assert(disassembler != nullptr);
+	  printf("disassembler: %08x this:%08x\n",disassembler,this);
 
-	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
-		if (sfp != nullptr) {
-			delete sfp;
-			sfp = nullptr;
-		}
+	  assert(disassembler != nullptr);
 
-		if (elfReader != nullptr) {
-			delete elfReader;
-			elfReader = nullptr;
-		}
+	  if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+		  if (sfp != nullptr) {
+			  delete sfp;
+			  sfp = nullptr;
+		  }
 
-		delete disassembler;
-		disassembler = nullptr;
+		  if (elfReader != nullptr) {
+			  delete elfReader;
+			  elfReader = nullptr;
+		  }
 
-		status = TraceDqr::DQERR_ERR;
+		  delete disassembler;
+		  disassembler = nullptr;
 
-		return;
-	}
+		  status = TraceDqr::DQERR_ERR;
 
-    // get symbol table
+		  return;
+	  }
 
-    symtab = elfReader->getSymtab();
-    if (symtab == nullptr) {
-    	delete elfReader;
-    	elfReader = nullptr;
+	  // get symbol table
 
-    	delete sfp;
-    	sfp = nullptr;
+	  symtab = elfReader->getSymtab();
+	  if (symtab == nullptr) {
+		  delete elfReader;
+		  elfReader = nullptr;
 
-    	status = TraceDqr::DQERR_ERR;
+		  delete sfp;
+		  sfp = nullptr;
 
-    	return;
-    }
-    else {
-        elfReader = nullptr;
-	disassembler = nullptr;
-	symtab = nullptr;
-    }
+		  status = TraceDqr::DQERR_ERR;
+
+		  return;
+	  }
+  }
+  else {
+	  elfReader = nullptr;
+	  disassembler = nullptr;
+	  symtab = nullptr;
   }
 
   for (int i = 0; (size_t)i < sizeof lastFaddr / sizeof lastFaddr[0]; i++ ) {
