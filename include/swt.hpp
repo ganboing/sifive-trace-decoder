@@ -197,7 +197,7 @@ class IoConnections
 {
    // manage all external IOs
 public:
-   IoConnections(int port, int srcbits, int serialFd, bool userDebugOutput, bool pthreadSynchronizationMode);
+   IoConnections(int port, int srcbits, int serialFd, bool userDebugOutput, bool itcPrint, int itcPrintChannel, bool pthreadSynchronizationMode);
    int serialReadBytes(uint8_t *bytes, size_t numbytes);
    bool waitForIoActivity();
    bool hasClientCountDecreasedToZero();
@@ -226,6 +226,8 @@ private:
 
    bool warnedAboutSerialDeviceClosed;
    bool userDebugOutput;
+   bool itcPrint;
+   uint32_t itcPrintChannel;
 
    int callSelect(bool includeSerialDevice, fd_set *readfds, fd_set *writefds, fd_set *exceptfds);
    bool doWaitForIoActivity();   
@@ -243,4 +245,6 @@ private:
    SwtByteStream *simulatedSerialStream;
    int simulatedSerialReadBytes(uint8_t *bytes, size_t numbytes);   
    void makeSimulatedSerialPortStream();
+
+   void itcPrintChar(int ch);
 };

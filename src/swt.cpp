@@ -761,11 +761,13 @@ int IoConnection::getQueueLength()
 
 // IoConnections (plural!) method definitions
 
-IoConnections::IoConnections(int port, int srcbits, int serialFd, bool userDebugOutput, bool pthreadSynchronizationMode)
+IoConnections::IoConnections(int port, int srcbits, int serialFd, bool userDebugOutput, bool itcPrint, int itcPrintChannel, bool pthreadSynchronizationMode)
    : ns(srcbits), serialFd(serialFd), numClientsHighWater(0),
      pthreadSynchronizationMode(pthreadSynchronizationMode),  // this mode is only necessary for Windows; on POSIX-based OSes there's no reason to use this except for testing perhaps
      warnedAboutSerialDeviceClosed(false),
-     userDebugOutput(userDebugOutput)
+     userDebugOutput(userDebugOutput),
+     itcPrint(itcPrint),
+     itcPrintChannel(itcPrintChannel)
 {
    struct sockaddr_in address = {0}; 
    int opt = 1;
@@ -990,6 +992,10 @@ bool IoConnections::isSerialReadable()
 }
 
 
+void IoConnections::itcPrintChar(int ch)
+{
+   printf("%c", ch);
+}
 
 void IoConnections::serviceConnections()
 {
@@ -1056,17 +1062,52 @@ void IoConnections::serviceConnections()
 		  bytes_dump(bytes, numSerialBytesRead*8);
 	       }
 	       
-	       if (userDebugOutput)
+	       if (userDebugOutput || itcPrint)
 	       {
 		  for (int i = 0; i < numSerialBytesRead; i++)
 		  {
 		     bool haveMessage = ns.appendByteAndCheckForMessage(bytes[i], msg);
 		     if (haveMessage)
 		     {
-			// Dump reconstructed Nexus message to stdout for debugging, but don't transmit this level of
-			// abstraction to the client (client cares about the raw slice stream)
-			std::cout << "Nexus message: ";
-			msg.dump();
+			if (userDebugOutput)
+			{
+			   // Dump reconstructed Nexus message to stdout for debugging, but don't transmit this level of
+			   // abstraction to the client (client cares about the raw slice stream)
+			   std::cout << "Nexus message: ";
+			   msg.dump();
+			}
+			if (itcPrint)
+			{
+			   if (msg.idtag/4 == itcPrintChannel)
+			   {
+			      switch (msg.idtag % 4)
+			      {
+				 case 0:
+				    itcPrintChar(msg.dqdata >> 24);				    
+				    itcPrintChar(msg.dqdata >> 16);				    
+				    itcPrintChar(msg.dqdata >> 8);
+				    itcPrintChar(msg.dqdata);				    
+				    break;
+				 case 1:
+				    // If this ever happens, it is undefined behavior; we'll do nothing.
+				    // Maybe could log it, and/or have some panic mode for debug builds.
+				    break;
+				 case 2:
+				    itcPrintChar(msg.dqdata >> 8);
+				    itcPrintChar(msg.dqdata);				    
+				    break;
+				 case 3:
+				    itcPrintChar(msg.dqdata);
+				    break;
+			      }
+			   }
+			   else
+			   {
+			      // Some other channel that's not associated with ITC print.
+			      // Do nothing, currently, but seems plausible that we might do something here at some point
+			   }
+			      
+			}
 		     }
 		  }
 	       }

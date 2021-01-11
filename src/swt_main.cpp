@@ -34,6 +34,8 @@ struct Args
    bool debug;
    bool pthread;
    uint32_t baud;
+   bool itcprint;  // should ITC print traffic be forwarded to stdout?
+   uint32_t itcprintchannel;  // if itcprint is true, then which channel should be assumed to pertain to the ITC print application?
 
    Args()
    {
@@ -48,7 +50,9 @@ struct Args
       pthread = true;  // shouldn't be overridden
 #else
       pthread = false;  // Can be overridden by -pthread, however this would generally only be valuable for internal maintenance
-#endif      
+#endif
+      itcprint = false; // overridden by -itcprint <channel> option
+      itcprintchannel = 0;  // overridden by -itcprint <channel> option
    }
 
    void parse(int argc, char *argv[]);
@@ -108,7 +112,7 @@ int main(int argc, char *argv[])
 
    if (openSerialDevice(args.serialdev, serialFd, args.baud))
    {
-      IoConnections ioConnections(args.port, args.srcbits, serialFd, args.debug, args.pthread);
+      IoConnections ioConnections(args.port, args.srcbits, serialFd, args.debug, args.itcprint, args.itcprintchannel, args.pthread);
       
       while (! (args.autoexit && ioConnections.hasClientCountDecreasedToZero()) )
       {
@@ -153,7 +157,7 @@ int main(int argc, char *argv[])
 
 void Args::parse(int argc, char *argv[])
 {
-   enum State {  NOT_IN_ARG, IN_DEVICE, IN_SRCBITS, IN_PORT, IN_BAUD };
+   enum State {  NOT_IN_ARG, IN_DEVICE, IN_SRCBITS, IN_PORT, IN_BAUD, IN_ITCPRINT };
    State state = NOT_IN_ARG;
       
    for (int i = 1; i < argc; i++)
@@ -178,6 +182,12 @@ void Args::parse(int argc, char *argv[])
 	 baud = atoi(argv[i]);
 	 state = NOT_IN_ARG;
       }
+      else if (state == IN_ITCPRINT)
+      {
+	 itcprint = 1;
+	 itcprintchannel = atoi(argv[i]);
+	 state = NOT_IN_ARG;
+      }
       else
       {
 	 // not in arg
@@ -196,6 +206,10 @@ void Args::parse(int argc, char *argv[])
 	 else if (strcmp(argv[i], "-baud") == 0)
 	 {
 	    state = IN_BAUD;
+	 }
+	 else if (strcmp(argv[i], "-itcprint") == 0)
+	 {
+	    state = IN_ITCPRINT;
 	 }
 	 else if (strcmp(argv[i], "-pthread") == 0)
 	 {
