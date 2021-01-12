@@ -1080,24 +1080,28 @@ void IoConnections::serviceConnections()
 			{
 			   if (msg.idtag/4 == itcPrintChannel)
 			   {
+			      // std::cout << "Greg: temp message: got here" << std::endl;			      
 			      switch (msg.idtag % 4)
 			      {
 				 case 0:
-				    itcPrintChar(msg.dqdata >> 24);				    
-				    itcPrintChar(msg.dqdata >> 16);				    
+				    itcPrintChar(msg.dqdata);
 				    itcPrintChar(msg.dqdata >> 8);
-				    itcPrintChar(msg.dqdata);				    
+				    itcPrintChar(msg.dqdata >> 16);				    				    
+				    itcPrintChar(msg.dqdata >> 24);
+				    fflush(stdout);
 				    break;
 				 case 1:
 				    // If this ever happens, it is undefined behavior; we'll do nothing.
 				    // Maybe could log it, and/or have some panic mode for debug builds.
 				    break;
 				 case 2:
+				    itcPrintChar(msg.dqdata);				    				    
 				    itcPrintChar(msg.dqdata >> 8);
-				    itcPrintChar(msg.dqdata);				    
+    				    fflush(stdout);
 				    break;
 				 case 3:
 				    itcPrintChar(msg.dqdata);
+    				    fflush(stdout);				    
 				    break;
 			      }
 			   }
