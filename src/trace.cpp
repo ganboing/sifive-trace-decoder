@@ -404,6 +404,7 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
   symtab       = nullptr;
   disassembler = nullptr;
   caTrace      = nullptr;
+  counts       = nullptr;
 
   syncCount = 0;
   caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -437,66 +438,73 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 
 //    printf("ef_name:%s\n",ef_name);
 
-    elfReader = new (std::nothrow) ElfReader(ef_name);
+	  elfReader = new (std::nothrow) ElfReader(ef_name);
 
-    assert(elfReader != nullptr);
+	  assert(elfReader != nullptr);
 
-    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
-    	if (sfp != nullptr) {
-    		delete sfp;
-    		sfp = nullptr;
-    	}
+	  if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
+		  if (sfp != nullptr) {
+			  delete sfp;
+			  sfp = nullptr;
+		  }
 
-    	delete elfReader;
-    	elfReader = nullptr;
+		  delete elfReader;
+		  elfReader = nullptr;
 
-    	status = TraceDqr::DQERR_ERR;
+		  status = TraceDqr::DQERR_ERR;
 
-    	return;
-    }
+		  return;
+	  }
 
-    // create disassembler object
+	  // create disassembler object
 
-    bfd *abfd;
-    abfd = elfReader->get_bfd();
+	  bfd *abfd;
+	  abfd = elfReader->get_bfd();
 
-	disassembler = new (std::nothrow) Disassembler(abfd,true);
+	  disassembler = new (std::nothrow) Disassembler(abfd,true);
 
-	assert(disassembler != nullptr);
+	  printf("disassembler: %08x this:%08x\n",disassembler,this);
 
-	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
-		if (sfp != nullptr) {
-			delete sfp;
-			sfp = nullptr;
-		}
+	  assert(disassembler != nullptr);
 
-		if (elfReader != nullptr) {
-			delete elfReader;
-			elfReader = nullptr;
-		}
+	  if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+		  if (sfp != nullptr) {
+			  delete sfp;
+			  sfp = nullptr;
+		  }
 
-		delete disassembler;
-		disassembler = nullptr;
+		  if (elfReader != nullptr) {
+			  delete elfReader;
+			  elfReader = nullptr;
+		  }
 
-		status = TraceDqr::DQERR_ERR;
+		  delete disassembler;
+		  disassembler = nullptr;
 
-		return;
-	}
+		  status = TraceDqr::DQERR_ERR;
 
-    // get symbol table
+		  return;
+	  }
 
-    symtab = elfReader->getSymtab();
-    if (symtab == nullptr) {
-    	delete elfReader;
-    	elfReader = nullptr;
+	  // get symbol table
 
-    	delete sfp;
-    	sfp = nullptr;
+	  symtab = elfReader->getSymtab();
+	  if (symtab == nullptr) {
+		  delete elfReader;
+		  elfReader = nullptr;
 
-    	status = TraceDqr::DQERR_ERR;
+		  delete sfp;
+		  sfp = nullptr;
 
-    	return;
-    }
+		  status = TraceDqr::DQERR_ERR;
+
+		  return;
+	  }
+  }
+  else {
+	  elfReader = nullptr;
+	  disassembler = nullptr;
+	  symtab = nullptr;
   }
 
   for (int i = 0; (size_t)i < sizeof lastFaddr / sizeof lastFaddr[0]; i++ ) {
@@ -545,6 +553,9 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
   if (numAddrBits != 0 ) {
 	  instructionInfo.addrSize = numAddrBits;
   }
+  else if (elfReader == nullptr) {
+          instructionInfo.addrSize = 0;
+  }
   else {
 	  instructionInfo.addrSize = elfReader->getBitsPerAddress();
   }
@@ -583,21 +594,27 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 
 Trace::~Trace()
 {
+//      printf("Trace::~Trace() destructor for object at %08x\n",this); fflush(stdout);
+
 	cleanUp();
 }
 
 void Trace::cleanUp()
 {
+//      printf("Trace::cleanUp() for object at %08x\n",this); fflush(stdout);
+
 	for (int i = 0; (size_t)i < (sizeof state / sizeof state[0]); i++) {
 		state[i] = TRACE_STATE_DONE;
 	}
 
 	if (sfp != nullptr) {
+//              printf("Trace::cleanUp(): deleteing sfp at %08x\n",sfp); fflush(stdout);
 		delete sfp;
 		sfp = nullptr;
 	}
 
 	if (elfReader != nullptr) {
+//              printf("Trace::cleanUp(): deleting elfReader at %08x\n",elfReader); fflush(stdout);
 		delete elfReader;
 		elfReader = nullptr;
 	}
@@ -606,33 +623,39 @@ void Trace::cleanUp()
 	// contains, and deleting the elfRead above will delete the symtab object below!
 
 	if (symtab != nullptr) {
+//              printf("Trace::cleanUp(): NOT deleting symtab at %08x\n",symtab); fflush(stdout);
 //		delete symtab;
 		symtab = nullptr;
 	}
 
 	if (itcPrint  != nullptr) {
+//              printf("Trace::cleanUp(): deleting itcPrint at %08x\n",itcPrint); fflush(stdout);
 		delete itcPrint;
 		itcPrint = nullptr;
 	}
 
 	if (counts != nullptr) {
+//              printf("Trace::cleanUp(): deleting counts at %08x\n",counts); fflush(stdout);
 		delete [] counts;
 		counts = nullptr;
 	}
 
 	if (disassembler != nullptr) {
+//              printf("Trace::cleanUp(): deleting disassembler at %08x\n",disassembler); fflush(stdout);
 		delete disassembler;
 		disassembler = nullptr;
 	}
 
 	for (int i = 0; (size_t)i < (sizeof messageSync / sizeof messageSync[0]); i++) {
 		if (messageSync[i] != nullptr) {
+//                      printf("Trace::cleanUp(): deleting messageSymc[%d] at address %08x\n",i,messageSymc[i]); fflush(stdout);
 			delete messageSync[i];
 			messageSync[i] = nullptr;
 		}
 	}
 
 	if (caTrace != nullptr) {
+//              printf("Trace::cleanUp(): deleting caTrace at %08x\n",caTrace); fflush(stdout);
 		delete caTrace;
 		caTrace = nullptr;
 	}
@@ -785,9 +808,36 @@ TraceDqr::TIMESTAMP Trace::adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TI
 	return ts;
 }
 
+TraceDqr::DQErr Trace::getNumBytesInSWTQ(int &numBytes)
+{
+        if (sfp == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return sfp->getNumBytesInSWTQ(numBytes);
+}
+
 TraceDqr::DQErr Trace::getTraceFileOffset(int &size,int &offset)
 {
 	return sfp->getFileOffset(size,offset);
+}
+
+int Trace::getITCPrintMask()
+{
+	if (itcPrint == nullptr) {
+		return 0;
+	}
+
+	return itcPrint->getITCPrintMask();
+}
+
+int Trace::getITCFlushMask()
+{
+	if (itcPrint == nullptr) {
+		return 0;
+	}
+
+	return itcPrint->getITCFlushMask();
 }
 
 TraceDqr::ADDRESS Trace::computeAddress()
@@ -1649,6 +1699,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgIn
 				*flags |= TraceDqr::TRACE_HAVE_SRCINFO;
 			}
 		}
+
+		if (itcPrint != nullptr) {
+			if (itcPrint->haveITCPrintMsgs() != false) {
+				*flags |= TraceDqr::TRACE_HAVE_ITCPRINTINFO;
+			}
+		}
 	}
 
 	return ec;
@@ -1670,6 +1726,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	assert(sfp != nullptr);
 
 	TraceDqr::DQErr rc;
+//	TraceDqr::ADDRESS addr;
 	int crFlag;
 	TraceDqr::BranchFlags brFlags;
 	int numConsumed;
@@ -1692,8 +1749,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //		need to set readNewTraceMessage where it is needed! That includes
 //		staying in the same state that expects to get another message!!
 
+		bool haveMsg;
+
 		if (readNewTraceMessage != false) {
-			rc = sfp->readNextTraceMsg(nm,analytics);
+			rc = sfp->readNextTraceMsg(nm,analytics,haveMsg);
 
 			if (rc != TraceDqr::DQERR_OK) {
 				// have an error. either eof, or error
@@ -1714,6 +1773,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					state[currentCore] = TRACE_STATE_ERROR;
 				}
 
+				return status;
+			}
+
+			if (haveMsg == false) {
 				return status;
 			}
 
@@ -2024,7 +2087,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 						state[currentCore] = TRACE_STATE_ERROR;
 
-						printf("Error: cannot start at trace message %d because no preceding sync\n",startMessageNum);
+						printf("Error: cannot start at trace message %d because no preceeding sync\n",startMessageNum);
 
 						status = TraceDqr::DQERR_ERR;
 
@@ -2773,8 +2836,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// should always have enough informatioon. But it can happen for indirect branches. For indirect
 			// branches, retiring the current trace message (should be an indirect branch or indirect
 			// brnach with sync) will set the next address correclty.
-
-//			foodog
 
 			status = nextAddr(currentCore,currentAddress[currentCore],addr,nm.tcode,crFlag,brFlags);
 			if (status != TraceDqr::DQERR_OK) {
