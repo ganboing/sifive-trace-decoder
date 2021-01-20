@@ -70,6 +70,10 @@ ifdef EXECUTABLE
 	mkdir -p "$(INSTALLPATH)/bin"
 	cp -rp $(EXECUTABLE) "$(INSTALLPATH)/bin"
 endif
+ifdef SWTEXECUTABLE
+	mkdir -p "$(INSTALLPATH)/bin"
+	cp -rp $(SWTEXECUTABLE) "$(INSTALLPATH)/bin"
+endif
 
 install-dev:
 ifndef FS_DEV_TRACE_PLUGIN_FOLDER
