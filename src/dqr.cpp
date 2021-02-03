@@ -5303,9 +5303,33 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 	bufferOutIndex = 0;
 
 	int i;
+
+	// first lets see if it is a windows path
+
+	bool havePath = true;
+
 	for (i = 0; (filename[i] != 0) && (filename[i] != ':'); i++) { /* empty */ }
 
 	if (filename[i] == ':') {
+		// see if this is a disk designator or port designator
+
+		int j;
+		int numAlpha = 0;
+
+		// look for drive : (not a foolproof test, but should work
+
+		for (j = 0; j < i; j++) {
+			if ((filename[j] >= 'a' && filename[j] <= 'z') || (filename[j] >= 'A' && filename[j] <= 'Z')) {
+				numAlpha += 1;
+			}
+		}
+
+		if (numAlpha != 1) {
+			havePath = false;
+		}
+	}
+
+	if (havePath == false) {
 		// have a server:port address
 
 		int rc;
