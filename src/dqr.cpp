@@ -7176,19 +7176,19 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 TraceDqr::DQErr SliceFileParser::bufferSWT()
 {
 	int br;
-
-//	if (bufferInIndex != bufferOutIndex) {
-//		return TraceDqr::DEQRR_OK;
-//	}
+	int bytesToRead;
 
 	// compute room in buffer for read
+
 	if (bufferInIndex == bufferOutIndex) {
 		// buffer is empty
 
+		bytesToRead = (sizeof sockBuffer) - 1;
+
 #ifdef WINDOWS
-		br = recv(SWTsock,(char*)sockBuffer,sizeof sockBuffer - 1,0);
+		br = recv(SWTsock,(char*)sockBuffer,bytesToRead,0);
 #else // WINDOWS
-		br = recv(SWTsock,(char*)sockBuffer,sizeof sockBuffer - 1,MSG_DONTWAIT);
+		br = recv(SWTsock,(char*)sockBuffer,bytesToRead,MSG_DONTWAIT);
 
 		if (br < 0) {
 			if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
@@ -7202,63 +7202,82 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 			bufferOutIndex = 0;
 		}
 	}
-	else if (bufferInIndex < (bufferOutIndex-1)) {
+	else if (bufferInIndex < bufferOutIndex) {
 		// empty bytes is (bufferOutIndex - bufferInIndex) - 1
 
-#ifdef WINDOWS
-		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,(bufferOutIndex - bufferInIndex) - 1,0);
-#else // WINDOWS
-		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,(bufferOutIndex - bufferInIndex) - 1,MSG_DONTWAIT);
+		bytesToRead = bufferOutIndex - bufferInIndex - 1;
 
-		if (br < 0) {
-			if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
-				perror("SlicFileParser::bufferSWT(): recv() error");
+		if (bytesToRead > 0) {
+#ifdef WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,0);
+#else // WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,MSG_DONTWAIT);
+
+			if (br < 0) {
+				if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+					perror("SlicFileParser::bufferSWT(): recv() error");
+				}
 			}
-		}
 #endif // WINDOWS
 
-		if (br > 0) {
-			bufferInIndex += br;
+			if (br > 0) {
+				bufferInIndex += br;
+			}
 		}
 	}
 	else if (bufferInIndex > bufferOutIndex) {
 		// empty bytes is bufferInIndex to end of buffer + bufferOutIndex - 1
 		// first read to end of buffer
 
-#ifdef WINDOWS
-		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,sizeof sockBuffer - bufferInIndex,0);
-#else // WINDOWS
-		br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,sizeof sockBuffer - bufferInIndex,MSG_DONTWAIT);
+		if (bufferOutIndex == 0) {
+			// don't want to completely fill up tail of buffer, because can't set bufferInIndex to 0!
 
-		if (br < 0) {
-			if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
-				perror("SizeFileParser::bufferSWT(): recv() error");
-			}
+			bytesToRead = (sizeof sockBuffer) - bufferInIndex - 1;
 		}
+		else {
+			bytesToRead = (sizeof sockBuffer) - bufferInIndex;
+		}
+
+		if (bytesToRead > 0) {
+#ifdef WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,0);
+#else // WINDOWS
+			br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bytesToRead,MSG_DONTWAIT);
+
+			if (br < 0) {
+				if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+					perror("SizeFileParser::bufferSWT(): recv() error");
+				}
+			}
 #endif // WINDOWS
 
-		if (br > 0) {
-			if ((size_t)br == sizeof sockBuffer - bufferInIndex) {
-				bufferInIndex = 0;
+			if (br > 0) {
+				if ((bufferInIndex + br) >= (int)(sizeof sockBuffer)) {
+					bufferInIndex = 0;
 
+					bytesToRead = bufferOutIndex-1;
+
+					if (bytesToRead > 0) {
 #ifdef WINDOWS
-				br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bufferOutIndex - 1,0);
+						br = recv(SWTsock,(char*)sockBuffer,bytesToRead,0);
 #else // WINDOWS
-				br = recv(SWTsock,(char*)sockBuffer+bufferInIndex,bufferOutIndex - 1,MSG_DONTWAIT);
+						br = recv(SWTsock,(char*)sockBuffer,bytesToRead,MSG_DONTWAIT);
 
-				if (br < 0) {
-					if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
-						perror("SliceFileParser::bufferSWT(): recv() error");
+						if (br < 0) {
+							if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) {
+								perror("SliceFileParser::bufferSWT(): recv() error");
+							}
+						}
+#endif // WINDOWS
+
+						if (br > 0) {
+							bufferInIndex = br;
+						}
 					}
 				}
-#endif // WINDOWS
-
-				if (br > 0) {
-					bufferInIndex = br;
+				else {
+					bufferInIndex += br;
 				}
-			}
-			else {
-				bufferInIndex += br;
 			}
 		}
 	}
