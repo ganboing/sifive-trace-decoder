@@ -856,7 +856,7 @@ int main(int argc, char *argv[])
 					printf("[%d] ",msgInfo->coreId);
 				}
 
-				printf("trace: %s",dst);
+				printf("Trace: %s",dst);
 
 				printf("\n");
 

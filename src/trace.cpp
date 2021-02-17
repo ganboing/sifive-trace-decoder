@@ -463,8 +463,6 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 
 	  disassembler = new (std::nothrow) Disassembler(abfd,true);
 
-	  printf("disassembler: %08x this:%08x\n",disassembler,this);
-
 	  assert(disassembler != nullptr);
 
 	  if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
