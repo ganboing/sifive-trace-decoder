@@ -272,11 +272,14 @@ TraceDqr::DQErr CATrace::consume(int &numConsumed,int &pipe,uint32_t &cycles)
 				return rc;
 			}
 
-			baseCycles += (30*32)/2;
+			baseCycles += 30/2*32;
+
 		}
 	}
 
 	cycles += baseCycles;
+
+//	printf("CATrace::consume(%d, %d, %d)\n",numConsumed,pipe,cycles);
 
 	return TraceDqr::DQERR_OK;
 }
@@ -297,8 +300,13 @@ TraceDqr::DQErr CATrace::parseNextCATraceRec(CATraceRec &car)
 		return status;
 	}
 
+	if ((int)caBufferIndex > (int)(caBufferSize - sizeof(uint32_t))) {
+		status = TraceDqr::DQERR_EOF;
+		return TraceDqr::DQERR_EOF;
+	}
+
 	uint32_t d = 0;
-	bool firstRecord = false;
+	bool firstRecord;
 
 	if (caBufferIndex == 0) {
 		// find start of first message (in case buffer wrapped)
@@ -310,54 +318,48 @@ TraceDqr::DQErr CATrace::parseNextCATraceRec(CATraceRec &car)
 			last = d >> 30;
 			d = *(uint32_t*)(&caBuffer[caBufferIndex]);
 			caBufferIndex += sizeof(uint32_t);
-		} while (((d >> 30) != 0x3) && (last != 0) && (caBufferIndex < caBufferSize));
 
-		if ((int)caBufferIndex >= (int)(caBufferSize - sizeof(uint32_t)*15)) {
-			return TraceDqr::DQERR_EOF;
-		}
+			if ((int)caBufferIndex > (int)(caBufferSize - sizeof(uint32_t))) {
+				status = TraceDqr::DQERR_EOF;
+				return TraceDqr::DQERR_EOF;
+			}
+		} while (((d >> 30) != 0x3) && (last != 0));
 	}
 	else {
-		if ((int)caBufferIndex >= (int)(caBufferSize - sizeof(uint32_t)*32)) {
-			// need to have at least 32 words of 32 bits in buffer for a complete CA frame
-
-			return TraceDqr::DQERR_EOF;
-		}
+		firstRecord = false;
 
 		// need to get first word into d
-		d = *(uint32_t*)(&caBuffer[caBufferIndex]); //is this in the correct order, or backwards?
+		d = *(uint32_t*)(&caBuffer[caBufferIndex]);
 		caBufferIndex += sizeof(uint32_t);
 	}
 
-//	printf("have start of file %d\n",caBufferIndex);
+	// make sure there are at least 31 more 32 bit records in the caBuffer. If not, EOF
 
-	// read next record. skip records with all retire bits = 0 (but update baseCycles for each skip
+	if ((int)caBufferIndex > (int)(caBufferSize - sizeof(uint32_t)*31)) {
+		return TraceDqr::DQERR_EOF;
+	}
 
 	TraceDqr::ADDRESS addr;
-	uint32_t x;
+	addr = 0;
 
-	do {
-		addr = 0;
-		car.data[0] = d & 0x3fffffff;
-		x = car.data[0];
+	car.data[0] = d & 0x3fffffff;
 
-		for (int i = 1; i < 32; i++) {
-			d = *(uint32_t*)(&caBuffer[caBufferIndex]);
-			caBufferIndex += sizeof(uint32_t);
+	for (int i = 1; i < 32; i++) {
+		d = *(uint32_t*)(&caBuffer[caBufferIndex]);
+		caBufferIndex += sizeof(uint32_t);
 
-			addr |= (((TraceDqr::ADDRESS)(d >> 30)) << 2*(i-1));
-			car.data[i] = d & 0x3fffffff;
-			x |= car.data[i];
-		}
+		// don't need to check caBufferIndex for EOF because of the check before for loop
 
-		if (x == 0) {
-			d = *(uint32_t*)(&caBuffer[caBufferIndex]); //is this in the correct order, or backwards?
-			caBufferIndex += sizeof(uint32_t);
-			baseCycles += (30*32)/2;
-		}
-	} while (x == 0);
+		addr |= (((TraceDqr::ADDRESS)(d >> 30)) << 2*(i-1));
+		car.data[i] = d & 0x3fffffff;
+	}
 
 	if (firstRecord != false) {
-		car.data[0] |= (1<<29);
+		car.data[0] |= (1<<29); // set the pipe0 finish flag for first bit of trace file (vector or instruction)
+	//	blockRecNum = 0;
+	}
+	else {
+	//	blockRecNum += 1;
 	}
 
 	car.address = addr;
