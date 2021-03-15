@@ -28,7 +28,7 @@ Debug: $(EXECUTABLE) $(SWIGLIB) $(SWTEXECUTABLE)
 $(EXECUTABLE): $(OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	$(CROSSPREFIX)g++ $(PICLIBFLAGS) -L$(LIBPATH) $(LNFLAGS) -o $(EXECUTABLE) $(OBJS) $(USER_OBJS) $(LIBS)
+	$(CROSSPREFIX)g++ -L$(LIBPATH) $(LNFLAGS) -o $(EXECUTABLE) $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 
