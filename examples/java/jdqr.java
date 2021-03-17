@@ -269,57 +269,61 @@ public class jdqr {
               }
 	    }
 
-	    coreMask >>= 1;
+	    coreMask >>>= 1;
 	  }
         }
       }
     }
 
-	if (itcPrint_flag) {
-		String printStr = "";
-	    SWIGTYPE_p_bool haveStr = TraceDecoder.new_boolp();
+    if (itcPrint_flag) {
+      String printStr = "";
+      SWIGTYPE_p_bool haveStr = TraceDecoder.new_boolp();
 
-		TraceDecoder.boolp_assign(haveStr,false);
+      TraceDecoder.boolp_assign(haveStr,false);
 		
-	    SWIGTYPE_p_double starttime = TraceDecoder.new_doublep();
-		SWIGTYPE_p_double endtime = TraceDecoder.new_doublep();
+      SWIGTYPE_p_double starttime = TraceDecoder.new_doublep();
+      SWIGTYPE_p_double endtime = TraceDecoder.new_doublep();
 		
-		TraceDecoder.doublep_assign(starttime,0);
-		TraceDecoder.doublep_assign(endtime,0);
+      TraceDecoder.doublep_assign(starttime,0);
+      TraceDecoder.doublep_assign(endtime,0);
 		
-		for (int core = 0; coreMask != 0; core++) {
-			if ((coreMask & 1) != 0) {
-				printStr = t.flushITCPrintStr(core,haveStr,starttime,endtime);
-				while (TraceDecoder.boolp_value(haveStr) != false) {
-					if (firstPrint == false) {
-						System.out.printf("\n");
-					}
+      coreMask = t.getITCPrintMask();
 
-					if (srcBits > 0) {
-						System.out.printf("[%d] ",core);
-					}
+      for (int core = 0; coreMask != 0; core++) {
+        if ((coreMask & 1) != 0) {
+          printStr = t.flushITCPrintStr(core,haveStr,starttime,endtime);
 
-					System.out.printf("ITC Print: ");
+          while (TraceDecoder.boolp_value(haveStr) != false) {
+            if (firstPrint == false) {
+              System.out.printf("\n");
+            }
 
-					if((TraceDecoder.doublep_value(starttime) != 0) || (TraceDecoder.doublep_value(endtime) != 0)) {
-						System.out.printf("<%f-%f> ",TraceDecoder.doublep_value(starttime),TraceDecoder.doublep_value(endtime));
-					}
+            if (srcBits > 0) {
+              System.out.printf("[%d] ",core);
+            }
+
+            System.out.printf("ITC Print: ");
+
+            if((TraceDecoder.doublep_value(starttime) != 0) || (TraceDecoder.doublep_value(endtime) != 0)) {
+              System.out.printf("<%f-%f> ",TraceDecoder.doublep_value(starttime),TraceDecoder.doublep_value(endtime));
+            }
 					
-					System.out.printf("%s",printStr);
+            System.out.printf("%s",printStr);
 
-					firstPrint = false;
+            firstPrint = false;
 
-					printStr = t.flushITCPrintStr(core,haveStr,starttime,endtime);
-				}
-			}
-			coreMask >>>= 1;
-		}
-	}
+            printStr = t.flushITCPrintStr(core,haveStr,starttime,endtime);
+          }
+        }
 
-	System.out.println("End of Trace File");
+        coreMask >>>= 1;
+      }
+    }
 
-        System.out.print(t.analyticsToString(2));
+    System.out.println("End of Trace File");
 
-	t.cleanUp();
+    System.out.print(t.analyticsToString(2));
+
+    t.cleanUp();
   }
 }
