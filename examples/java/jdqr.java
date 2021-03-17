@@ -287,7 +287,7 @@ public class jdqr {
       TraceDecoder.doublep_assign(starttime,0);
       TraceDecoder.doublep_assign(endtime,0);
 		
-      coreMask = t.getITCPrintMask();
+      coreMask = t.getITCFlushMask();
 
       for (int core = 0; coreMask != 0; core++) {
         if ((coreMask & 1) != 0) {
