@@ -913,6 +913,8 @@ int main(int argc, char *argv[])
 		std::string s = "";
 		bool haveStr;
 
+		core_mask = trace->getITCPrintMask();
+
 		for (int core = 0; core_mask != 0; core++) {
 			if (core_mask & 1) {
 				s = trace->flushITCPrintStr(core,haveStr,startTime,endTime);
