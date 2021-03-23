@@ -686,7 +686,7 @@ proc setTsBranch {core branch} {
     switch $branch {
 		"off"                { set br 0 }
 		"indirect+exception" { set br 1 }
-		"reserved"           { set br 1 }
+		"reserved"           { set br 2 }
 		"all"                { set br 3 }
 		default              { set br 0 }
     }
