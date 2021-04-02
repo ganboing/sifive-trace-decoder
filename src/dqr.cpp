@@ -7358,7 +7358,6 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 	}
 	else {
 		msgOffset = ((uint32_t)tf.tellg())-1;
-
 	}
 
 	bool done = false;
@@ -7408,6 +7407,8 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 			tf.read((char*)&msg[pendingMsgIndex],sizeof msg[0]);
 			if (!tf) {
 				if (tf.eof()) {
+					printf("Info: SliceFileParser::readBinaryMsg(): Last message in trace file is incomplete\n");
+
 					status = TraceDqr::DQERR_EOF;
 				}
 				else {
