@@ -489,10 +489,10 @@ void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 //	should cache this (as part of other instruction stuff cached)!!
 
 	if (instSize == 32) {
-		n = snprintf(dst,len,"%08x           %s",instruction,instructionText);
+		n = snprintf(dst,len,"%08x    %s",instruction,instructionText);
 	}
 	else {
-		n = snprintf(dst,len,"%04x               %s",instruction,instructionText);
+		n = snprintf(dst,len,"%04x        %s",instruction,instructionText);
 	}
 
 	if (haveOperandAddress) {
@@ -1252,47 +1252,37 @@ ITCPrint::ITCPrint(int numCores, int buffSize,int channel)
 
 ITCPrint::~ITCPrint()
 {
-//	printf("ITCPrint::~ITCPrint() delete of object at %08x numCore: %d,buffSize: %d\n",this,numCores,buffSize); fflush(stdout);
-//
 	if (pbuff != nullptr) {
-//		printf("~ITCPrint(): pbuff not null: %08x\n",pbuff); fflush(stdout);
 		for (int i = 0; i < numCores; i++) {
 			if (pbuff[i] != nullptr) {
-//				printf("~ITCPrint(): pbuff[%d]: %08x\n",i,pbuff[i]); fflush(stdout);
 				delete [] pbuff[i];
 				pbuff[i] = nullptr;
 			}
 		}
 
-//		printf("~ITCPrint(): deleting pbuff at %08x\n",pbuff); fflush(stdout);
 		delete [] pbuff;
 		pbuff = nullptr;
 	}
 
 	if (numMsgs != nullptr) {
-//		printf("~ITCPrint(): numMsgs not null. Deleting: %08x\n",numMsgs); fflush(stdout);
 		delete [] numMsgs;
 		numMsgs = nullptr;
 	}
 
 	if (pbi != nullptr) {
-//		printf("~ITCPrint(): pbi not null. Deleting: %08x\n",pbi); fflush(stdout);
 		delete [] pbi;
 		pbi = nullptr;
 	}
 
 	if (pbo != nullptr) {
-//		printf("~ITCPrint():pbo not null: %08x\n",pbo); ffluhs(stdout);
 		delete [] pbo;
 		pbo = nullptr;
 	}
 
 	if (freeList != nullptr) {
-//		printf("~ITCPrint(): freelist not null: %08x\n",freeList); fflush(stdout);
 		TsList *tl = freeList;
 		while (tl != nullptr) {
 			TsList *tln = tl->next;
-//			printf("~ITCPrint() t1 not null: deleting t1 at %08x, next: %08x\n",tl,tln); fflush(stdout);
 			delete tl;
 			tl = tln;
 		}
@@ -1300,12 +1290,10 @@ ITCPrint::~ITCPrint()
 	}
 
 	if (tsList != nullptr) {
-//		printf("~ITCPrint(): tsList not null: %08x\n",tsList): fflush(stdout);
 		for (int i = 0; i < numCores; i++) {
 			TsList *tl = tsList[i];
 			if (tl != nullptr) {
 				do {
-//					printf("~ITCPrint(): t1 not null: %08x\n",tl); fflush(stdout);
 					TsList *tln = tl->next;
 					delete tl;
 					tl = tln;
@@ -1323,19 +1311,14 @@ int ITCPrint::roomInITCPrintQ(uint8_t core)
 		return 0;
 	}
 
-//	printf("roomInITCPrintQ(%d): pbi[%d]: %d, pbo[%d]: %d buffSize: %d\n",core,core,pbi[core],core,pbo[core],buffSize); fflush(stdout);
-
 	if (pbi[core] > pbo[core]) {
-//		printf("roomInITCPrintQ(%d): returning %d\n",core,buffSize - pbi[core]+pbi[core]-1); fflush(stdout);
 		return buffSize - pbi[core] + pbo[core] - 1;
 	}
 
 	if (pbi[core] < pbo[core]) {
-//		printf("roomInITCPrintQ(%d): returning %d\n",core,pbo[core]-pbi[core]-1); fflush(stdout);
 		return pbo[core] - pbi[core] - 1;
 	}
 
-//	printf("roomInITCPrintQ(%d): returning %d\n",core,buffSize-1); fflush(stdout);
 	return buffSize-1;
 }
 
@@ -1465,7 +1448,7 @@ int ITCPrint::getITCPrintMask()
 
 int ITCPrint::getITCFlushMask()
 {
-	int mask = 0; 
+	int mask = 0;
 
 	for (int core = 0; core < numCores; core++) {
 		if (numMsgs[core] > 0) {
@@ -5302,6 +5285,8 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 	bufferInIndex = 0;
 	bufferOutIndex = 0;
 
+	eom = false;
+
 	int i;
 
 	// first lets see if it is a windows path
@@ -5351,8 +5336,8 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 		wVersionRequested = MAKEWORD(2,2);
 		rc = WSAStartup(wVersionRequested,&wsaData);
 		if (rc != 0) {
-			printf("WSAStartup() failed with error %d\n",rc);
-			delete sn;
+			printf("Error: WSAStartUP() failed with error %d\n",rc);
+			delete [] sn;
 			sn = nullptr;
 			status = TraceDqr::DQERR_ERR;
 			return;
@@ -5362,7 +5347,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 		SWTsock = socket(AF_INET,SOCK_STREAM,0);
 		if (SWTsock < 0) {
 			printf("Error: SliceFileParser::SliceFileParser(); socket() failed\n");
-			delete sn;
+			delete [] sn;
 			sn = nullptr;
 			status = TraceDqr::DQERR_ERR;
 			return;
@@ -5373,7 +5358,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 
 		server = gethostbyname(sn);
 
-		delete sn;
+		delete [] sn;
 		sn = nullptr;
 
 		memset((char*)&serv_addr,0,sizeof(serv_addr));
@@ -5405,7 +5390,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 		unsigned long on = 1L;
 		rc = ioctlsocket(SWTsock,FIONBIO,&on);
 		if (rc != NO_ERROR) {
-			printf("SliceFileParser::SliceFileParser(): Failed to put socket into non-blocking mode\n");
+			printf("Error: SliceFileParser::SliceFileParser(): Failed to put socket into non-blocking mode\n");
 			status = TraceDqr::DQERR_ERR;
 			return;
 		}
@@ -5413,7 +5398,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 //		long on = 1L;
 //		rc = ioctl(SWTsock,(int)FIONBIO,(char*)&on);
 //		if (rc < 0) {
-//			printf("SliceFileParser::SliceFileParser():Failed to put socket into non-blocking mode\n");
+//			printf("Error: SliceFileParser::SliceFileParser(): Failed to put socket into non-blocking mode\n");
 //			status = TraceDqr::DQERR_ERR;
 //			return;
 //		}
@@ -7269,7 +7254,6 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 							}
 						}
 #endif // WINDOWS
-
 						if (br > 0) {
 							bufferInIndex = br;
 						}
@@ -7358,6 +7342,7 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 	}
 	else {
 		msgOffset = ((uint32_t)tf.tellg())-1;
+
 	}
 
 	bool done = false;
@@ -7408,7 +7393,6 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 			if (!tf) {
 				if (tf.eof()) {
 					printf("Info: SliceFileParser::readBinaryMsg(): Last message in trace file is incomplete\n");
-
 					status = TraceDqr::DQERR_EOF;
 				}
 				else {
@@ -8758,6 +8742,81 @@ int Disassembler::decodeRV32Instruction(uint32_t instruction,int &inst_size,Trac
 			is_branch = false;
 		}
 		break;
+	case 0x07: // vector load
+		// Need to check width encoding field to distinguish between vector and normal FP loads (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_LOAD;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x27: // vector store
+		// Need to check width encoding field to distinguish between vector and normal FP stores (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_STORE;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x2f: // vector AMO
+		// Need to check width encoding field to distinguish between vector and normal AMO (bits 26-28)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			if ((instruction >> 26) & 0x01) {
+				inst_type = TraceDqr::INST_VECT_AMO_WW;
+			}
+			else {
+				inst_type = TraceDqr::INST_VECT_AMO;
+			}
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x57: // vector arith or vector config
+		if (((instruction >> 12) & 0x7) <= 6) {
+			inst_type = TraceDqr::INST_VECT_ARITH;
+		}
+		else {
+			inst_type = TraceDqr::INST_VECT_CONFIG;
+		}
+
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
+		break;
 	default:
 		inst_type = TraceDqr::INST_UNKNOWN;
 		immediate = 0;
@@ -9084,6 +9143,80 @@ int Disassembler::decodeRV64Instruction(uint32_t instruction,int &inst_size,Trac
 			rs1 = TraceDqr::REG_unknown;
 			is_branch = false;
 		}
+		break;
+	case 0x07: // vector load
+		// Need to check width encoding field to distinguish between vector and normal FP loads (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_LOAD;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x27: // vector store
+		// Need to check width encoding field to distinguish between vector and normal FP stores (bits 12-14)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			inst_type = TraceDqr::INST_VECT_STORE;
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x2f: // vector AMO
+		// Need to check width encoding field to distinguish between vector and normal AMO (bits 26-28)
+		switch ((instruction >> 12) & 0x07) {
+		case 0x00:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			if ((instruction >> 26) & 0x01) {
+				inst_type = TraceDqr::INST_VECT_AMO_WW;
+			}
+			else {
+				inst_type = TraceDqr::INST_VECT_AMO;
+			}
+			break;
+		default:
+			inst_type = TraceDqr::INST_UNKNOWN;
+			break;
+		}
+
+		is_branch = false;
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		break;
+	case 0x57: // vector arith or vector config
+		if (((instruction >> 12) & 0x7) <= 6) {
+			inst_type = TraceDqr::INST_VECT_ARITH;
+		}
+		else {
+			inst_type = TraceDqr::INST_VECT_CONFIG;
+		}
+		immediate = 0;
+		rd = TraceDqr::REG_unknown;
+		rs1 = TraceDqr::REG_unknown;
+		is_branch = false;
 		break;
 	default:
 		inst_type = TraceDqr::INST_UNKNOWN;
@@ -10627,10 +10760,10 @@ TraceDqr::DQErr Simulator::buildInstructionFromSrec(SRec *srec,TraceDqr::BranchF
 	instructionInfo.wVal = srec->wVal;
 
 	if (currentTime[srec->coreId] == 0) {
-		instructionInfo.cycles = 0;
+		instructionInfo.pipeCycles = 0;
 	}
 	else {
-		instructionInfo.cycles = srec->cycles - currentTime[srec->coreId];
+		instructionInfo.pipeCycles = srec->cycles - currentTime[srec->coreId];
 	}
 
 	currentTime[srec->coreId] = srec->cycles;

@@ -247,7 +247,7 @@ private:
   uint32_t      msgOffset;
   int           pendingMsgIndex;
   uint8_t       msg[64];
-  bool          eom = false;
+  bool          eom;
 
   int           bufferInIndex;
   int           bufferOutIndex;
