@@ -408,30 +408,105 @@ proc enableTracingManual {core} {
 }
 
 proc disableTraceEncoder {core} {
-    global traceBaseAddrArray
-    global te_control_offset
     global fs_enable_trace
 
 #    echo "disableTraceEncoder($core)"
 
     if {$fs_enable_trace == "on"} {
-        set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-        set t [expr $t & ~0x00000002]
-        set t [expr $t | 0x00000001]
-        mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+        disableTraceEncoderManual $core
     }
 }
 
 proc disableTraceEncoderManual {core} {
-    global traceBaseAddrArray
+#    global traceBaseAddrArray
+    global traceBaseAddresses
     global te_control_offset
+    global fs_enable_trace
+    global traceFunnelAddress
 
-#    echo "disableTraceEncoderManual($core)"
+#    echo "disableTraceEncoderNManual($core)"
 
-    set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-    set t [expr $t & ~0x00000002]
-    set t [expr $t | 0x00000001]
-    mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
+    # need to flush all cores and funnel, not just $core
+
+    set flushFunnel "false"
+    set flushPIB "false"
+    set flushATB "false"
+
+    set currentCore 0
+
+    foreach controlReg $traceBaseAddresses {
+        set te [word [expr $controlReg + $te_control_offset]]
+        set t [expr $te & ~0x00000004]
+        set t [expr $t | 0x00000001]
+
+        # clear teTracing, make sure not in reset
+        mww [expr $controlReg + $te_control_offset] $t
+        set t [expr $t & ~0x00000002]
+
+        # clear teEnable
+        mww [expr $controlReg + $te_control_offset] $t
+
+        # need to poll teEmpty here until it reads 1
+
+        set t [word [expr $controlReg + $te_control_offset]]
+        while {($t & 0x00000008) == 0} {
+            set t [word [expr $controlReg + $te_control_offset]]
+        }
+
+        if {$currentCore != $core} {
+            # restore teControl
+            mww [expr $controlReg + $te_control_offset] $te
+        }
+
+        incr currentCore
+
+        set sink [expr ($te >> 28) & 0x0f]
+
+        switch $sink {
+        5 { set flushATB "true"    }
+        6 { set flushPIB "true"    }
+        8 { set flushFunnel "true" }
+        }
+    }
+
+    if {$flushFunnel != "false"} {
+        set tf [word [expr $traceFunnelAddress + $te_control_offset]]
+	set t [expr $tf & ~0x00000004]
+        set t [expr $t | 0x00000001]
+
+	# clear teTracing, make sure not in reset
+        mww [expr $traceFunnelAddress + $te_control_offset] $t
+        set t [expr $t & ~0x00000002]
+	# clear teEnable
+        mww [expr $traceFunnelAddress + $te_control_offset] $t
+
+        # need to poll teEmpty here until it reads 1
+
+        set t [word [expr $controlReg + $te_control_offset]]
+        while {($t & 0x00000008) == 0} {
+            set t [word [expr $controlReg + $te_control_offset]]
+        }
+
+        if {$core != "funnel"} {
+            # restore tfControl
+            mww [expr $traceFunnelAddress + $te_control_offset] $tf
+        }
+
+        set sink [expr ($tf >> 28) & 0x0f]
+
+        switch $sink {
+	5 { set flushATB true    }
+	6 { set flushPIB true    }
+        }
+    }
+
+    if {$flushPIB != "false"} {
+        # flesh this out later
+    }
+
+    if {$flushATB != "false"} {
+        # flesh this out later
+    }
 }
 
 proc disableTracing {core} {
@@ -455,9 +530,8 @@ proc resetTrace {core} {
 
 #    echo "resetTrace($core)"
 
-    mww [expr $traceBaseAddrArray($core) + $te_control_offset] 0
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
-    set t [expr $t & ~0x00000001]
+    mww [expr $traceBaseAddrArray($core) + $te_control_offset] 0
     set t [expr $t | 0x00000001]
     mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
 }
@@ -3936,6 +4010,8 @@ proc dtr {{cores "all"}} {
     global itc_trigenable_offset
     global ts_control_offset
 
+    global has_funnel 
+
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
@@ -4137,6 +4213,65 @@ proc dtr {{cores "all"}} {
 
     echo "$rv"
 
+    if {$has_funnel != 0} {
+        # display current status of funnel regs
+  
+        set rv "tfControl: "
+
+	set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_control_offset]]
+
+        append rv $tse
+
+        echo "$rv"
+
+        set rv "tfImpl: "
+
+	set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_impl_offset]]
+
+	append rv $tse
+
+        echo "$rv"
+
+        set rv "tfSinkBase: "
+
+	set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_sinkbase_offset]]
+
+	append rv $tse
+
+        echo "$rv"
+
+        set rv "tfSinkBaseHigh: "
+
+	set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_sinkbasehigh_offset]]
+
+	append rv $tse
+
+        echo "$rv"
+
+        set rv "tfSinkLimit:"
+
+	set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_sinklimit_offset]]
+
+	append rv $tse
+
+        echo "$rv"
+
+        set rv "tfSinkwp:"
+
+	set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_sinkwp_offset]]
+
+	append rv $tse
+
+        echo "$rv"
+
+        set rv "tfSinkrp:"
+
+        set tse [wordhex [expr $traceBaseAddrArray(funnel) + $te_sinkrp_offset]]
+
+	append rv $tse
+
+        echo "$rv"
+    }
 }
 
 # program chip to collect a trace in the sba buffer
