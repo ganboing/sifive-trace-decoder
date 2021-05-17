@@ -36,8 +36,8 @@ using namespace std;
 
 static void usage(char *name)
 {
-	printf("Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] -basename name\n");
-	printf("           [-srcbits=nn] [-start mn] [-stop mn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]\n");
+	printf("Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] [-btm | -htm] -basename name\n");
+	printf("           [-srcbits=nn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]\n");
 	printf("           [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]\n");
 	printf("           [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]\n");
 	printf("           [-noanalytics] [-freq nn] [-tssize=n] [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n]\n");
@@ -49,6 +49,8 @@ static void usage(char *name)
 	printf("              a tracefile (-t option). Can provide an elf file (-e option), but is not required.\n");
 	printf("-ca cafile:   Specify the name of the cycle accurate trace file. Must also specify the -t and -e switches.\n");
 	printf("-catype nn:   Specify the type of the CA trace file. Valid options are none, instruction, and vector\n");
+	printf("-btm:         Specify the type of the trace file as btm (branch trace messages). On by default.\n");
+	printf("-htm:         Specify the type of the trace file as htm (history trace messages).\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
 	printf("-start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is\n");
@@ -196,6 +198,7 @@ int main(int argc, char *argv[])
 	int msgLevel = 2;
 	bool labelFlag = true;
 	TraceDqr::CATraceType caType = TraceDqr::CATRACE_NONE;
+	TraceDqr::TraceType traceType = TraceDqr::TRACETYPE_BTM;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -246,6 +249,12 @@ int main(int argc, char *argv[])
 			}
 
 			ca_name = argv[i];
+		}
+		else if (strcmp("-btm",argv[i]) == 0) {
+			traceType = TraceDqr::TRACETYPE_BTM;
+		}
+		else if (strcmp("-htm",argv[i]) == 0) {
+			traceType = TraceDqr::TRACETYPE_HTM;
 		}
 		else if (strcmp("-start",argv[i]) == 0) {
 			i += 1;
@@ -634,7 +643,7 @@ int main(int argc, char *argv[])
 		sim->setLabelMode(labelFlag);
 	}
 	else {
-		trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
+		trace = new (std::nothrow) Trace(tf_name,ef_name,traceType,numAddrBits,addrDispFlags,srcbits,freq);
 
 		assert(trace != nullptr);
 

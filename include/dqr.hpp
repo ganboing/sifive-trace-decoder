@@ -139,11 +139,26 @@ public:
   } SyncReason;
 
   typedef enum {
-    ICT_EXT_TRIG   = 8,
+	ICT_CONTROL = 0,
+	ICT_EXT_TRIG   = 8,
+	ICT_INFERABLECALL = 9,
+	ICT_EXCEPTION = 10,
+	ICT_INTERRUPT = 11,
+	ICT_CONTEXT = 13,
 	ICT_WATCHPOINT = 14,
 	ICT_PC_SAMPLE  = 15,
 	ICT_NONE
   } ICTReason;
+
+  typedef enum {
+        ICT_CONTROL_NONE = 0,
+	ICT_CONTROL_TRACE_ON = 2,
+	ICT_CONTROL_TRACE_OFF = 3,
+	ICT_CONTROL_EXIT_DEBUG = 4,
+	ICT_CONTROL_ENTER_DEBUG = 5,
+	ICT_CONTROL_EXIT_RESET = 6,
+	ICT_CONTROL_ENTER_RESET = 8,
+  } ICTControl;
 
   typedef enum {
   	BTYPE_INDIRECT  = 0,
@@ -502,8 +517,10 @@ public:
     TraceDqr::BType      getB_Type();
 	TraceDqr::SyncReason getSyncReason();
 	TraceDqr::ICTReason  getICTReason();
-	uint8_t   getEType();
+	uint8_t  getEType();
 	uint8_t  getCDF();
+	uint8_t  getCKSRC();
+	uint8_t  getCKDF();
 	uint8_t  getEVCode();
 	uint32_t getData();
 	uint32_t getAddr();
@@ -735,7 +752,7 @@ private:
 
 class Trace {
 public:
-    Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
+    Trace(char *tf_name,char *ef_name,TraceDqr::TraceType tType,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
     ~Trace();
     void cleanUp();
     static const char *version();
