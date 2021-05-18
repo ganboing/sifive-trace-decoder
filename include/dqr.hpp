@@ -139,11 +139,26 @@ public:
   } SyncReason;
 
   typedef enum {
-    ICT_EXT_TRIG   = 8,
+	ICT_CONTROL = 0,
+	ICT_EXT_TRIG   = 8,
+	ICT_INFERABLECALL = 9,
+	ICT_EXCEPTION = 10,
+	ICT_INTERRUPT = 11,
+	ICT_CONTEXT = 13,
 	ICT_WATCHPOINT = 14,
 	ICT_PC_SAMPLE  = 15,
 	ICT_NONE
   } ICTReason;
+
+  typedef enum {
+        ICT_CONTROL_NONE = 0,
+	ICT_CONTROL_TRACE_ON = 2,
+	ICT_CONTROL_TRACE_OFF = 3,
+	ICT_CONTROL_EXIT_DEBUG = 4,
+	ICT_CONTROL_ENTER_DEBUG = 5,
+	ICT_CONTROL_EXIT_RESET = 6,
+	ICT_CONTROL_ENTER_RESET = 8,
+  } ICTControl;
 
   typedef enum {
   	BTYPE_INDIRECT  = 0,
@@ -180,6 +195,14 @@ public:
 		INST_MRET,
 		INST_SRET,
 		INST_URET,
+		// the following intTypes are generic and do not specify an actual instruction
+		INST_SCALER,
+		INST_VECT_ARITH,
+		INST_VECT_LOAD,
+		INST_VECT_STORE,
+		INST_VECT_AMO,
+		INST_VECT_AMO_WW,
+		INST_VECT_CONFIG,
 	};
 
 	enum CountType{
@@ -259,6 +282,32 @@ public:
 		PATH_TO_WINDOWS,
 		PATH_TO_UNIX,
 	};
+
+	enum CATraceType {
+		CATRACE_NONE,
+		CATRACE_INSTRUCTION,
+		CATRACE_VECTOR,
+	};
+
+	enum CAVectorTraceFlags {
+		CAVFLAG_V0      = 0x20,
+		CAVFLAG_V1      = 0x10,
+		CAVFLAG_VISTART = 0x08,
+		CAVFLAG_VIARITH = 0x04,
+		CAVFLAG_VISTORE = 0x02,
+		CAVFLAG_VILOAD  = 0x01,
+	};
+
+	enum CATraceFlags {
+		CAFLAG_NONE   = 0x00,
+		CAFLAG_PIPE0  = 0x01,
+		CAFLAG_PIPE1  = 0x02,
+		CFLAGS_SCALER = 0x04,
+		CAFLAG_VSTART = 0x08,
+		CAFLAG_VSTORE = 0x10,
+		CAFLAG_VLOAD  = 0x20,
+		CAFLAG_VARITH = 0x40,
+	};
 };
 
 // class Instruction: work with an instruction
@@ -307,8 +356,15 @@ public:
 	int               operandLabelOffset;
 
 	TraceDqr::TIMESTAMP timestamp;
-	int               cycles;
-	int               pipe;
+	uint32_t            caFlags;
+	uint32_t            pipeCycles;
+	uint32_t            VIStartCycles;
+	uint32_t            VIFinishCycles;
+
+	uint8_t             qDepth;
+	uint8_t             arithInProcess;
+	uint8_t             loadInProcess;
+	uint8_t             storeInProcess;
 
 	uint32_t r0Val;
 	uint32_t r1Val;
@@ -461,8 +517,10 @@ public:
     TraceDqr::BType      getB_Type();
 	TraceDqr::SyncReason getSyncReason();
 	TraceDqr::ICTReason  getICTReason();
-	uint8_t   getEType();
+	uint8_t  getEType();
 	uint8_t  getCDF();
+	uint8_t  getCKSRC();
+	uint8_t  getCKDF();
 	uint8_t  getEVCode();
 	uint32_t getData();
 	uint32_t getAddr();
@@ -601,9 +659,12 @@ private:
 
 class CATraceRec {
 public:
+	CATraceRec();
 	void dump();
 	void dumpWithCycle();
-	int consume(int &pipe,uint32_t &cycles);
+	int consumeCAInstruction(uint32_t &pipe,uint32_t &cycles);
+	int consumeCAVector(uint32_t &record,uint32_t &cycles);
+
 	int offset;
 	TraceDqr::ADDRESS address;
 	uint32_t data[32];
@@ -611,28 +672,53 @@ public:
 
 class CATrace {
 public:
-	CATrace(char *caf_name);
+	CATrace(char *caf_name,TraceDqr::CATraceType catype);
 	~CATrace();
-	TraceDqr::DQErr consume(int &numConsumed,int &pipe, uint32_t &cycles);
-	TraceDqr::DQErr rewind();
-	TraceDqr::ADDRESS getCATraceStartAddr();
-
-	TraceDqr::DQErr parseCATrace();
-	TraceDqr::DQErr parseNextCATraceRec(CATraceRec &car);
-	TraceDqr::DQErr dumpCurrentCARecord(int level);
-
+	TraceDqr::DQErr consume(uint32_t &caFlags,TraceDqr::InstType iType,uint32_t &pipeCycles,uint32_t &viStartCycles,uint32_t &viFinishCycles,uint8_t &qDepth,uint8_t &arithDepth,uint8_t &loadDepth,uint8_t &storeDepth);
 	TraceDqr::DQErr getStatus() {return status;}
 
+	TraceDqr::ADDRESS getCATraceStartAddr();
+	TraceDqr::DQErr rewind();
+
 private:
+	struct CATraceQItem {
+		uint32_t cycle;
+		uint8_t record;
+		uint8_t qDepth;
+		uint8_t arithInProcess;
+		uint8_t loadInProcess;
+		uint8_t storeInProcess;
+	};
+
 	TraceDqr::DQErr status;
 
+	TraceDqr::CATraceType caType;
 	int      caBufferSize;
 	uint8_t *caBuffer;
 	int      caBufferIndex;
+	int      blockRecNum;
 
 	TraceDqr::ADDRESS startAddr;
-	uint32_t baseCycles;
+	//uint32_t baseCycles;
 	CATraceRec catr;
+	int       traceQSize;
+	int       traceQOut;
+	int       traceQIn;
+	CATraceQItem *caTraceQ;
+
+	int roomQ();
+	TraceDqr::DQErr packQ();
+
+	TraceDqr::DQErr addQ(uint32_t data,uint32_t t);
+
+	void dumpCAQ();
+
+	TraceDqr::DQErr parseNextVectorRecord(int &newDataStart);
+	TraceDqr::DQErr parseNextCATraceRec(CATraceRec &car);
+	TraceDqr::DQErr dumpCurrentCARecord(int level);
+	TraceDqr::DQErr consumeCAInstruction(uint32_t &pipe,uint32_t &cycles);
+	TraceDqr::DQErr consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pipe);
+	TraceDqr::DQErr consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlags type,uint32_t &cycles,uint8_t &qInfo,uint8_t &arithInfo,uint8_t &loadInfo,uint8_t &storeInfo);
 };
 
 class ObjFile {
@@ -666,7 +752,7 @@ private:
 
 class Trace {
 public:
-    Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
+    Trace(char *tf_name,char *ef_name,TraceDqr::TraceType tType,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
     ~Trace();
     void cleanUp();
     static const char *version();
@@ -674,7 +760,7 @@ public:
 	TraceDqr::DQErr setTSSize(int size);
 	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
-	TraceDqr::DQErr setCATraceFile(char *caf_name);
+	TraceDqr::DQErr setCATraceFile(char *caf_name,TraceDqr::CATraceType catype);
 
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
@@ -708,6 +794,7 @@ public:
 	void        analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
 	std::string analyticsToString(int detailLevel) { return analytics.toString(detailLevel); }
 	TraceDqr::TIMESTAMP adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
+
 	int         getITCPrintMask();
 	int         getITCFlushMask();
 
