@@ -53,10 +53,6 @@ static void usage(char *name)
 	printf("-htm:         Specify the type of the trace file as htm (history trace messages).\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
-	printf("-start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is\n");
-	printf("              not specified, continues to last trace message.\n");
-	printf("-stop nm:     Select the last Nexus trace message number to end DQing at. If -start is not specified, starts\n");
-	printf("              at trace message 1.\n");
 	printf("-src:         Enable display of source lines in output if available (on by default).\n");
 	printf("-nosrc:       Disable display of source lines in output.\n");
 	printf("-file:        Display source file information in output (on by default).\n");
@@ -81,7 +77,7 @@ static void usage(char *name)
 	printf("              (sticky) and will be again increased if a new larger value is encountered. Overrides the address size\n");
 	printf("              read from the elf file.\n");
 	printf("-32:          Display addresses as 32 bits. Values lager than 32 bits will print, but take more space and cause\n");
-    printf("              the address field to be jagged. Selected by default if elf file indicates 32 bit address size.\n");
+	printf("              the address field to be jagged. Selected by default if elf file indicates 32 bit address size.\n");
 	printf("              Specifying -32 overrides address size read from elf file\n");
 	printf("-32+          Display addresses as 32 bits until larger addresses are displayed and then adjust up to a larger\n");
 	printf("              enough size to display the entire address. When addresses are adjusted up, they do not later adjust\n");
@@ -175,8 +171,10 @@ int main(int argc, char *argv[])
 	int buff_index = 0;
 	bool usage_flag = false;
 	bool version_flag = false;
+#ifdef foodog
 	int start_msg_num = 0;
 	int stop_msg_num = 0;
+#endif // foodog
 	bool src_flag = true;
 	bool file_flag = true;
 	bool dasm_flag = true;
@@ -256,6 +254,7 @@ int main(int argc, char *argv[])
 		else if (strcmp("-htm",argv[i]) == 0) {
 			traceType = TraceDqr::TRACETYPE_HTM;
 		}
+#ifdef foodog
 		else if (strcmp("-start",argv[i]) == 0) {
 			i += 1;
 			if (i >= argc) {
@@ -284,6 +283,7 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
+#endif // foodog
 		else if (strcmp("-src",argv[i]) == 0) {
 			src_flag = true;
 		}
@@ -571,14 +571,15 @@ int main(int argc, char *argv[])
 			if (strcmp("none",argv[i]) == 0) {
 				caType = TraceDqr::CATRACE_NONE;
 				ca_name = nullptr;
-			} else if (strcmp("instruction",argv[i]) == 0) {
+			}
+			else if (strcmp("instruction",argv[i]) == 0) {
 				caType = TraceDqr::CATRACE_INSTRUCTION;
 			}
 			else if (strcmp("vector",argv[i]) == 0) {
 				caType = TraceDqr::CATRACE_VECTOR;
 			}
 			else {
-				printf("Error: CA Trace type must be either none, instruciton, or vector\n");
+				printf("Error: CA Trace type must be either none, instruction, or vector\n");
 				return 1;
 			}
 		}
@@ -634,7 +635,6 @@ int main(int argc, char *argv[])
 		if (sim->getStatus() != TraceDqr::DQERR_OK) {
 			delete sim;
 			sim = nullptr;
-
 			printf("Error: new Simulator(%s,%d) failed\n",sf_name,archSize);
 
 			return 1;
@@ -643,7 +643,7 @@ int main(int argc, char *argv[])
 		sim->setLabelMode(labelFlag);
 	}
 	else {
-		trace = new (std::nothrow) Trace(tf_name,ef_name,traceType,numAddrBits,addrDispFlags,srcbits,freq);
+		trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
 
 		assert(trace != nullptr);
 
@@ -656,6 +656,8 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 
+		trace->setTraceType(traceType);
+
 		if (ca_name != nullptr) {
 			TraceDqr::DQErr rc;
 			rc = trace->setCATraceFile(ca_name,caType);
@@ -665,7 +667,9 @@ int main(int argc, char *argv[])
 			}
 		}
 
+#ifdef foodog
 		trace->setTraceRange(start_msg_num,stop_msg_num);
+#endif // foodog
 		trace->setTSSize(tssize);
 		trace->setPathType(pt);
 
@@ -724,8 +728,6 @@ int main(int argc, char *argv[])
 		}
 
 		if (ec == TraceDqr::DQERR_OK) {
-//			printf("-> m:%d, s:%d, i:%d\n",msgInfo!=nullptr,srcInfo!=nullptr,instInfo!=nullptr);
-
 			if (srcInfo != nullptr) {
 				if ((lastSrcFile != srcInfo->sourceFile) || (lastSrcLine != srcInfo->sourceLine) || (lastSrcLineNum != srcInfo->sourceLineNum)) {
 					lastSrcFile = srcInfo->sourceFile;
@@ -808,7 +810,7 @@ int main(int argc, char *argv[])
 
 						if (instInfo->caFlags & TraceDqr::CAFLAG_VSTART) {
 							n += printf("(%d)-%d(%dA,%dL,%dS)",instInfo->qDepth,instInfo->VIStartCycles,instInfo->arithInProcess,instInfo->loadInProcess,instInfo->storeInProcess);
-						}
+																					}
 
 						if (instInfo->caFlags & TraceDqr::CAFLAG_VARITH) {
 							n += printf("-%dA",instInfo->VIFinishCycles);
@@ -1001,6 +1003,7 @@ int main(int argc, char *argv[])
 					s = trace->flushITCPrintStr(core,haveStr,startTime,endTime);
 				}
 			}
+
 			core_mask >>= 1;
 		}
 	}

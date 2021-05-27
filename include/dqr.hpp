@@ -151,7 +151,7 @@ public:
   } ICTReason;
 
   typedef enum {
-        ICT_CONTROL_NONE = 0,
+    ICT_CONTROL_NONE = 0,
 	ICT_CONTROL_TRACE_ON = 2,
 	ICT_CONTROL_TRACE_OFF = 3,
 	ICT_CONTROL_EXIT_DEBUG = 4,
@@ -302,7 +302,7 @@ public:
 		CAFLAG_NONE   = 0x00,
 		CAFLAG_PIPE0  = 0x01,
 		CAFLAG_PIPE1  = 0x02,
-		CFLAGS_SCALER = 0x04,
+		CAFLAG_SCALER = 0x04,
 		CAFLAG_VSTART = 0x08,
 		CAFLAG_VSTORE = 0x10,
 		CAFLAG_VLOAD  = 0x20,
@@ -356,6 +356,7 @@ public:
 	int               operandLabelOffset;
 
 	TraceDqr::TIMESTAMP timestamp;
+
 	uint32_t            caFlags;
 	uint32_t            pipeCycles;
 	uint32_t            VIStartCycles;
@@ -498,12 +499,12 @@ public:
     	struct {
     		TraceDqr::ICTReason cksrc;
     		uint8_t ckdf;
-    		TraceDqr::ADDRESS ckdata;
+    		TraceDqr::ADDRESS ckdata[2];
     	} ict;
     	struct {
     		TraceDqr::ICTReason cksrc;
     		uint8_t ckdf;
-    		TraceDqr::ADDRESS ckdata;
+    		TraceDqr::ADDRESS ckdata[2];
     	} ictWS;
     };
 
@@ -518,9 +519,9 @@ public:
 	TraceDqr::SyncReason getSyncReason();
 	TraceDqr::ICTReason  getICTReason();
 	uint8_t  getEType();
-	uint8_t  getCDF();
-	uint8_t  getCKSRC();
 	uint8_t  getCKDF();
+	uint8_t  getCKSRC();
+	uint8_t  getCDF();
 	uint8_t  getEVCode();
 	uint32_t getData();
 	uint32_t getAddr();
@@ -664,7 +665,6 @@ public:
 	void dumpWithCycle();
 	int consumeCAInstruction(uint32_t &pipe,uint32_t &cycles);
 	int consumeCAVector(uint32_t &record,uint32_t &cycles);
-
 	int offset;
 	TraceDqr::ADDRESS address;
 	uint32_t data[32];
@@ -675,10 +675,11 @@ public:
 	CATrace(char *caf_name,TraceDqr::CATraceType catype);
 	~CATrace();
 	TraceDqr::DQErr consume(uint32_t &caFlags,TraceDqr::InstType iType,uint32_t &pipeCycles,uint32_t &viStartCycles,uint32_t &viFinishCycles,uint8_t &qDepth,uint8_t &arithDepth,uint8_t &loadDepth,uint8_t &storeDepth);
-	TraceDqr::DQErr getStatus() {return status;}
 
-	TraceDqr::ADDRESS getCATraceStartAddr();
 	TraceDqr::DQErr rewind();
+	TraceDqr::ADDRESS getCATraceStartAddr();
+
+	TraceDqr::DQErr getStatus() {return status;}
 
 private:
 	struct CATraceQItem {
@@ -752,11 +753,14 @@ private:
 
 class Trace {
 public:
-    Trace(char *tf_name,char *ef_name,TraceDqr::TraceType tType,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
+    Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
     ~Trace();
     void cleanUp();
     static const char *version();
-	TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
+#ifdef foodog
+    TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
+#endif // foodog
+    TraceDqr::DQErr setTraceType(TraceDqr::TraceType tType);
 	TraceDqr::DQErr setTSSize(int size);
 	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
@@ -793,8 +797,7 @@ public:
 	int         getAddressSize();
 	void        analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
 	std::string analyticsToString(int detailLevel) { return analytics.toString(detailLevel); }
-	TraceDqr::TIMESTAMP adjustTsForWrap(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
-
+	TraceDqr::TIMESTAMP processTS(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
 	int         getITCPrintMask();
 	int         getITCFlushMask();
 
@@ -804,12 +807,15 @@ private:
 	enum state {
 		TRACE_STATE_SYNCCATE,
 		TRACE_STATE_GETFIRSTSYNCMSG,
-		TRACE_STATE_GETSECONDMSG,
+		TRACE_STATE_GETMSGWITHCOUNT,
+#ifdef foodog
 		TRACE_STATE_GETSTARTTRACEMSG,
 		TRACE_STATE_COMPUTESTARTINGADDRESS,
+#endif // foodog
 		TRACE_STATE_RETIREMESSAGE,
 		TRACE_STATE_GETNEXTMSG,
 		TRACE_STATE_GETNEXTINSTRUCTION,
+//		TRACE_STATE_EVENT,
 		TRACE_STATE_DONE,
 		TRACE_STATE_ERROR
 	};
@@ -836,7 +842,6 @@ private:
 	int              endMessageNum;
 
 	int              tsSize;
-	TraceDqr::TIMESTAMP tsBase;
 
 	Analytics        analytics;
 
@@ -854,7 +859,9 @@ private:
 	TraceDqr::TIMESTAMP lastCycle[DQR_MAXCORES];
 	int               eCycleCount[DQR_MAXCORES];
 
+#ifdef foodog
 	class NexusMessageSync *messageSync[DQR_MAXCORES];
+#endif // foodog
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
