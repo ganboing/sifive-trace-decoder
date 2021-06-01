@@ -4095,7 +4095,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					(*instInfo)->timestamp = pipeCycles;
 					(*instInfo)->pipeCycles = eCycleCount[currentCore];
 					(*instInfo)->VIStartCycles = viStartCycles - prevCycle;
-					(*instInfo)->VIFinishCycles = viFinishCycles - prevCycle;
+					(*instInfo)->VIFinishCycles = viFinishCycles - prevCycle - 1;
 
 					(*instInfo)->caFlags = caFlags;
 				}
