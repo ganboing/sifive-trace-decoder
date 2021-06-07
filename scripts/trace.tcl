@@ -1151,6 +1151,94 @@ proc setEventControl {core opts} {
     return 0
 }
 
+# Individual access to each event control bit works better in the case of
+# certain UI environment(s) that may be accessing this script.  These routines are
+# roughly equivalent to getEventControl and setEventControl, except they access each
+# event bit individually, and also don't affect the maxIcnt setting.  Some environments
+# will prefer to use getEventControl and setEventControl instead.
+proc setEventControlBit { core bit enable } {
+    global traceBaseAddrArray
+    global ev_control_offset
+    global has_event
+
+    if {$has_event == 0} {
+        return 1
+    }
+    set events [word [expr $traceBaseAddrArray($core) + $ev_control_offset]]
+    if {$enable} {
+	set events [expr $events | (1 << $bit)]	
+    } else {
+	set events [expr $events & ~(1 << $bit)]		
+    }
+
+    mww [expr $traceBaseAddrArray($core) + $ev_control_offset] $events
+
+    return 0
+}
+
+proc getEventControlBit { core bit } {
+    global traceBaseAddrArray
+    global ev_control_offset
+    global has_event
+
+    if {$has_event == 0} {
+        return 0
+    }
+    set events [word [expr $traceBaseAddrArray($core) + $ev_control_offset]]
+    return [expr {($events & (1 << $bit)) != 0}]
+}
+
+
+proc setEventControlTrigger { core enable } {
+    return [setEventControlBit $core 0 $enable]
+}
+
+proc getEventControlTrigger { core } {
+    return [getEventControlBit $core 0]
+}
+
+proc setEventControlWatchpoint { core enable } {
+    return [setEventControlBit $core 1 $enable]    
+}
+
+proc getEventControlWatchpoint { core } {
+    return [getEventControlBit $core 1]
+}
+
+proc setEventControlCall { core enable } {
+    return [setEventControlBit $core 2 $enable]    
+}
+
+proc getEventControlCall { core } {
+    return [getEventControlBit $core 2]
+}
+
+proc setEventControlInterrupt { core enable } {
+    return [setEventControlBit $core 3 $enable]    
+}
+
+proc getEventControlInterrupt { core } {
+    return [getEventControlBit $core 3]
+}
+
+proc setEventControlException { core enable } {
+    return [setEventControlBit $core 4 $enable]    
+}
+
+proc getEventControlException { core } {
+    return [getEventControlBit $core 4]
+}
+
+proc setEventControlContext { core enable } {
+    return [setEventControlBit $core 5 $enable]    
+}
+
+proc getEventControlContext { core } {
+    return [getEventControlBit $core 5]
+}
+
+# END of routines that facilitate individual access to each event control bit 
+
 proc setITC {core mode} {
     global traceBaseAddrArray
     global te_control_offset
@@ -1254,18 +1342,41 @@ proc getMaxIcnt {core} {
     return $t
 }
 
-proc findMaxICnt { core }  {
-#	echo "findMaxIcnt($core)"
+proc findMaxICntFrom { core maxidx }  {
+#	echo "findMaxIcntFrom($core $maxidx)"
 
-    # Start at 15 and work down until one sticks.
-    for {set x 15} { $x > 0 } {set x [expr {$x - 1}]} {
+    # We used to always start from 15, and assume the first sticking value
+    # was the end of a contiguous range of valid indexes, but that is no longer
+    # always true with latest encoders that can support event trace, so this is
+    # a new proc that allows a maxidx to be passed in.
+    # E.g. code can call with maxidx of 15 to find out if event trace is supported,
+    # then can call again with maxidx of 14 to find out the largest value in the
+    # valid contiguous range of values
+
+    # Save current value so we can restore it.  Otherwise this
+    # proc is destructive to the value.
+    set original [getMaxIcnt $core]
+    
+    # Start on $maxidx and work down until one sticks.
+    for {set x $maxidx} { $x > 0 } {set x [expr {$x - 1}]} {
         setMaxIcnt $core $x
         set y [getMaxIcnt $core]
         if {$x == $y} {
+	    # restore original value before returning result
+	    setMaxIcnt $core $original
             return $x;
         }
     }
 }
+
+
+proc findMaxICnt { core }  {
+    #	echo "findMaxIcnt($core)"
+
+    # Backward compatible shim that assumes 15 as the maxidx
+    return [findMaxICntFrom $core 15]
+}
+
 proc setMaxBTM {core maxicnt} {
     global traceBaseAddrArray
     global te_control_offset
