@@ -1001,8 +1001,7 @@ proc setTargetTraceMode {core mode} {
        "none"       { set tm 0 }
        "sample"     { set tm 1
 	              setEventControl $core "sample" }
-       "event"      { set tm 1
-	              setEventControl $core "all" }
+       "event"      { set tm 1 }
        "btm+sync"   { set tm 3 }
        "btm"        { set tm 3 }
        "htmc+sync"  { set tm 6 }
