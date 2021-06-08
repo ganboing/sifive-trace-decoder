@@ -227,7 +227,7 @@ proc checkHaveEvent {} {
 
     mww [expr $baseAddress + $ev_control_offset] $saved
 
-    if {$evctl != 07} {
+    if {$evctl != 0} {
         if {$verbose > 0} {
             echo "supports event"
         }
