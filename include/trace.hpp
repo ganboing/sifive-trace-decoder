@@ -369,6 +369,7 @@ private:
 	TraceDqr::ADDRESS *stack;
 };
 
+#ifdef foodog
 class NexusMessageSync {
 public:
 	NexusMessageSync();
@@ -377,6 +378,7 @@ public:
 	int          index;
 	NexusMessage msgs[512];
 };
+#endif // foodog
 
 class Count {
 public:
@@ -400,7 +402,7 @@ public:
 	int getICnt(int core) { return i_cnt[core]; }
 	uint32_t getHistory(int core) { return history[core]; }
 	int getNumHistoryBits(int core) { return histBit[core]; }
-	uint32_t getTakenCount(int core) {return takenCount[core]; }
+	uint32_t getTakenCount(int core) { return takenCount[core]; }
 	uint32_t getNotTakenCount(int core) { return notTakenCount[core]; }
 	uint32_t isTaken(int core) { return (history[core] & (1 << histBit[core])) != 0; }
 
@@ -408,6 +410,7 @@ public:
 	TraceDqr::ADDRESS pop(int core) { return stack[core].pop(); }
 	void resetStack(int core) { stack[core].reset(); }
 	int getNumOnStack(int core) { return stack[core].getNumOnStack(); }
+
 
 	void dumpCounts(int core);
 
@@ -424,6 +427,21 @@ private:
     int notTakenCount[DQR_MAXCORES];
     AddrStack stack[DQR_MAXCORES];
 };
+
+#ifdef foodog
+class OrderedTraceInfo {
+public:
+	OrderedTraceInfo();
+	~OrderedTraceInfo();
+	TraceDqr::DQErr qTraceMessage(NexusMessage **msgInfo);
+	int getOrderedTraceMessage(int core,TraceDqr::ADDRESS,TraceDqr::TIMESTAMP,NexusMessage **msgInfo);
+
+private:
+	NexusMessage messageQ[DQR_MAXCORES][8];
+	int          messageIn[DQR_MAXCORES];
+	int          messageOut[DQR_MAXCORES];
+};
+#endif // foodog
 
 #endif /* TRACE_HPP_ */
 

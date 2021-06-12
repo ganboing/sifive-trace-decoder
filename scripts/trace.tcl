@@ -4,6 +4,7 @@
 
 set te_control_offset      0x00
 set te_impl_offset         0x04
+set ev_control_offset      0x0C
 set te_sinkbase_offset     0x10
 set te_sinkbasehigh_offset 0x14
 set te_sinklimit_offset    0x18
@@ -38,6 +39,7 @@ set pcs_sample_hi       0x178
 set num_cores  0
 set has_funnel 0
 set have_htm 0
+set has_event 0
 
 set trace_buffer_width 0
 
@@ -154,15 +156,15 @@ proc parseCoreList {cores} {
     # parse core and build list of cores
 
     if {$cores == "all" || $cores == ""} {
-    return [getAllCoreList]
+        return [getAllCoreList]
     }
 
     set t [split $cores ","]
 
     foreach core $t {
-    if {($core < 0 || $core >= $num_cores)} {
-        return "error"
-    }
+        if {($core < 0 || $core >= $num_cores)} {
+            return "error"
+        }
     }
 
     # t is now a list of cores
@@ -202,6 +204,38 @@ proc checkHaveHTM {} {
 
     if {$verbose > 0} {
         echo "does not support htm"
+    }
+
+    return 0
+}
+
+proc checkHaveEvent {} {
+    global traceBaseAddresses
+    global ev_control_offset
+    global verbose
+
+#    echo "checkHaveEvent()"
+
+    set baseAddress [lindex $traceBaseAddresses 0]
+    set evctl [word [expr $baseAddress + $ev_control_offset]]
+    set saved $evctl
+    set evctl 0x03f
+    mww [expr $baseAddress + $ev_control_offset] $evctl
+    set evctl [word [expr $baseAddress + $ev_control_offset]]
+
+    # restore ev_control
+
+    mww [expr $baseAddress + $ev_control_offset] $saved
+
+    if {$evctl != 0} {
+        if {$verbose > 0} {
+            echo "supports event"
+        }
+        return 1
+    }
+
+    if {$verbose > 0} {
+        echo "does not support event"
     }
 
     return 0
@@ -949,19 +983,25 @@ proc setTraceMode { core usermode } {
         {
             setTargetTraceMode $core "sample"
         }
-        #"events" {}
+        "event"
+        {
+            setTargetTraceMode $core "event"
+        }
     }
 }
 
 proc setTargetTraceMode {core mode} {
     global traceBaseAddrArray
     global te_control_offset
+    global has_event
 
 #    echo "setTargetTraceMode($core $mode)"
 
     switch $mode {
        "none"       { set tm 0 }
-       "sample"     { set tm 1 }
+       "sample"     { set tm 1
+	              setEventControl $core "sample" }
+       "event"      { set tm 1 }
        "btm+sync"   { set tm 3 }
        "btm"        { set tm 3 }
        "htmc+sync"  { set tm 6 }
@@ -974,6 +1014,7 @@ proc setTargetTraceMode {core mode} {
     set t [word [expr $traceBaseAddrArray($core) + $te_control_offset]]
     set t [expr $t & ~0x0070]
     set t [expr $t | ($tm << 4)]
+
     mww [expr $traceBaseAddrArray($core) + $te_control_offset] $t
 }
 
@@ -985,6 +1026,7 @@ proc getTraceMode {core} {
     switch $tm {
        "none"       { return "off" }
        "sample"     { return "sample" }
+       "event"      { return "event" }
        "btm+sync"   { return "instruction" }
        "htmc+sync"  { return "instruction" }
        "htm+sync"   { return "instruction" }
@@ -995,6 +1037,8 @@ proc getTraceMode {core} {
 proc getTargetTraceMode {core} {
     global traceBaseAddrArray
     global te_control_offset
+    global ev_control_offset
+    global has_event
 
 #    echo "getTargetTraceMode($core)"
 
@@ -1003,13 +1047,196 @@ proc getTargetTraceMode {core} {
 
     switch $t {
        0       { return "none" }
-       1       { return "sample" }
+       1       { if {[word [expr $traceBaseAddrArray($core) + $ev_control_offset]] == 0} {
+		       if {[getMaxIcnt $core] == 15} {
+			       return "none"
+		       }
+                    return "sample"
+                 } else {
+                    return "event"
+                 }
+               }
        3       { return "btm+sync"  }
        6       { return "htmc+sync" }
        7       { return "htm+sync"  }
        default { return "reserved" }
     }
 }
+
+proc getEventControl {core} {
+    global traceBaseAddrArray
+    global ev_control_offset
+    global has_event
+
+    if {$has_event== 0} {
+        if {[getMaxIcnt $core] == 15} {
+            return "none"
+        }
+
+        return "sample"
+    }
+
+    if {[getMaxIcnt $core] == 15} {
+        set eventl ""
+    } else {
+        set eventl "sample"
+    }
+
+    set events [word [expr $traceBaseAddrArray($core) + $ev_control_offset]]
+
+    if {($events & (1 << 0)) != 0} {
+        append eventl " trigger"
+    }
+
+    if {($events & (1 << 1)) != 0} {
+        append eventl " watchpoint"
+    }
+
+    if {($events & (1 << 2)) != 0} {
+        append eventl " call"
+    }
+
+    if {($events & (1 << 3)) != 0} {
+        append eventl " interrupt"
+    }
+
+    if {($events & (1 << 4)) != 0} {
+        append eventl " exception"
+    }
+
+    if {($events & (1 << 5)) != 0} {
+        append eventl " context"
+    }
+
+    if {$eventl == ""} {
+        return "none"
+    }
+
+    return $eventl
+}
+
+proc setEventControl {core opts} {
+    global traceBaseAddrArray
+    global ev_control_offset
+    global has_event
+
+    if {$has_event == 0} {
+        return 1
+    }
+
+    set reg 0
+    set icnt 15
+
+    foreach opt $opts {
+        switch $opt {
+        "none"       { set reg 0
+		       set icnt 15 }
+        "all"        { set reg 0x3f
+                       set icnt 0}
+	"sample"     { set icnt 0 }
+        "trigger"    { set reg [expr $reg | (1 << 0)] }
+        "watchpoint" { set reg [expr $reg | (1 << 1)] }
+        "call"       { set reg [expr $reg | (1 << 2)] }
+        "interrupt"  { set reg [expr $reg | (1 << 3)] }
+        "exception"  { set reg [expr $reg | (1 << 4)] }
+        "context"    { set reg [expr $reg | (1 << 5)] }
+        default      { return 1 }
+        }
+    }
+
+    mww [expr $traceBaseAddrArray($core) + $ev_control_offset] $reg
+    setMaxIcnt $core $icnt
+
+    return 0
+}
+
+# Individual access to each event control bit works better in the case of
+# certain UI environment(s) that may be accessing this script.  These routines are
+# roughly equivalent to getEventControl and setEventControl, except they access each
+# event bit individually, and also don't affect the maxIcnt setting.  Some environments
+# will prefer to use getEventControl and setEventControl instead.
+proc setEventControlBit { core bit enable } {
+    global traceBaseAddrArray
+    global ev_control_offset
+    global has_event
+
+    if {$has_event == 0} {
+        return 1
+    }
+    set events [word [expr $traceBaseAddrArray($core) + $ev_control_offset]]
+    if {$enable} {
+	set events [expr $events | (1 << $bit)]	
+    } else {
+	set events [expr $events & ~(1 << $bit)]		
+    }
+
+    mww [expr $traceBaseAddrArray($core) + $ev_control_offset] $events
+
+    return 0
+}
+
+proc getEventControlBit { core bit } {
+    global traceBaseAddrArray
+    global ev_control_offset
+    global has_event
+
+    if {$has_event == 0} {
+        return 0
+    }
+    set events [word [expr $traceBaseAddrArray($core) + $ev_control_offset]]
+    return [expr {($events & (1 << $bit)) != 0}]
+}
+
+
+proc setEventControlTrigger { core enable } {
+    return [setEventControlBit $core 0 $enable]
+}
+
+proc getEventControlTrigger { core } {
+    return [getEventControlBit $core 0]
+}
+
+proc setEventControlWatchpoint { core enable } {
+    return [setEventControlBit $core 1 $enable]    
+}
+
+proc getEventControlWatchpoint { core } {
+    return [getEventControlBit $core 1]
+}
+
+proc setEventControlCall { core enable } {
+    return [setEventControlBit $core 2 $enable]    
+}
+
+proc getEventControlCall { core } {
+    return [getEventControlBit $core 2]
+}
+
+proc setEventControlInterrupt { core enable } {
+    return [setEventControlBit $core 3 $enable]    
+}
+
+proc getEventControlInterrupt { core } {
+    return [getEventControlBit $core 3]
+}
+
+proc setEventControlException { core enable } {
+    return [setEventControlBit $core 4 $enable]    
+}
+
+proc getEventControlException { core } {
+    return [getEventControlBit $core 4]
+}
+
+proc setEventControlContext { core enable } {
+    return [setEventControlBit $core 5 $enable]    
+}
+
+proc getEventControlContext { core } {
+    return [getEventControlBit $core 5]
+}
+
+# END of routines that facilitate individual access to each event control bit 
 
 proc setITC {core mode} {
     global traceBaseAddrArray
@@ -1114,18 +1341,41 @@ proc getMaxIcnt {core} {
     return $t
 }
 
-proc findMaxICnt { core }  {
-#	echo "findMaxIcnt($core)"
+proc findMaxICntFrom { core maxidx }  {
+#	echo "findMaxIcntFrom($core $maxidx)"
 
-    # Start at 15 and work down until one sticks.
-    for {set x 15} { $x > 0 } {set x [expr {$x - 1}]} {
+    # We used to always start from 15, and assume the first sticking value
+    # was the end of a contiguous range of valid indexes, but that is no longer
+    # always true with latest encoders that can support event trace, so this is
+    # a new proc that allows a maxidx to be passed in.
+    # E.g. code can call with maxidx of 15 to find out if event trace is supported,
+    # then can call again with maxidx of 14 to find out the largest value in the
+    # valid contiguous range of values
+
+    # Save current value so we can restore it.  Otherwise this
+    # proc is destructive to the value.
+    set original [getMaxIcnt $core]
+    
+    # Start on $maxidx and work down until one sticks.
+    for {set x $maxidx} { $x > 0 } {set x [expr {$x - 1}]} {
         setMaxIcnt $core $x
         set y [getMaxIcnt $core]
         if {$x == $y} {
+	    # restore original value before returning result
+	    setMaxIcnt $core $original
             return $x;
         }
     }
 }
+
+
+proc findMaxICnt { core }  {
+    #	echo "findMaxIcnt($core)"
+
+    # Backward compatible shim that assumes 15 as the maxidx
+    return [findMaxICntFrom $core 15]
+}
+
 proc setMaxBTM {core maxicnt} {
     global traceBaseAddrArray
     global te_control_offset
@@ -1789,31 +2039,94 @@ proc stoponwrap {{cores "all"} {opt ""}} {
     }
 }
 
+proc eventmode {{cores "all"} args} {
+    set coreList [parseCoreList $cores]
+
+    if {$coreList == "error"} {
+        set args [concat $cores $args]
+	set cores "all"
+	set coreList [parseCoreList $cores]
+
+	if {$coreList == "error"} {
+            echo {Error: Usage: eventmode [corelist] [none | all | sample | trigger | watchpoint | call | interrupt | exception | context | help]}
+            return ""
+	}
+    }
+
+    if {$args == ""} {
+        # display current status of evControl
+        set rv ""
+
+        foreach core $coreList {
+            set tsd "core $core: "
+
+            lappend tsd [getEventControl $core]
+
+            if {$rv != ""} {
+                append rv "; "
+            }
+
+            append rv $tsd
+        }
+
+        return $rv
+    }
+
+    if {$args == "help"} {
+        echo "eventmode: set or display event enabled mode"
+        echo {Usage: eventmode [corelist] [none | all | sample | trigger | watchpoint | call | interrupt | exception | context]}
+        echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
+        echo "  sample:     Enable pc sampling"
+        echo "  trigger:    Enable trigger event messagaging"
+        echo "  watchpoint: Enable watchpoint event messaging"
+        echo "  call:       Enable call event messaging"
+        echo "  interrupt:  Enable interrupt event messaging"
+        echo "  exception:  Enable exception event messaging"
+        echo "  context:    Enable context switch event messaging"
+        echo "  all:        Enable all event messaging"
+        echo "  none:       Do not generate any event messaging"
+        echo "  help:     Display this message"
+        echo ""
+        echo "eventmode with no arguments will display the current setting for event messaging"
+        echo "To enable multiple events, separate the event types with a space"
+        echo ""
+    } else {
+        foreach core $coreList {
+            set rc [setEventControl $core $args]
+            if {$rc != 0} {
+                echo {Error: Usage: eventmode [corelist] [none | all | sample | trigger | watchpoint | call | interrupt | exception | context | help]}
+                return ""
+            }
+        }
+    }
+    echo -n ""
+}
+
+
 proc tracemode {{cores "all"} {opt ""}} {
     set coreList [parseCoreList $cores]
 
     if {$coreList == "error"} {
         if {$opt == ""} {
             set opt $cores
-            set cores "all"
+	    set cores "all"
 
-            set coreList [parseCoreList $cores]
+	    set coreList [parseCoreList $cores]
         }
 
-        if {$coreList == "error"} {
-            echo {Error: Usage: tracemode [corelist] [none | all | btm | htm | htmc | sample | help]}
-            return "error"
+	if {$coreList == "error"} {
+            echo {Error: Usage: tracemode [corelist] [all | btm | htm | htmc | none | sample | event | help]}
+	    return "error"
         }
     }
 
     if {$opt == ""} {
-        # display current status of ts enable
         set rv ""
 
-        foreach core $coreList {
+	foreach core $coreList {
             set tsd "core $core: "
 
-            lappend tsd [getTargetTraceMode $core]
+	    lappend tsd [getTargetTraceMode $core]
 
             if {$rv != ""} {
                 append rv "; "
@@ -1827,12 +2140,13 @@ proc tracemode {{cores "all"} {opt ""}} {
 
     if {$opt == "help"} {
         echo "tracemode: set or display trace type (sync, sync+btm)"
-        echo {Usage: tracemode [corelist] [none | all | btm | htm | htmc | sample | help]}
+        echo {Usage: tracemode [corelist] [none | all | btm | htm | htmc | sample | event | help]}
         echo "  corelist: Comma separated list of core numbers, or 'all'. Not specifying is equivalent to all"
         echo "  btm:      Generate both sync and btm trace messages"
         echo "  htm:      Generate sync and htm trace messages (with return stack optimization or repeat branch optimization)"
         echo "  htmc      Generate sync and conservitive htm trace messages (without return stack optimization or repeat branch optimization)"
-    echo "  sample    Generate PC sample trace using In Circuit Trace mode"
+        echo "  sample    Generate PC sample trace using In Circuit Trace mode"
+        echo "  event     Generate event trace. Use eventmode to select events"
         echo "  all:      Generate both sync and btm or htm trace messages (whichever is supported by hardware)"
         echo "  none:     Do not generate sync or btm trace messages"
         echo "  help:     Display this message"
@@ -1840,13 +2154,13 @@ proc tracemode {{cores "all"} {opt ""}} {
         echo "tracemode with no arguments will display the current setting for the type"
         echo "of messages to generate (none, sync, or all)"
         echo ""
-    } elseif {($opt == "sample") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm") || ($opt == "htmc") || ($opt == "btm+sync") || ($opt == "htm+sync") || ($opt == "htmc+sync")} {
+    } elseif {($opt == "sample") || ($opt == "event") || ($opt == "all") || ($opt == "none") || ($opt == "btm") || ($opt == "htm") || ($opt == "htmc") || ($opt == "btm+sync") || ($opt == "htm+sync") || ($opt == "htmc+sync")} {
         foreach core $coreList {
             setTargetTraceMode $core $opt
         }
         echo -n ""
     } else {
-        echo {Error: Usage: tracemode [corelist] [all | btm | htm | htmc | none | sample | help]}
+        echo {Error: Usage: tracemode [corelist] [all | btm | htm | htmc | none | sample | event | help]}
     }
 }
 
@@ -3782,6 +4096,7 @@ proc init {} {
     global CABaseAddrArray
     global num_cores
     global has_funnel
+    global has_event
     global have_htm
 
 #    echo "init()"
@@ -3822,6 +4137,10 @@ proc init {} {
     }
 
     set have_htm [checkHaveHTM]
+
+    # see if we have an evControl reg
+
+    set has_event [checkHaveEvent]
     
     setTraceBufferWidth
 
@@ -4042,6 +4361,7 @@ proc qitctriggerenable {{cores "all"}} {
 proc dtr {{cores "all"}} {
     global traceBaseAddrArray
     global te_control_offset
+    global ev_control_offset
     global te_impl_offset
     global te_sinkbase_offset
     global te_sinkbasehigh_offset
@@ -4057,6 +4377,7 @@ proc dtr {{cores "all"}} {
     global ts_control_offset
 
     global has_funnel 
+    global has_event
 
     set coreList [parseCoreList $cores]
 
@@ -4226,6 +4547,24 @@ proc dtr {{cores "all"}} {
     }
 
     echo "$rv"
+
+    if {$has_event != 0} {
+        set rv "evControl:"
+
+        foreach core $coreList {
+            set tse "core $core: "
+
+            lappend tse [wordhex [expr $traceBaseAddrArray($core) + $ev_control_offset]]
+
+            if {$rv != ""} {
+                append rv "; $tse"
+            } else {
+                set rv $tse
+            }
+        }
+
+        echo "$rv"
+    }
 
     set rv "xtiControl:"
 
