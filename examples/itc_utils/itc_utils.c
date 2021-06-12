@@ -12,6 +12,8 @@
 #endif
 #define baseAddress METAL_SIFIVE_TRACE_0_BASE_ADDRESS
 
+
+
 #include "itc_utils.h"
 
 // Register Offsets
@@ -236,7 +238,7 @@ int itc_printf(const char *f, ... )
 	return rc;
 }
 
-inline void itc_write_uint32(int channel, uint32_t data)
+inline void itc_write_i32(int channel, uint32_t data)
 {
 	uint32_t *stimulus = &itcStimulus[channel];
 
@@ -245,7 +247,7 @@ inline void itc_write_uint32(int channel, uint32_t data)
 	*stimulus = data;
 }
 
-inline void itc_write_uint8(int channel, uint8_t data)
+inline void itc_write_it8(int channel, uint8_t data)
 {
 	uint32_t *stimulus = &itcStimulus[channel];
 
@@ -255,7 +257,7 @@ inline void itc_write_uint8(int channel, uint8_t data)
 	itc_uint8[3] = data;
 }
 
-inline void itc_write_uint16(int channel, uint16_t data)
+inline void itc_write_i16(int channel, uint16_t data)
 {
 	uint32_t *stimulus = &itcStimulus[channel];
 
@@ -263,4 +265,98 @@ inline void itc_write_uint16(int channel, uint16_t data)
 
 	uint16_t *itc_uint16 = (uint16_t*)stimulus;
 	itc_uint16[1] = data;
+}
+
+
+inline int itc_nls_print_i32(int channel, uint32_t data)
+{
+	// check for a channel between [1, 31]
+	if ((channel < 0) || (channel > 31)) return 0;
+	
+	// get the address of the stimmulus register at the specified channel
+	uint32_t *stimulus = &itcStimulus[channel];
+
+	// block until room in FIFO
+	while (*stimulus == 0) {}	
+
+	// add the data to the stimmulus register
+	*stimulus = data;
+
+	return 1;
+}
+
+inline int itc_nls_print_i16(int channel, uint16_t data1, uint16_t data2)
+{
+	// check for a channel between [1, 31]
+	if ((channel < 0) || (channel > 31)) return 0;
+	
+	// get the address of the stimmulus register at the specified channel
+	uint32_t *stimulus = &itcStimulus[channel];
+
+	// block until room in FIFO
+	while (*stimulus == 0) {}	
+
+	// concatonate the 2-16 bit values into 1 32 bit value and asignt to the
+	// stimulus register
+	*stimulus = ((uint32_t)data1<<16) | ((uint32_t)data2);
+
+	return 1;
+}
+
+inline int itc_nls_print_i11(int channel, uint16_t data1, uint16_t data2, uint16_t data3)
+{
+	// check for a channel between [1, 31]
+	if ((channel < 0) || (channel > 31)) return 0;
+	
+	// get the address of the stimmulus register at the specified channel
+	uint32_t *stimulus = &itcStimulus[channel];
+
+	// block until room in FIFO
+	while (*stimulus == 0) {}	
+
+	// mask off the upper 5 or 6 bits on data1, data2, and data 3
+	data1 &= 0x7FF;
+	data2 &= 0x7FF;
+	data3 &= 0x3FF;
+
+	// concatonate the 2-11 bit and 1-10 bitvalues into 1 32 bit value and asignt to the
+	// stimulus register
+	*stimulus = ((uint32_t)data1<<21) | ((uint32_t)data2<<10) | ((uint32_t)data3);
+
+	return 1;
+}
+
+inline int itc_nls_print_i8(int channel, uint8_t data1, uint8_t data2, uint8_t data3, uint8_t data4)
+{
+	// check for a channel between [1, 31]
+	if ((channel < 0) || (channel > 31)) return 0;
+	
+	// get the address of the stimmulus register at the specified channel
+	uint32_t *stimulus = &itcStimulus[channel];
+
+	// block until room in FIFO
+	while (*stimulus == 0) {}	
+
+	// concatonate the 4-8 bit values into 1 32 bit value and asignt to the
+	// stimulus register
+	*stimulus = ((uint32_t)data1<<24) | ((uint32_t)data2<<16) | ((uint32_t)data3<<8) | ((uint32_t)data4);
+
+	return 1;
+}
+
+inline int itc_nls_printstr(int channel)
+{
+	// check for a channel between [1, 31]
+	if ((channel < 0) || (channel > 31)) return 0;
+
+	// get the address of the stimmulus register at the specified channel
+	uint32_t *stimulus = &itcStimulus[channel];
+
+	// block until room in FIFO
+	while (*stimulus == 0) {}
+
+	// write a 0 to the register
+	*stimulus = 0;
+
+	return 1;
 }
