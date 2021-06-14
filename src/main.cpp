@@ -965,6 +965,9 @@ int main(int argc, char *argv[])
 	} while (ec == TraceDqr::DQERR_OK);
 
 	if (ec == TraceDqr::DQERR_EOF) {
+		if (firstPrint == false) {
+			printf("\n");
+		}
 		printf("End of Trace File\n");
 	}
 	else {
