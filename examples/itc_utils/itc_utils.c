@@ -68,22 +68,36 @@ static int _trace_config = 0;
 
 int itc_enable(int channel)
 {
-	if ((channel < 0) || (channel > 31)) {
+	if ((channel < -1) || (channel > 31)) {
 		return 1;
 	}
 
-	*itcTraceEnable |= (1 << channel);
+	if (channel == ITC_ALL_CHANNELS){
+		// Enable all of the channels
+			*itcTraceEnable = 0xFFFFFFFF;
+	}
+	else{
+		// Enable just the specified channel
+		*itcTraceEnable |= (1 << channel);
+	}
 
 	return 0;
 }
 
 int itc_disable(int channel)
 {
-	if ((channel < 0) || (channel > 31)) {
+	if ((channel < -1) || (channel > 31)) {
 		return 1;
 	}
 
-	*itcTraceEnable &= ~(1 << channel);
+	if (channel == ITC_ALL_CHANNELS){
+		// Disable all of the channels
+			*itcTraceEnable = 0x0;
+	}
+	else{
+		// Disable just the specified channel
+		*itcTraceEnable &= ~(1 << channel);
+	}
 
 	return 0;
 }
@@ -175,6 +189,10 @@ static int _itc_fputs(const char *f)
 
 int itc_set_print_channel(int channel)
 {
+	if ((channel < 0) || (channel > 31)) {
+		return 1;
+	}
+
 	itc_print_channel = channel;
 	return 0;
 }

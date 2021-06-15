@@ -11,6 +11,7 @@
  * configuration dialog.  You may want to use these if you want to generate
  * ITC trace data on a target not being controlled by a debugger.
  */
+#define ITC_ALL_CHANNELS (-1)
 int itc_enable(int channel);
 int itc_disable(int channel);
 
