@@ -4118,8 +4118,11 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				(*instInfo)->brFlags = brFlags;
 
 				if ((caTrace != nullptr) && (syncCount == 0)) {
+					// note: start signal is one cycle after execution begins. End signal is two cycles after end
+
 					(*instInfo)->timestamp = pipeCycles;
 					(*instInfo)->pipeCycles = eCycleCount[currentCore];
+
 					(*instInfo)->VIStartCycles = viStartCycles - prevCycle;
 					(*instInfo)->VIFinishCycles = viFinishCycles - prevCycle - 1;
 

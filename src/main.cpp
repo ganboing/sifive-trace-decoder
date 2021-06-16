@@ -66,9 +66,11 @@ static void usage(char *name)
 	printf("--strip=path: Strip of the specified path when displaying source file name/path. Strips off all that matches.\n");
 	printf("              Path may be enclosed in quotes if it contains spaces.\n");
 	printf("-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatenated\n");
-	printf("              and displayed as a string until a terminating \\0 is found\n");
+	printf("              and displayed as a string until a terminating \\0 is found. Also enables processing and display of\n");
+	printf("              no-load-strings.\n");
 	printf("-itcprint=n:  Display ITC channel n data as a null terminated string. Data for consecutive ITC channel n's will be\n");
-	printf("              concatenated and display as a string until a terminating \\n or \\0 is found\n");
+	printf("              concatenated and display as a string until a terminating \\n or \\0 is found. Also enabled processing\n");
+	printf("              and display of no-load-strings\n");
 	printf("-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair\n");
 	printf("-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and\n");
 	printf("              cause the address field to be jagged. Overrides value address size read from elf file.\n");
