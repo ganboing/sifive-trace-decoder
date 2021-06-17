@@ -10827,6 +10827,10 @@ TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 		ci += 1;
 	}
 
+	if (strncmp("vrf",&lp[ci],3) == 0) {
+		return TraceDqr::DQERR_OK;
+	}
+
 	if (strncmp("frf",&lp[ci],3) == 0) {
 		ci += 3;
 
