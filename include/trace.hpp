@@ -196,7 +196,7 @@ public:
 
 class ITCPrint {
 public:
-	ITCPrint(int numCores,int buffSize,int channel,TraceDqr::nlStrings *nlsStrings);
+	ITCPrint(int itcPrintOpts,int numCores,int buffSize,int channel,TraceDqr::nlStrings *nlsStrings);
 	~ITCPrint();
 	bool print(uint8_t core, uint32_t address, uint32_t data);
 	bool print(uint8_t core, uint32_t address, uint32_t data, TraceDqr::TIMESTAMP tstamp);
@@ -214,6 +214,7 @@ private:
 	TsList *consumeTerminatedTsList(int core);
 	TsList *consumeOldestTsList(int core);
 
+	int itcOptFlags;
 	int numCores;
 	int buffSize;
 	int printChannel;

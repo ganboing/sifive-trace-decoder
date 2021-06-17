@@ -72,6 +72,8 @@ static void usage(char *name)
 	printf("              concatenated and display as a string until a terminating \\n or \\0 is found. Also enabled processing\n");
 	printf("              and display of no-load-strings\n");
 	printf("-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair\n");
+	printf("-nls:         Enables processing of no-load-strings\n");
+	printf("-nonls:       Disable processing of no-load-strings.\n");
 	printf("-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and\n");
 	printf("              cause the address field to be jagged. Overrides value address size read from elf file.\n");
 	printf("-addrsize=n+: Display address as n bits (32 <= n <= 64) unless a larger address size is seen, in which case the address\n");
@@ -189,8 +191,8 @@ int main(int argc, char *argv[])
 	uint32_t addrDispFlags = 0;
 	int srcbits = 0;
 	int analytics_detail = 0;
-	bool itcprint_flag = false;
-	int itcprint_channel = 0;
+	int itcPrintOpts = TraceDqr::ITC_OPT_NLS;
+	int itcPrintChannel = 0;
 	bool showCallsReturns = false;
 	bool showBranches = false;
 	TraceDqr::pathType pt = TraceDqr::PATH_TO_UNIX;
@@ -334,8 +336,8 @@ int main(int argc, char *argv[])
 			usage_flag = true;
 		}
 		else if (strcmp("-itcprint",argv[i]) == 0) {
-			itcprint_flag = true;
-			itcprint_channel = 0;
+			itcPrintOpts |= TraceDqr::ITC_OPT_PRINT | TraceDqr::ITC_OPT_NLS;
+			itcPrintChannel = 0;
 		}
 		else if (strncmp("-itcprint=",argv[i],strlen("-itcprint=")) == 0) {
 			int l;
@@ -344,18 +346,24 @@ int main(int argc, char *argv[])
 			l = strtol(&argv[i][strlen("-itcprint=")], &endptr, 0);
 
 			if (endptr[0] == 0 ) {
-				itcprint_flag = true;
-				itcprint_channel = l;
+				itcPrintOpts |= TraceDqr::ITC_OPT_PRINT | TraceDqr::ITC_OPT_NLS;
+				itcPrintChannel = l;
 			}
 			else {
-				itcprint_flag = false;
+				itcPrintOpts = false;
 				printf("Error: option -itcprint= requires a valid number 0 - 31\n");
 				usage(argv[0]);
 				return 1;
 			}
 		}
 		else if (strcmp("-noitcprint",argv[i]) == 0) {
-			itcprint_flag = false;
+			itcPrintOpts &= ~TraceDqr::ITC_OPT_PRINT;
+		}
+		else if (strcmp("-nls",argv[i]) == 0) {
+			itcPrintOpts |= TraceDqr::ITC_OPT_NLS;
+		}
+		else if (strcmp("-nonls",argv[i]) == 0) {
+			itcPrintOpts &= ~TraceDqr::ITC_OPT_NLS;
 		}
 		else if (strcmp("-32",argv[i]) == 0) {
 			numAddrBits = 32;
@@ -675,8 +683,11 @@ int main(int argc, char *argv[])
 		trace->setTSSize(tssize);
 		trace->setPathType(pt);
 
-		if (itcprint_flag) {
-			trace->setITCPrintOptions(4096,itcprint_channel);
+		// NLS is on by default when the trace object is created. Only
+		// set the print options if something has changed
+
+		if (itcPrintOpts != TraceDqr::ITC_OPT_NLS) {
+			trace->setITCPrintOptions(itcPrintOpts,4096,itcPrintChannel);
 		}
 
 		trace->setLabelMode(labelFlag);
@@ -928,7 +939,7 @@ int main(int argc, char *argv[])
 				firstPrint = false;
 			}
 
-			if ((trace != nullptr) && itcprint_flag) {
+			if ((trace != nullptr) && (itcPrintOpts != TraceDqr::ITC_OPT_NONE)) {
 				std::string s;
 				bool haveStr;
 
@@ -977,7 +988,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if ((trace != nullptr) && itcprint_flag) {
+	if ((trace != nullptr) && (itcPrintOpts != TraceDqr::ITC_OPT_NONE)) {
 		std::string s = "";
 		bool haveStr;
 

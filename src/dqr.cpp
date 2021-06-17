@@ -1424,7 +1424,7 @@ TsList::~TsList()
 {
 }
 
-ITCPrint::ITCPrint(int numCores, int buffSize,int channel,TraceDqr::nlStrings *nlsStrings)
+ITCPrint::ITCPrint(int itcPrintOpts,int numCores, int buffSize,int channel,TraceDqr::nlStrings *nlsStrings)
 {
 	assert((numCores > 0) && (buffSize > 0));
 
@@ -1432,6 +1432,8 @@ ITCPrint::ITCPrint(int numCores, int buffSize,int channel,TraceDqr::nlStrings *n
 	this->buffSize = buffSize;
 	this->printChannel = channel;
 	this->nlsStrings = nlsStrings;
+
+	itcOptFlags = itcPrintOpts;
 
 	pbuff = new char*[numCores];
 
@@ -1468,6 +1470,8 @@ ITCPrint::ITCPrint(int numCores, int buffSize,int channel,TraceDqr::nlStrings *n
 
 ITCPrint::~ITCPrint()
 {
+	nlsStrings = nullptr; // don't delete this here - it is part of the trace object
+
 	if (pbuff != nullptr) {
 		for (int i = 0; i < numCores; i++) {
 			if (pbuff[i] != nullptr) {
@@ -1478,18 +1482,6 @@ ITCPrint::~ITCPrint()
 
 		delete [] pbuff;
 		pbuff = nullptr;
-	}
-
-	if (nlsStrings != nullptr) {
-		for (int i = 0; i < 32; i++) {
-			if (nlsStrings[i].format != nullptr) {
-				delete [] nlsStrings[i].format;
-				nlsStrings[i].format = nullptr;
-			}
-		}
-
-		delete [] nlsStrings;
-		nlsStrings = nullptr;
 	}
 
 	if (numMsgs != nullptr) {
@@ -1566,239 +1558,245 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 
 	channel = addr / 4;
 
-	if (((addr & 0x03) == 0) && (nlsStrings != nullptr) && (nlsStrings[channel].format != nullptr)) {
-		int args[4];
-		char dst[256];
-		int dstLen = 0;
+	if (itcOptFlags & TraceDqr::ITC_OPT_NLS) {
+		if (((addr & 0x03) == 0) && (nlsStrings != nullptr) && (nlsStrings[channel].format != nullptr)) {
+			int args[4];
+			char dst[256];
+			int dstLen = 0;
 
-		// have a no-load-string print
+			// have a no-load-string print
 
-		// need to get args for print
+			// need to get args for print
 
-		switch (nlsStrings[channel].nf) {
-		case 0:
-			dstLen = sprintf(dst,nlsStrings[channel].format);
-			break;
-		case 1:
-			dstLen = sprintf(dst,nlsStrings[channel].format,data);
-			break;
-		case 2:
-			for (int i = 0; i < 2; i++) {
-				if (nlsStrings[channel].signedMask & (1 << i)) {
-					// signed
-					args[i] = (int16_t)(data >> ((1-i) * 16));
+			switch (nlsStrings[channel].nf) {
+			case 0:
+				dstLen = sprintf(dst,nlsStrings[channel].format);
+				break;
+			case 1:
+				dstLen = sprintf(dst,nlsStrings[channel].format,data);
+				break;
+			case 2:
+				for (int i = 0; i < 2; i++) {
+					if (nlsStrings[channel].signedMask & (1 << i)) {
+						// signed
+						args[i] = (int16_t)(data >> ((1-i) * 16));
+					}
+					else {
+						// unsigned
+						args[i] = (uint16_t)(data >> ((1-i) * 16));
+					}
 				}
-				else {
-					// unsigned
-					args[i] = (uint16_t)(data >> ((1-i) * 16));
+				dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1]);
+				break;
+			case 3:
+				args[0] = (data >> (32 - 11)) & 0x7ff; // 10 bit
+				args[1] = (data >> (32 - 22)) & 0x7ff; // 11 bit
+				args[2] = (data >> (32 - 32)) & 0x3ff; // 11 bit
+
+				if (nlsStrings[channel].signedMask & (1 << 0)) {
+					if (args[0] & 0x400) {
+						args[0] |= 0xfffff800;
+					}
+				}
+
+				if (nlsStrings[channel].signedMask & (1 << 1)) {
+					if (args[1] & 0x400) {
+						args[1] |= 0xfffff800;
+					}
+				}
+
+				if (nlsStrings[channel].signedMask & (1 << 2)) {
+					if (args[2] & 0x200) {
+						args[2] |= 0xfffffc00;
+					}
+				}
+
+				dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2]);
+				break;
+			case 4:
+				for (int i = 0; i < 4; i++) {
+					if (nlsStrings[channel].signedMask & (1 << i)) {
+						// signed
+						args[i] = (int8_t)(data >> ((3-i) * 8));
+					}
+					else {
+						// unsigned
+						args[i] = (uint8_t)(data >> ((3-i) * 8));
+					}
+				}
+				dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2],args[3]);
+				break;
+			default:
+				dstLen = sprintf(dst,"Error: invalid number of args for format string %d, %s",channel,nlsStrings[channel].format);
+				break;
+			}
+
+			if ((tsList[core] != nullptr) && (tsList[core]->terminated == false)) {
+				// terminate the current message
+
+				pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
+				pbi[core] += 1;
+
+				if (pbi[core] >= buffSize) {
+					pbi[core] = 0;
+				}
+
+				numMsgs[core] += 1;
+
+				tsList[core]->terminated = true;
+			}
+
+			// check free list for available struct
+
+			if (freeList != nullptr) {
+				workingtlp = freeList;
+				freeList = workingtlp->next;
+
+				workingtlp->terminated = false;
+				workingtlp->message = nullptr;
+			}
+			else {
+				workingtlp = new TsList();
+			}
+
+			if (tlp == nullptr) {
+				workingtlp->next = workingtlp;
+				workingtlp->prev = workingtlp;
+			}
+			else {
+				workingtlp->next = tlp;
+				workingtlp->prev = tlp->prev;
+
+				tlp->prev = workingtlp;
+				workingtlp->prev->next = workingtlp;
+			}
+
+			workingtlp->startTime = tstamp;
+		    workingtlp->endTime = tstamp;
+			workingtlp->message = &pbuff[core][pbi[core]];
+
+			tsList[core] = workingtlp;
+
+			// workingtlp now points to unterminated TSList object
+
+			int room = roomInITCPrintQ(core);
+
+			for (int i = 0; i < dstLen; i++ ) {
+				if (room >= 2) { // 2 because we need to make sure there is room for the nul termination
+					pbuff[core][pbi[core]] = dst[i];
+					pbi[core] += 1;
+					if (pbi[core] >= buffSize) {
+						pbi[core] = 0;
+					}
+					room -= 1;
 				}
 			}
-			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1]);
-			break;
-		case 3:
-			args[0] = (data >> (32 - 11)) & 0x7ff; // 10 bit
-			args[1] = (data >> (32 - 22)) & 0x7ff; // 11 bit
-			args[2] = (data >> (32 - 32)) & 0x3ff; // 11 bit
 
-			if (nlsStrings[channel].signedMask & (1 << 0)) {
-				if (args[0] & 0x400) {
-					args[0] |= 0xfffff800;
-				}
-			}
-
-			if (nlsStrings[channel].signedMask & (1 << 1)) {
-				if (args[1] & 0x400) {
-					args[1] |= 0xfffff800;
-				}
-			}
-
-			if (nlsStrings[channel].signedMask & (1 << 2)) {
-				if (args[2] & 0x200) {
-					args[2] |= 0xfffffc00;
-				}
-			}
-
-			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2]);
-			break;
-		case 4:
-			for (int i = 0; i < 4; i++) {
-				if (nlsStrings[channel].signedMask & (1 << i)) {
-					// signed
-					args[i] = (int8_t)(data >> ((3-i) * 8));
-				}
-				else {
-					// unsigned
-					args[i] = (uint8_t)(data >> ((3-i) * 8));
-				}
-			}
-			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2],args[3]);
-			break;
-		default:
-			dstLen = sprintf(dst,"Error: invalid number of args for format string %d, %s",channel,nlsStrings[channel].format);
-			break;
-		}
-
-		if ((tsList[core] != nullptr) && (tsList[core]->terminated == false)) {
-			// terminate the current message
-
-			pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
+			pbuff[core][pbi[core]] = 0;
 			pbi[core] += 1;
-
 			if (pbi[core] >= buffSize) {
 				pbi[core] = 0;
 			}
 
+			workingtlp->terminated = true;
 			numMsgs[core] += 1;
 
-			tsList[core]->terminated = true;
+			return true;
+		}
+	}
+
+	if (itcOptFlags & TraceDqr::ITC_OPT_PRINT) {
+		if ((addr < (uint32_t)printChannel*4) || (addr >= (((uint32_t)printChannel+1)*4))) {
+			// not writing to this itc channel
+
+			return false;
 		}
 
-		// check free list for available struct
+	    if ((tlp == nullptr) || tlp->terminated == true) {
+			// see if there is one on the free list before making a new one
 
-		if (freeList != nullptr) {
-			workingtlp = freeList;
-			freeList = workingtlp->next;
+			if (freeList != nullptr) {
+				workingtlp = freeList;
+				freeList = workingtlp->next;
+
+				workingtlp->terminated = false;
+				workingtlp->message = nullptr;
+			}
+			else {
+				workingtlp = new TsList();
+			}
+
+			if (tlp == nullptr) {
+				workingtlp->next = workingtlp;
+				workingtlp->prev = workingtlp;
+			}
+			else {
+				workingtlp->next = tlp;
+				workingtlp->prev = tlp->prev;
+
+				tlp->prev = workingtlp;
+				workingtlp->prev->next = workingtlp;
+			}
 
 			workingtlp->terminated = false;
-			workingtlp->message = nullptr;
-		}
-		else {
-			workingtlp = new TsList();
-		}
+			workingtlp->startTime = tstamp;
+			workingtlp->message = &pbuff[core][pbi[core]];
 
-		if (tlp == nullptr) {
-			workingtlp->next = workingtlp;
-			workingtlp->prev = workingtlp;
+			tsList[core] = workingtlp;
 		}
-		else {
-			workingtlp->next = tlp;
-			workingtlp->prev = tlp->prev;
+	    else {
+	    	workingtlp = tlp;
+	    }
 
-			tlp->prev = workingtlp;
-			workingtlp->prev->next = workingtlp;
-		}
+		// workingtlp now points to unterminated TSList object (in progress)
 
-		workingtlp->startTime = tstamp;
 	    workingtlp->endTime = tstamp;
-		workingtlp->message = &pbuff[core][pbi[core]];
 
-		tsList[core] = workingtlp;
-
-		// workingtlp now points to unterminated TSList object
-
+		char *p = (char *)&data;
 		int room = roomInITCPrintQ(core);
 
-		for (int i = 0; i < dstLen; i++ ) {
-			if (room >= 2) { // 2 because we need to make sure there is room for the nul termination
-				pbuff[core][pbi[core]] = dst[i];
+		for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
+			if (room >= 2) {
+				pbuff[core][pbi[core]] = p[i];
 				pbi[core] += 1;
 				if (pbi[core] >= buffSize) {
 					pbi[core] = 0;
 				}
 				room -= 1;
+
+				switch (p[i]) {
+				case 0:
+					numMsgs[core] += 1;
+
+					workingtlp->terminated = true;
+					break;
+				case '\n':
+				case '\r':
+					pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
+					pbi[core] += 1;
+					if (pbi[core] >= buffSize) {
+						pbi[core] = 0;
+					}
+					room -= 1;
+					numMsgs[core] += 1;
+
+					workingtlp->terminated = true;
+					break;
+				default:
+					break;
+				}
 			}
 		}
 
-		pbuff[core][pbi[core]] = 0;
-		pbi[core] += 1;
-		if (pbi[core] >= buffSize) {
-			pbi[core] = 0;
-		}
+		pbuff[core][pbi[core]] = 0; // make sure always null terminated. This may be a temporary null termination
 
-		workingtlp->terminated = true;
-		numMsgs[core] += 1;
+		// returning true means it was an itc print msg and has been processed
+		// false means it was not, and should be handled normally
 
 		return true;
 	}
 
-	if ((addr < (uint32_t)printChannel*4) || (addr >= (((uint32_t)printChannel+1)*4))) {
-		// not writing to this itc channel
-
-		return false;
-	}
-
-    if ((tlp == nullptr) || tlp->terminated == true) {
-		// see if there is one on the free list before making a new one
-
-		if (freeList != nullptr) {
-			workingtlp = freeList;
-			freeList = workingtlp->next;
-
-			workingtlp->terminated = false;
-			workingtlp->message = nullptr;
-		}
-		else {
-			workingtlp = new TsList();
-		}
-
-		if (tlp == nullptr) {
-			workingtlp->next = workingtlp;
-			workingtlp->prev = workingtlp;
-		}
-		else {
-			workingtlp->next = tlp;
-			workingtlp->prev = tlp->prev;
-
-			tlp->prev = workingtlp;
-			workingtlp->prev->next = workingtlp;
-		}
-
-		workingtlp->terminated = false;
-		workingtlp->startTime = tstamp;
-		workingtlp->message = &pbuff[core][pbi[core]];
-
-		tsList[core] = workingtlp;
-	}
-    else {
-    	workingtlp = tlp;
-    }
-
-	// workingtlp now points to unterminated TSList object (in progress)
-
-    workingtlp->endTime = tstamp;
-
-	char *p = (char *)&data;
-	int room = roomInITCPrintQ(core);
-
-	for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
-		if (room >= 2) {
-			pbuff[core][pbi[core]] = p[i];
-			pbi[core] += 1;
-			if (pbi[core] >= buffSize) {
-				pbi[core] = 0;
-			}
-			room -= 1;
-
-			switch (p[i]) {
-			case 0:
-				numMsgs[core] += 1;
-
-				workingtlp->terminated = true;
-				break;
-			case '\n':
-			case '\r':
-				pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
-				pbi[core] += 1;
-				if (pbi[core] >= buffSize) {
-					pbi[core] = 0;
-				}
-				room -= 1;
-				numMsgs[core] += 1;
-
-				workingtlp->terminated = true;
-				break;
-			default:
-				break;
-			}
-		}
-	}
-
-	// returning true means it was an itc print msg and has been processed
-	// false means it was not, and should be handled normally
-
-	pbuff[core][pbi[core]] = 0; // make sure always null terminated. This may be a temporary null termination
-
-	return true;
+	return false;
 }
 
 bool ITCPrint::haveITCPrintMsgs()
