@@ -899,6 +899,7 @@ public:
 	uint32_t cycles;
 	int valid;
 	bool haveFRF;
+	bool haveVRF;
 	TraceDqr::ADDRESS frfAddr;
 	TraceDqr::ADDRESS pc;
 	bool wvf;

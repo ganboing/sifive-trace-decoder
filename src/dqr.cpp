@@ -10761,6 +10761,7 @@ TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 	srec->valid = false;
 	srec->line = l;
 	srec->haveFRF = false;
+	srec->haveVRF = false;
 
 	// No syntax errors until find first line that starts with 'C'
 
@@ -10828,6 +10829,113 @@ TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 	}
 
 	if (strncmp("vrf",&lp[ci],3) == 0) {
+		ci += 3;
+
+		if (lp[ci] != '[') {
+			printf("Simulator::parseLine(): syntax error. Execpted '[' after vrf\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		srec->wReg = strtoull(&lp[ci],&ep,16);
+
+		if (&lp[ci] == ep) {
+			printf("Simulator::parseLine(): syntax error parsing vrf register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci = ep - lp;
+
+		if (lp[ci] != ']') {
+			printf("Simulator::parseLine(): syntax error. Expected ']' after vr register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != '=') {
+			printf("Simulator::parseLine(): syntax error. Expected '=' after frf register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != '[') {
+			printf("Simulator::parseLine(): syntax error. Expected '[' after vrf[%d]=\n",srec->wReg);
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		// have the vector register value here in hex. What to big to put anywhere. Just scan it for now
+
+		while ((lp[ci] != ']') && (lp[ci] != 0)) {
+			ci += 1;
+		}
+
+		if (lp[ci] != ']') {
+			printf("Simulator::parseLine(): syntax error parsing vrf value\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		if (lp[ci] != '[') {
+			printf("Simulator::parseLine(): syntax error parsing vrf value\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while ((lp[ci] != ']') && (lp[ci] != 0)) {
+			ci += 1;
+		}
+
+		if (lp[ci] != ']') {
+			printf("Simulator::parseLine(): syntax error parsing vrf value\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != 0) {
+			printf("Simulator::parseLine(): extra input on end of line parsing vrf; ignoring\n");
+		}
+
+		// don't set srec->valid to true because frf records are different
+
+		srec->haveVRF = true;
+		srec->validLine = true;
+
 		return TraceDqr::DQERR_OK;
 	}
 
@@ -11637,7 +11745,7 @@ TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage 
 						done = true;
 					}
 				}
-				else if (nextSrec.validLine && nextSrec.haveFRF) {
+				else if (nextSrec.validLine && (nextSrec.haveFRF || nextSrec.haveVRF)) {
 					// for now, just ignore frf records. Don't update time because cycle
 					// count time for frf records does not seem to be associated with an
 					// instruction
