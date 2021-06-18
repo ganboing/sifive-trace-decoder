@@ -1167,6 +1167,7 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
   disassembler = nullptr;
   caTrace      = nullptr;
   counts       = nullptr;//delete this line if compile error
+  cutPath      = nullptr;
 
   syncCount = 0;
   caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -1370,6 +1371,11 @@ void Trace::cleanUp()
 		elfReader = nullptr;
 	}
 
+	if (cutPath != nullptr) {
+		delete [] cutPath;
+		cutPath = nullptr;
+	}
+
 	// do not delete the symtab object!! It is the same symtab object type the elfReader object
 	// contains, and deleting the elfRead above will delete the symtab object below!
 
@@ -1451,9 +1457,38 @@ TraceDqr::DQErr Trace::setTraceType(TraceDqr::TraceType tType)
 TraceDqr::DQErr Trace::setPathType(TraceDqr::pathType pt)
 {
 	if (disassembler != nullptr) {
-		disassembler->setPathType(pt);
+		TraceDqr::DQErr rc;
 
-		return TraceDqr::DQERR_OK;
+		rc = disassembler->setPathType(pt);
+
+		status = rc;
+		return rc;
+	}
+
+	return TraceDqr::DQERR_ERR;
+}
+
+TraceDqr::DQErr Trace::stripSrcPath(char *cutPath)
+{
+	if (this->cutPath != nullptr) {
+		delete [] this->cutPath;
+		this->cutPath = nullptr;
+	}
+
+	if (cutPath != nullptr) {
+		int l = strlen(cutPath)+1;
+
+		this->cutPath = new char [l];
+		strcpy(this->cutPath,cutPath);
+	}
+
+	if (disassembler != nullptr) {
+		TraceDqr::DQErr rc;
+
+		rc = disassembler->stripSrcPath(cutPath);
+
+		status = rc;
+		return rc;
 	}
 
 	return TraceDqr::DQERR_ERR;
@@ -1517,6 +1552,15 @@ TraceDqr::DQErr Trace::setLabelMode(bool labelsAreFuncs)
 		status = TraceDqr::DQERR_ERR;
 
 		return status;
+	}
+
+	TraceDqr::DQErr rc;
+
+	rc = disassembler->stripSrcPath(cutPath);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+
+		return rc;
 	}
 
 	status = TraceDqr::DQERR_OK;

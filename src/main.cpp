@@ -41,7 +41,7 @@ static void usage(char *name)
 	printf("           [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]\n");
 	printf("           [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]\n");
 	printf("           [-noanalytics] [-freq nn] [-tssize=n] [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n]\n");
-	printf("           [-s file] [-r addr] [-labels] [-nolables] [-debug] [-nodebug] [-v] [-h]\n");
+	printf("           [-cutpath=<base path>] [-s file] [-r addr] [-labels] [-nolables] [-debug] [-nodebug] [-v] [-h]\n");
 	printf("\n");
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
@@ -53,6 +53,10 @@ static void usage(char *name)
 	printf("-htm:         Specify the type of the trace file as htm (history trace messages).\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
+	printf("-cutpath=<base path>: When searching for source files, <base path> is removed from the path name found in the\n");
+	printf("              elf file for the source file name. This allows having a local copy of the source file sub-tree in the\n");
+	printf("              folder the trace decoder is executed from. If <base path> is not part of the file location, the original\n");
+	printf("              source path is used.\n");
 	printf("-src:         Enable display of source lines in output if available (on by default).\n");
 	printf("-nosrc:       Disable display of source lines in output.\n");
 	printf("-file:        Display source file information in output (on by default).\n");
@@ -201,6 +205,7 @@ int main(int argc, char *argv[])
 	bool labelFlag = true;
 	TraceDqr::CATraceType caType = TraceDqr::CATRACE_NONE;
 	TraceDqr::TraceType traceType = TraceDqr::TRACETYPE_BTM;
+	char *cutPath = nullptr;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -326,6 +331,17 @@ int main(int argc, char *argv[])
 
 				if (strip_flag[strlen(strip_flag)] == '"') {
 					strip_flag[strlen(strip_flag)] = 0;
+				}
+			}
+		}
+		else if (strncmp("-cutpath=",argv[i],strlen("-cutpath=")) == 0) {
+			cutPath = argv[i]+strlen("-cutpath=");
+
+			if (cutPath[0] == '"') {
+				cutPath += 1;
+
+				if (cutPath[strlen(cutPath)] == '"') {
+					cutPath[strlen(cutPath)] = 0;
 				}
 			}
 		}
@@ -682,6 +698,16 @@ int main(int argc, char *argv[])
 #endif // foodog
 		trace->setTSSize(tssize);
 		trace->setPathType(pt);
+
+		if (cutPath != nullptr) {
+			TraceDqr::DQErr rc;
+
+			rc = trace->stripSrcPath(cutPath);
+			if (rc != TraceDqr::DQERR_OK) {
+				printf("Error: Could not set source path strip\n");
+				return 1;
+			}
+		}
 
 		// NLS is on by default when the trace object is created. Only
 		// set the print options if something has changed

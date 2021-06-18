@@ -704,10 +704,15 @@ fileReader::fileReader(/*paths*/)
 {
 	lastFile = nullptr;
 	files = nullptr;
+	cutPath = nullptr;
 }
 
 fileReader::~fileReader()
 {
+	if (cutPath != nullptr) {
+		delete [] cutPath;
+	}
+
 	for (fileList *fl = files; fl != nullptr;) {
 		fileList *nextFl = fl->next;
 
@@ -744,42 +749,126 @@ fileReader::fileList *fileReader::readFile(const char *file)
 {
 	assert(file != nullptr);
 
+	std::ifstream  f;
 	const char *original_file_name = file;
+	char cpDrive = 0;
+	char fnDrive = 0;
 
-	std::ifstream  f(file, std::ifstream::binary);
+	if ((cutPath != nullptr) && (cutPath[0] != 0)) {
+		// the plan is to strip off the cutpath portion of the file name and try to open the file
+		// if that doesn't work, try the original file name
+		// if that doesn't work, try just the file name with no path info
 
-	if (!f) {
-//		printf("Error: readFile(): could not open file %s for input\n",file);
+		int ci = 0; // cut path index
+		int fi = 0; // file name inmdex
 
-		// try again after stripping off path
+		// the tricky part is if this is windows and there is a drive designator, handle that
+		// the cut path may or may not have a drive designator.
+		// Unix-like OSs don't mess with such silly stuff
 
-		int l = -1;
+		// check for a drive designator on the cut path string
 
-		for (int i = 0; file[i] != 0; i++) {
-			if ((file[i] == '/') || (file[i] == '\\')) {
-				l = i;
+		if ((cutPath[0] != 0) && (cutPath[1] == ':')) {
+			if ((cutPath[0] >= 'a') && (cutPath[0] <= 'z')) {
+				cpDrive = 'A' + (cutPath[0] - 'a');
+				ci = 2;
+			}
+			else if ((cutPath[0] >= 'A') && (cutPath[0] <= 'Z')) {
+				cpDrive = cutPath[0];
+				ci = 2;
 			}
 		}
 
-		if (l != -1) {
-			file = &file[l+1];
-			f.open(file, std::ifstream::binary);
+		// check for a drive designator on the file name string
+
+		if ((file[0] != 0) && (file[1] == ':')) {
+			if ((file[0] >= 'a') && (file[0] <= 'z')) {
+				fnDrive = 'A' + (file[0] - 'a');
+				fi = 2;
+			}
+			else if ((file[0] >= 'A') && (file[0] <= 'Z')) {
+				fnDrive = file[0];
+				fi = 2;
+			}
+		}
+
+		// if there are drive designators for both, they must match. If there are no drive
+		// designators, they match. If there is a drive designators for file and none for cutpath
+		// and the drive designtor for file is 'C:', they match.
+
+		bool match = true;
+
+		if (cpDrive == fnDrive) {
+			// have a match. Either neither has a drive, or both have the same drive
+		}
+		else if ((cpDrive == 0) && (fnDrive == 'C')) {
+			// have a match. Default to cpDrive of 'C' if nont specified.
+		}
+		else {
+			// no match
+			match = false;
+		}
+
+		/* \ matches /, / matches \ */
+
+		while (match && (cutPath[ci] != 0) && (file[fi] != 0)) {
+			if (cutPath[ci] == file[fi]) {
+				ci += 1;
+				fi += 1;
+			}
+			else if ((cutPath[ci] == '/') && (file[fi] =='\\')) {
+				ci += 1;
+				fi += 1;
+			}
+			else if ((cutPath[ci] == '\\') && (file[fi] == '/')) {
+				ci += 1;
+				fi += 1;
+			}
+			else {
+				match = false;
+			}
+		}
+
+		if (cutPath[ci] != 0) {
+			match = false;
+		}
+
+//		printf("cutPath: %s\n",cutPath);
+//		printf("file: %s\n",file);
+//
+//		if (match) {
+//			printf("match!\n");
+//
+//			printf("remaining path: %s\n",&file[fi]);
+//		}
+//		else {
+//			printf("no match!\n");
+//		}
+
+		f.open(&file[fi], std::ifstream::binary);
+	}
+	else {
+		f.open(file, std::ifstream::binary);
+
+		if (!f) {
+	//		printf("Error: readFile(): could not open file %s for input\n",file);
+
+			// try again after stripping off path
+
+			int l = -1;
+
+			for (int i = 0; file[i] != 0; i++) {
+				if ((file[i] == '/') || (file[i] == '\\')) {
+					l = i;
+				}
+			}
+
+			if (l != -1) {
+				file = &file[l+1];
+				f.open(file, std::ifstream::binary);
+			}
 		}
 	}
-
-	// could put another try here is !f is true, such as searching a provided path?
-
-	// if (!f) {
-	//    char fn[256];
-	//
-	//    strcpy(fn,path);
-	//    if ((path[strlen(path)] != '/') && (path[strlen(path)] != '\\')) {
-	//        strcat(fn,'/');
-	//    }
-	//    strcat(fn,file);	// file is potentially adjusted above]
-	//
-	//    f.open(fn, ifsteam::binary);
-	//  }
 
 	fileList *fl = new fileList;
 
@@ -914,6 +1003,25 @@ fileReader::fileList *fileReader::findFile(const char *file)
 	return fp;
 }
 
+TraceDqr::DQErr fileReader::stripSrcPath(char *cutPath)
+{
+	if (this->cutPath != nullptr) {
+		delete [] this->cutPath;
+		this->cutPath = nullptr;
+	}
+
+	if (cutPath == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	int l = strlen(cutPath) + 1;
+
+	this->cutPath = new char [l];
+
+	strcpy(this->cutPath,cutPath);
+
+	return TraceDqr::DQERR_OK;
+}
 
 Symtab::Symtab(bfd *abfd)
 {
@@ -8371,6 +8479,8 @@ ObjFile::ObjFile(char *ef_name)
 		return;
 	}
 
+	cutPath = nullptr;
+
 	status = TraceDqr::DQERR_OK;
 
     // get symbol table
@@ -8396,6 +8506,11 @@ ObjFile::~ObjFile()
 
 void ObjFile::cleanUp()
 {
+	if (cutPath != nullptr) {
+		delete [] cutPath;
+		cutPath = nullptr;
+	}
+
 	if (elfReader != nullptr) {
 		delete elfReader;
 		elfReader = nullptr;
@@ -8405,6 +8520,32 @@ void ObjFile::cleanUp()
 		delete disassembler;
 		disassembler = nullptr;
 	}
+}
+
+TraceDqr::DQErr ObjFile::stripSrcPath(char *cutPath)
+{
+	if (this->cutPath != nullptr) {
+		delete [] this->cutPath;
+		this->cutPath = nullptr;
+	}
+
+	if (cutPath != nullptr) {
+		int l = strlen(cutPath)+1;
+		this->cutPath = new char [l];
+
+		strcpy(this->cutPath,cutPath);
+	}
+
+	if (disassembler != nullptr) {
+		TraceDqr::DQErr rc;
+
+		rc = disassembler->stripSrcPath(cutPath);
+
+		status = rc;
+		return rc;
+	}
+
+	return TraceDqr::DQERR_ERR;
 }
 
 TraceDqr::DQErr ObjFile::sourceInfo(TraceDqr::ADDRESS addr,Instruction &instInfo,Source &srcInfo)
@@ -8470,6 +8611,14 @@ TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
 		status = TraceDqr::DQERR_ERR;
 
 		return status;
+	}
+
+	TraceDqr::DQErr rc;
+
+	rc = disassembler->stripSrcPath(cutPath);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+		return rc;
 	}
 
 	status = TraceDqr::DQERR_OK;
@@ -8750,6 +8899,19 @@ TraceDqr::DQErr Disassembler::setPathType(TraceDqr::pathType pt)
 	return rc;
 }
 
+TraceDqr::DQErr Disassembler::stripSrcPath(char *cutPath)
+{
+	if (fileReader != nullptr) {
+		TraceDqr::DQErr rc;
+
+		rc = fileReader->stripSrcPath(cutPath);
+
+		status = rc;
+		return rc;
+	}
+
+	return TraceDqr::DQERR_ERR;
+}
 int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size)
 {
 	assert(ins != nullptr);
