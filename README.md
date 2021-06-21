@@ -7,7 +7,7 @@ The process to create/capture a trace file is not covered here; only how to buil
 
 This document describes the SiFive trace-decoder, both how to build and how to use.
 
-The name of the stand-alone trace-decoder is `dqr` (for de-queuer). There is also a dynamic library created for both the Windows, Linux, and Mac OS X (dqr.dll, or libdqr.so).
+The name of the stand-alone trace-decoder is `dqr` (for de-queuer). There is also a dynamic library created for Windows, Linux, and Mac OS X (dqr.dll, or libdqr.so). Currently, Freedom Studio uses the  dynamic library to perform trace decodes.
 
 ### Licensing:
 
@@ -41,6 +41,20 @@ These libraries, along with much more, have been ported to RISC-V by SiFive, and
 https://github.com/sifive/riscv-binutils-gdb
 
 The binaries for these libraries for all supported platforms are included in this distribution in the lib folders.
+
+### New since last update
+
+Support for simulator traces has been added. The simulator output file can be used in place of a Nexus trace file.
+
+Support for Cycle Accurate Instruction traces has been added, as well as support for Cycle Accurate Vector traces.
+
+Event trace decode is now functional, using the In Circuit Trace Nexus trace messages.
+
+Support for no-load-strings has been added. See the in trace-decoder/examples/itc_utils/README.md.
+
+Trace messages are now emitted in the same order as then appear in the trace file. Previously, there were times when the trace decoder would read ahead to resolve count information and some trace messages without count information could be returned early.
+
+Numerous bug fixes.
 
 ### New for version 0.90 (Koala release)
 
@@ -173,67 +187,87 @@ There is a `makefile.init` at the top level that contains the settings that appl
 Use `dqr -h` to display usage information. It will display something like:
 
 ```
-Usage: dqr -t tracefile -e elffile | -n basename) [-start mn] [-stop mn] [-src] [-nosrc]
-           [-file] [-nofile] [-dasm] [-nodasm] [-trace] [-notrace] [--strip=path] [-v] [-h]
-           [-32] [-64] [-32+] [-addrsep] [-noaddrsep]
+Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] [-btm | -htm] -basename name
+           [-srcbits=nn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]
+           [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]
+           [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]
+           [-noanalytics] [-freq nn] [-tssize=n] [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n]
+           [-s file] [-r addr] [-labels] [-nolables] [-debug] [-nodebug] [-v] [-h]
 
 -t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).
--e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).
--n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension
-              should be given. The extensions .rtd and .elf will be added to basename.
--start nm:    Select the Nexus trace message number to begin DQing at. The first message is 1. If -stop is
-              not specified, continues to last trace message.
--stop nm:     Select the last Nexus trace message number to end DQing at. If -start is not specified, starts
-              at trace message 1.
--src:         Enable display of source lines in output if available (on by default).
--nosrc:       Disable display of source lines in output.
--file:        Display source file information in output (on by default).
--nofile:      Do not display source file information.
--dasm:        Display disassembled code in output (on by default).
--nodasm:      Do not display disassembled code in output.
--func:        Display function name with srouce information (off by default).
--nofunc:      Do not display function information with source information.
--trace:       Display trace information in output (off by default).
--notrace:     Do not display trace information in output.
+-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).
+-s simfile:   Specify the name of the simulator output file. When using a simulator output file, cannot use
+              a tracefile (-t option). Can provide an elf file (-e option), but is not required.
+-ca cafile:   Specify the name of the cycle accurate trace file. Must also specify the -t and -e switches.
+-catype nn:   Specify the type of the CA trace file. Valid options are none, instruction, and vector
+-btm:         Specify the type of the trace file as btm (branch trace messages). On by default.
+-htm:         Specify the type of the trace file as htm (history trace messages).
+-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension
+              should be given. The extensions .rtd and .elf will be added to basename.
+-src:         Enable display of source lines in output if available (on by default).
+-nosrc:       Disable display of source lines in output.
+-file:        Display source file information in output (on by default).
+-nofile:      Do not display source file information.
+-dasm:        Display disassembled code in output (on by default).
+-nodasm:      Do not display disassembled code in output.
+-func:        Display function name with source information (off by default).
+-nofunc:      Do not display function information with source information.
+-trace:       Display trace information in output (off by default).
+-notrace:     Do not display trace information in output.
 --strip=path: Strip of the specified path when displaying source file name/path. Strips off all that matches.
-              Path may be enclosed in quotes if it contains spaces.
--itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatenated
-              and displayed as a string until a terminating \0 is found
--itcprint=n:  Display ITC channel n data as a null terminated string. Data for consectutie ITC channel n's will be
-              concatinated and display as a string until a terminating \n or \0 is found
--noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair
--addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and
-              cause the address field to be jagged. Overrides value address size read from elf file.
+              Path may be enclosed in quotes if it contains spaces.
+-itcprint:    Display ITC 0 data as a null terminated string. Data from consecutive ITC 0's will be concatenated
+              and displayed as a string until a terminating \0 is found. Also enables processing and display of
+              no-load-strings.
+-itcprint=n:  Display ITC channel n data as a null terminated string. Data for consecutive ITC channel n's will be
+              concatenated and display as a string until a terminating \n or \0 is found. Also enabled processing
+              and display of no-load-strings
+-noitcprint:  Display ITC 0 data as a normal ITC message; address, data pair
+-addrsize=n:  Display address as n bits (32 <= n <= 64). Values larger than n bits will print, but take more space and
+              cause the address field to be jagged. Overrides value address size read from elf file.
 -addrsize=n+: Display address as n bits (32 <= n <= 64) unless a larger address size is seen, in which case the address
-              size is increased to accommodate the larger value. When the address size is increased, it stays increased
-              (sticky) and will be again increased if a new larger value is encountered. Overrides the address size
-              read from the elf file.
--32:          Display addresses as 32 bits. Values lager than 32 bits will print, but take more space and cause
-              the address field to be jagged. Selected by default if elf file indicates 32 bit address size.
-              Specifying -32 overrides address size read from elf file
--32+          Display addresses as 32 bits until larger addresses are displayed and then adjust up to a larger
-              enough size to display the entire address. When addresses are adjusted up, they do not later adjust
-              back down, but stay at the new size unless they need to adjust up again. This is the default setting
-              if the elf file specifies > 32 bit address size (such as 64). Specifying -32+ overrides the value
-              read from the elf file
--64:          Display addresses as 64 bits. Overrides value read from elf file
--addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'
--noaddrsep:   Do not add a separator for addresses greater than 32 bit between the upper bits and the lower 32 bits
-              (default).
--srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 8. Setting srcbits to 0 disables
-              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.
--analytics:   Compute and display detail level 1 trace analytics.
+              size is increased to accommodate the larger value. When the address size is increased, it stays increased
+              (sticky) and will be again increased if a new larger value is encountered. Overrides the address size
+              read from the elf file.
+-32:          Display addresses as 32 bits. Values lager than 32 bits will print, but take more space and cause
+              the address field to be jagged. Selected by default if elf file indicates 32 bit address size.
+              Specifying -32 overrides address size read from elf file
+-32+          Display addresses as 32 bits until larger addresses are displayed and then adjust up to a larger
+              enough size to display the entire address. When addresses are adjusted up, they do not later adjust
+              back down, but stay at the new size unless they need to adjust up again. This is the default setting
+              if the elf file specifies > 32 bit address size (such as 64). Specifying -32+ overrides the value
+              read from the elf file
+-64:          Display addresses as 64 bits. Overrides value read from elf file
+-archsize=nn: Set the architecture size to 32 or 64 bits instead of getting it from the elf file
+-addrsep:     For addresses greater than 32 bits, display the upper bits separated from the lower 32 bits by a '-'
+-noaddrsep:   Do not add a separator for addresses greater than 32 bit between the upper bits and the lower 32 bits
+              (default).
+-srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 16. Setting srcbits to 0 disables
+              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.
+-labels:      Treat labels as functions for source information and disassembly. On by default.
+-nolables:    Do not use local labels as function names when returning source information or instruction location information.
+-analytics:   Compute and display detail level 1 trace analytics.
 -analytics=n: Specify the detail level for trace analytics display. N sets the level to either 0 (no analytics display)
-              1 (sort system totals), or 2 (display analytics by core).
+              1 (sort system totals), or 2 (display analytics by core).
 -noanaylitics: Do not compute and display trace analytics (default). Same as -analytics=0.
--freq nn      Specify the frequency in Hz for the timestamp tics clock. If specified, time instead
-              of tics will be displayed.
--callreturn   Annotate calls, returns, and exceptions
+-freq nn:     Specify the frequency in Hz for the timestamp tics clock. If specified, time instead
+              of tics will be displayed.
+-tssize=n:    Specify size in bits of timestamp counter; used for timestamp wrap
+-callreturn:  Annotate calls, returns, and exceptions
 -nocallreturn Do not annotate calls, returns, exceptions (default)
--branches     Annotate conditional branches with taken or not taken information
--nobrnaches   Do not annotate conditional branches with taken or not taken information (default)
--v:           Display the version number of the DQer and exit.
--h:           Display this usage information.
+-branches:    Annotate conditional branches with taken or not taken information
+-nobrnaches:  Do not annotate conditional branches with taken or not taken information (default)
+-pathunix:    Show all file paths using unix-type '/' path separators (default)
+              Also cleans up path, removing // -> /, /./ -> /, and uplevels for each /../
+-pathwindows: Show all file paths using windows-type '\' path separators
+              Also cleans up path, removing // -> /, /./ -> /, and uplevels for each /../
+-pathraw:     Show all file path in the format stored in the elf file
+-msglevel=n:  Set the Nexus trace message detail level. n must be >= 0, <= 3
+-r addr:      Display the label information for the address specified for the elf file specified
+-debug:       Display some debug information for the trace to aid in debugging the trace decoder
+-nodebug:     Do not display any debug information for the trace decoder
+-v:           Display the version number of the DQer and exit.
+-h:           Display this usage information.
 ```
 
 Besides using the trace-decoder from inside Freedom Studio, the most common way to use the program is:

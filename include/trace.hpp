@@ -123,8 +123,10 @@ public:
 	fileReader(/*paths?*/);
 	~fileReader();
 
+	TraceDqr::DQErr stripSrcPath(char *cutPath);
 	fileList *findFile(const char *file);
 private:
+	char *cutPath;
 	fileList *readFile(const char *file);
 
 	fileList *lastFile;
@@ -196,7 +198,7 @@ public:
 
 class ITCPrint {
 public:
-	ITCPrint(int numCores,int buffSize,int channel,TraceDqr::nlStrings *nlsStrings);
+	ITCPrint(int itcPrintOpts,int numCores,int buffSize,int channel,TraceDqr::nlStrings *nlsStrings);
 	~ITCPrint();
 	bool print(uint8_t core, uint32_t address, uint32_t data);
 	bool print(uint8_t core, uint32_t address, uint32_t data, TraceDqr::TIMESTAMP tstamp);
@@ -214,6 +216,7 @@ private:
 	TsList *consumeTerminatedTsList(int core);
 	TsList *consumeOldestTsList(int core);
 
+	int itcOptFlags;
 	int numCores;
 	int buffSize;
 	int printChannel;
@@ -302,6 +305,7 @@ public:
 	Source      getSourceInfo() { return source; }
 
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
+	TraceDqr::DQErr stripSrcPath(char *cutPath);
 
 	TraceDqr::DQErr getStatus() {return status;}
 

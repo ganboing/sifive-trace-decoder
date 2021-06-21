@@ -161,6 +161,12 @@ public:
   } ICTControl;
 
   typedef enum {
+	  ITC_OPT_NONE = 0,
+	  ITC_OPT_PRINT = 1,
+	  ITC_OPT_NLS = 2,
+  } ITCOptions;
+
+  typedef enum {
   	BTYPE_INDIRECT  = 0,
   	BTYPE_EXCEPTION = 1,
   	BTYPE_HARDWARE  = 2,
@@ -739,6 +745,8 @@ public:
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
+	TraceDqr::DQErr stripSrcPath(char *cutPath);
+
 	TraceDqr::DQErr getSymbolByName(char *symName,TraceDqr::ADDRESS &addr);
 	TraceDqr::DQErr parseNLSStrings(TraceDqr::nlStrings (&nlsStrings)[32]);
 
@@ -746,7 +754,7 @@ public:
 
 private:
 	TraceDqr::DQErr        status;
-
+    char                  *cutPath;
 	class ElfReader       *elfReader;
 	class Disassembler    *disassembler;
 };
@@ -773,10 +781,11 @@ public:
 #endif // foodog
     TraceDqr::DQErr setTraceType(TraceDqr::TraceType tType);
 	TraceDqr::DQErr setTSSize(int size);
-	TraceDqr::DQErr setITCPrintOptions(int buffSize,int channel);
+	TraceDqr::DQErr setITCPrintOptions(int intFlags,int buffSize,int channel);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 	TraceDqr::DQErr setCATraceFile(char *caf_name,TraceDqr::CATraceType catype);
 
+	TraceDqr::DQErr stripSrcPath(char *cutPath);
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
 	enum TraceFlags {
@@ -837,7 +846,9 @@ private:
 	class ElfReader       *elfReader;
 	class Symtab          *symtab;
 	class Disassembler    *disassembler;
+	char                  *cutPath;
 	class ITCPrint        *itcPrint;
+	TraceDqr::nlStrings   *nlsStrings;
 	TraceDqr::ADDRESS      currentAddress[DQR_MAXCORES];
 	TraceDqr::ADDRESS	   lastFaddr[DQR_MAXCORES];
 	TraceDqr::TIMESTAMP    lastTime[DQR_MAXCORES];
@@ -892,6 +903,7 @@ public:
 	uint32_t cycles;
 	int valid;
 	bool haveFRF;
+	bool haveVRF;
 	TraceDqr::ADDRESS frfAddr;
 	TraceDqr::ADDRESS pc;
 	bool wvf;

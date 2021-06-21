@@ -704,10 +704,15 @@ fileReader::fileReader(/*paths*/)
 {
 	lastFile = nullptr;
 	files = nullptr;
+	cutPath = nullptr;
 }
 
 fileReader::~fileReader()
 {
+	if (cutPath != nullptr) {
+		delete [] cutPath;
+	}
+
 	for (fileList *fl = files; fl != nullptr;) {
 		fileList *nextFl = fl->next;
 
@@ -744,42 +749,126 @@ fileReader::fileList *fileReader::readFile(const char *file)
 {
 	assert(file != nullptr);
 
+	std::ifstream  f;
 	const char *original_file_name = file;
+	char cpDrive = 0;
+	char fnDrive = 0;
 
-	std::ifstream  f(file, std::ifstream::binary);
+	if ((cutPath != nullptr) && (cutPath[0] != 0)) {
+		// the plan is to strip off the cutpath portion of the file name and try to open the file
+		// if that doesn't work, try the original file name
+		// if that doesn't work, try just the file name with no path info
 
-	if (!f) {
-//		printf("Error: readFile(): could not open file %s for input\n",file);
+		int ci = 0; // cut path index
+		int fi = 0; // file name inmdex
 
-		// try again after stripping off path
+		// the tricky part is if this is windows and there is a drive designator, handle that
+		// the cut path may or may not have a drive designator.
+		// Unix-like OSs don't mess with such silly stuff
 
-		int l = -1;
+		// check for a drive designator on the cut path string
 
-		for (int i = 0; file[i] != 0; i++) {
-			if ((file[i] == '/') || (file[i] == '\\')) {
-				l = i;
+		if ((cutPath[0] != 0) && (cutPath[1] == ':')) {
+			if ((cutPath[0] >= 'a') && (cutPath[0] <= 'z')) {
+				cpDrive = 'A' + (cutPath[0] - 'a');
+				ci = 2;
+			}
+			else if ((cutPath[0] >= 'A') && (cutPath[0] <= 'Z')) {
+				cpDrive = cutPath[0];
+				ci = 2;
 			}
 		}
 
-		if (l != -1) {
-			file = &file[l+1];
-			f.open(file, std::ifstream::binary);
+		// check for a drive designator on the file name string
+
+		if ((file[0] != 0) && (file[1] == ':')) {
+			if ((file[0] >= 'a') && (file[0] <= 'z')) {
+				fnDrive = 'A' + (file[0] - 'a');
+				fi = 2;
+			}
+			else if ((file[0] >= 'A') && (file[0] <= 'Z')) {
+				fnDrive = file[0];
+				fi = 2;
+			}
+		}
+
+		// if there are drive designators for both, they must match. If there are no drive
+		// designators, they match. If there is a drive designators for file and none for cutpath
+		// and the drive designtor for file is 'C:', they match.
+
+		bool match = true;
+
+		if (cpDrive == fnDrive) {
+			// have a match. Either neither has a drive, or both have the same drive
+		}
+		else if ((cpDrive == 0) && (fnDrive == 'C')) {
+			// have a match. Default to cpDrive of 'C' if nont specified.
+		}
+		else {
+			// no match
+			match = false;
+		}
+
+		/* \ matches /, / matches \ */
+
+		while (match && (cutPath[ci] != 0) && (file[fi] != 0)) {
+			if (cutPath[ci] == file[fi]) {
+				ci += 1;
+				fi += 1;
+			}
+			else if ((cutPath[ci] == '/') && (file[fi] =='\\')) {
+				ci += 1;
+				fi += 1;
+			}
+			else if ((cutPath[ci] == '\\') && (file[fi] == '/')) {
+				ci += 1;
+				fi += 1;
+			}
+			else {
+				match = false;
+			}
+		}
+
+		if (cutPath[ci] != 0) {
+			match = false;
+		}
+
+//		printf("cutPath: %s\n",cutPath);
+//		printf("file: %s\n",file);
+//
+//		if (match) {
+//			printf("match!\n");
+//
+//			printf("remaining path: %s\n",&file[fi]);
+//		}
+//		else {
+//			printf("no match!\n");
+//		}
+
+		f.open(&file[fi], std::ifstream::binary);
+	}
+	else {
+		f.open(file, std::ifstream::binary);
+
+		if (!f) {
+	//		printf("Error: readFile(): could not open file %s for input\n",file);
+
+			// try again after stripping off path
+
+			int l = -1;
+
+			for (int i = 0; file[i] != 0; i++) {
+				if ((file[i] == '/') || (file[i] == '\\')) {
+					l = i;
+				}
+			}
+
+			if (l != -1) {
+				file = &file[l+1];
+				f.open(file, std::ifstream::binary);
+			}
 		}
 	}
-
-	// could put another try here is !f is true, such as searching a provided path?
-
-	// if (!f) {
-	//    char fn[256];
-	//
-	//    strcpy(fn,path);
-	//    if ((path[strlen(path)] != '/') && (path[strlen(path)] != '\\')) {
-	//        strcat(fn,'/');
-	//    }
-	//    strcat(fn,file);	// file is potentially adjusted above]
-	//
-	//    f.open(fn, ifsteam::binary);
-	//  }
 
 	fileList *fl = new fileList;
 
@@ -914,6 +1003,25 @@ fileReader::fileList *fileReader::findFile(const char *file)
 	return fp;
 }
 
+TraceDqr::DQErr fileReader::stripSrcPath(char *cutPath)
+{
+	if (this->cutPath != nullptr) {
+		delete [] this->cutPath;
+		this->cutPath = nullptr;
+	}
+
+	if (cutPath == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	int l = strlen(cutPath) + 1;
+
+	this->cutPath = new char [l];
+
+	strcpy(this->cutPath,cutPath);
+
+	return TraceDqr::DQERR_OK;
+}
 
 Symtab::Symtab(bfd *abfd)
 {
@@ -1424,7 +1532,7 @@ TsList::~TsList()
 {
 }
 
-ITCPrint::ITCPrint(int numCores, int buffSize,int channel,TraceDqr::nlStrings *nlsStrings)
+ITCPrint::ITCPrint(int itcPrintOpts,int numCores, int buffSize,int channel,TraceDqr::nlStrings *nlsStrings)
 {
 	assert((numCores > 0) && (buffSize > 0));
 
@@ -1432,6 +1540,8 @@ ITCPrint::ITCPrint(int numCores, int buffSize,int channel,TraceDqr::nlStrings *n
 	this->buffSize = buffSize;
 	this->printChannel = channel;
 	this->nlsStrings = nlsStrings;
+
+	itcOptFlags = itcPrintOpts;
 
 	pbuff = new char*[numCores];
 
@@ -1468,6 +1578,8 @@ ITCPrint::ITCPrint(int numCores, int buffSize,int channel,TraceDqr::nlStrings *n
 
 ITCPrint::~ITCPrint()
 {
+	nlsStrings = nullptr; // don't delete this here - it is part of the trace object
+
 	if (pbuff != nullptr) {
 		for (int i = 0; i < numCores; i++) {
 			if (pbuff[i] != nullptr) {
@@ -1478,18 +1590,6 @@ ITCPrint::~ITCPrint()
 
 		delete [] pbuff;
 		pbuff = nullptr;
-	}
-
-	if (nlsStrings != nullptr) {
-		for (int i = 0; i < 32; i++) {
-			if (nlsStrings[i].format != nullptr) {
-				delete [] nlsStrings[i].format;
-				nlsStrings[i].format = nullptr;
-			}
-		}
-
-		delete [] nlsStrings;
-		nlsStrings = nullptr;
 	}
 
 	if (numMsgs != nullptr) {
@@ -1566,239 +1666,245 @@ bool ITCPrint::print(uint8_t core, uint32_t addr, uint32_t data,TraceDqr::TIMEST
 
 	channel = addr / 4;
 
-	if (((addr & 0x03) == 0) && (nlsStrings != nullptr) && (nlsStrings[channel].format != nullptr)) {
-		int args[4];
-		char dst[256];
-		int dstLen = 0;
+	if (itcOptFlags & TraceDqr::ITC_OPT_NLS) {
+		if (((addr & 0x03) == 0) && (nlsStrings != nullptr) && (nlsStrings[channel].format != nullptr)) {
+			int args[4];
+			char dst[256];
+			int dstLen = 0;
 
-		// have a no-load-string print
+			// have a no-load-string print
 
-		// need to get args for print
+			// need to get args for print
 
-		switch (nlsStrings[channel].nf) {
-		case 0:
-			dstLen = sprintf(dst,nlsStrings[channel].format);
-			break;
-		case 1:
-			dstLen = sprintf(dst,nlsStrings[channel].format,data);
-			break;
-		case 2:
-			for (int i = 0; i < 2; i++) {
-				if (nlsStrings[channel].signedMask & (1 << i)) {
-					// signed
-					args[i] = (int16_t)(data >> ((1-i) * 16));
+			switch (nlsStrings[channel].nf) {
+			case 0:
+				dstLen = sprintf(dst,nlsStrings[channel].format);
+				break;
+			case 1:
+				dstLen = sprintf(dst,nlsStrings[channel].format,data);
+				break;
+			case 2:
+				for (int i = 0; i < 2; i++) {
+					if (nlsStrings[channel].signedMask & (1 << i)) {
+						// signed
+						args[i] = (int16_t)(data >> ((1-i) * 16));
+					}
+					else {
+						// unsigned
+						args[i] = (uint16_t)(data >> ((1-i) * 16));
+					}
 				}
-				else {
-					// unsigned
-					args[i] = (uint16_t)(data >> ((1-i) * 16));
+				dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1]);
+				break;
+			case 3:
+				args[0] = (data >> (32 - 11)) & 0x7ff; // 10 bit
+				args[1] = (data >> (32 - 22)) & 0x7ff; // 11 bit
+				args[2] = (data >> (32 - 32)) & 0x3ff; // 11 bit
+
+				if (nlsStrings[channel].signedMask & (1 << 0)) {
+					if (args[0] & 0x400) {
+						args[0] |= 0xfffff800;
+					}
+				}
+
+				if (nlsStrings[channel].signedMask & (1 << 1)) {
+					if (args[1] & 0x400) {
+						args[1] |= 0xfffff800;
+					}
+				}
+
+				if (nlsStrings[channel].signedMask & (1 << 2)) {
+					if (args[2] & 0x200) {
+						args[2] |= 0xfffffc00;
+					}
+				}
+
+				dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2]);
+				break;
+			case 4:
+				for (int i = 0; i < 4; i++) {
+					if (nlsStrings[channel].signedMask & (1 << i)) {
+						// signed
+						args[i] = (int8_t)(data >> ((3-i) * 8));
+					}
+					else {
+						// unsigned
+						args[i] = (uint8_t)(data >> ((3-i) * 8));
+					}
+				}
+				dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2],args[3]);
+				break;
+			default:
+				dstLen = sprintf(dst,"Error: invalid number of args for format string %d, %s",channel,nlsStrings[channel].format);
+				break;
+			}
+
+			if ((tsList[core] != nullptr) && (tsList[core]->terminated == false)) {
+				// terminate the current message
+
+				pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
+				pbi[core] += 1;
+
+				if (pbi[core] >= buffSize) {
+					pbi[core] = 0;
+				}
+
+				numMsgs[core] += 1;
+
+				tsList[core]->terminated = true;
+			}
+
+			// check free list for available struct
+
+			if (freeList != nullptr) {
+				workingtlp = freeList;
+				freeList = workingtlp->next;
+
+				workingtlp->terminated = false;
+				workingtlp->message = nullptr;
+			}
+			else {
+				workingtlp = new TsList();
+			}
+
+			if (tlp == nullptr) {
+				workingtlp->next = workingtlp;
+				workingtlp->prev = workingtlp;
+			}
+			else {
+				workingtlp->next = tlp;
+				workingtlp->prev = tlp->prev;
+
+				tlp->prev = workingtlp;
+				workingtlp->prev->next = workingtlp;
+			}
+
+			workingtlp->startTime = tstamp;
+		    workingtlp->endTime = tstamp;
+			workingtlp->message = &pbuff[core][pbi[core]];
+
+			tsList[core] = workingtlp;
+
+			// workingtlp now points to unterminated TSList object
+
+			int room = roomInITCPrintQ(core);
+
+			for (int i = 0; i < dstLen; i++ ) {
+				if (room >= 2) { // 2 because we need to make sure there is room for the nul termination
+					pbuff[core][pbi[core]] = dst[i];
+					pbi[core] += 1;
+					if (pbi[core] >= buffSize) {
+						pbi[core] = 0;
+					}
+					room -= 1;
 				}
 			}
-			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1]);
-			break;
-		case 3:
-			args[0] = (data >> (32 - 11)) & 0x7ff; // 10 bit
-			args[1] = (data >> (32 - 22)) & 0x7ff; // 11 bit
-			args[2] = (data >> (32 - 32)) & 0x3ff; // 11 bit
 
-			if (nlsStrings[channel].signedMask & (1 << 0)) {
-				if (args[0] & 0x400) {
-					args[0] |= 0xfffff800;
-				}
-			}
-
-			if (nlsStrings[channel].signedMask & (1 << 1)) {
-				if (args[1] & 0x400) {
-					args[1] |= 0xfffff800;
-				}
-			}
-
-			if (nlsStrings[channel].signedMask & (1 << 2)) {
-				if (args[2] & 0x200) {
-					args[2] |= 0xfffffc00;
-				}
-			}
-
-			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2]);
-			break;
-		case 4:
-			for (int i = 0; i < 4; i++) {
-				if (nlsStrings[channel].signedMask & (1 << i)) {
-					// signed
-					args[i] = (int8_t)(data >> ((3-i) * 8));
-				}
-				else {
-					// unsigned
-					args[i] = (uint8_t)(data >> ((3-i) * 8));
-				}
-			}
-			dstLen = sprintf(dst,nlsStrings[channel].format,args[0],args[1],args[2],args[3]);
-			break;
-		default:
-			dstLen = sprintf(dst,"Error: invalid number of args for format string %d, %s",channel,nlsStrings[channel].format);
-			break;
-		}
-
-		if ((tsList[core] != nullptr) && (tsList[core]->terminated == false)) {
-			// terminate the current message
-
-			pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
+			pbuff[core][pbi[core]] = 0;
 			pbi[core] += 1;
-
 			if (pbi[core] >= buffSize) {
 				pbi[core] = 0;
 			}
 
+			workingtlp->terminated = true;
 			numMsgs[core] += 1;
 
-			tsList[core]->terminated = true;
+			return true;
+		}
+	}
+
+	if (itcOptFlags & TraceDqr::ITC_OPT_PRINT) {
+		if ((addr < (uint32_t)printChannel*4) || (addr >= (((uint32_t)printChannel+1)*4))) {
+			// not writing to this itc channel
+
+			return false;
 		}
 
-		// check free list for available struct
+	    if ((tlp == nullptr) || tlp->terminated == true) {
+			// see if there is one on the free list before making a new one
 
-		if (freeList != nullptr) {
-			workingtlp = freeList;
-			freeList = workingtlp->next;
+			if (freeList != nullptr) {
+				workingtlp = freeList;
+				freeList = workingtlp->next;
+
+				workingtlp->terminated = false;
+				workingtlp->message = nullptr;
+			}
+			else {
+				workingtlp = new TsList();
+			}
+
+			if (tlp == nullptr) {
+				workingtlp->next = workingtlp;
+				workingtlp->prev = workingtlp;
+			}
+			else {
+				workingtlp->next = tlp;
+				workingtlp->prev = tlp->prev;
+
+				tlp->prev = workingtlp;
+				workingtlp->prev->next = workingtlp;
+			}
 
 			workingtlp->terminated = false;
-			workingtlp->message = nullptr;
-		}
-		else {
-			workingtlp = new TsList();
-		}
+			workingtlp->startTime = tstamp;
+			workingtlp->message = &pbuff[core][pbi[core]];
 
-		if (tlp == nullptr) {
-			workingtlp->next = workingtlp;
-			workingtlp->prev = workingtlp;
+			tsList[core] = workingtlp;
 		}
-		else {
-			workingtlp->next = tlp;
-			workingtlp->prev = tlp->prev;
+	    else {
+	    	workingtlp = tlp;
+	    }
 
-			tlp->prev = workingtlp;
-			workingtlp->prev->next = workingtlp;
-		}
+		// workingtlp now points to unterminated TSList object (in progress)
 
-		workingtlp->startTime = tstamp;
 	    workingtlp->endTime = tstamp;
-		workingtlp->message = &pbuff[core][pbi[core]];
 
-		tsList[core] = workingtlp;
-
-		// workingtlp now points to unterminated TSList object
-
+		char *p = (char *)&data;
 		int room = roomInITCPrintQ(core);
 
-		for (int i = 0; i < dstLen; i++ ) {
-			if (room >= 2) { // 2 because we need to make sure there is room for the nul termination
-				pbuff[core][pbi[core]] = dst[i];
+		for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
+			if (room >= 2) {
+				pbuff[core][pbi[core]] = p[i];
 				pbi[core] += 1;
 				if (pbi[core] >= buffSize) {
 					pbi[core] = 0;
 				}
 				room -= 1;
+
+				switch (p[i]) {
+				case 0:
+					numMsgs[core] += 1;
+
+					workingtlp->terminated = true;
+					break;
+				case '\n':
+				case '\r':
+					pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
+					pbi[core] += 1;
+					if (pbi[core] >= buffSize) {
+						pbi[core] = 0;
+					}
+					room -= 1;
+					numMsgs[core] += 1;
+
+					workingtlp->terminated = true;
+					break;
+				default:
+					break;
+				}
 			}
 		}
 
-		pbuff[core][pbi[core]] = 0;
-		pbi[core] += 1;
-		if (pbi[core] >= buffSize) {
-			pbi[core] = 0;
-		}
+		pbuff[core][pbi[core]] = 0; // make sure always null terminated. This may be a temporary null termination
 
-		workingtlp->terminated = true;
-		numMsgs[core] += 1;
+		// returning true means it was an itc print msg and has been processed
+		// false means it was not, and should be handled normally
 
 		return true;
 	}
 
-	if ((addr < (uint32_t)printChannel*4) || (addr >= (((uint32_t)printChannel+1)*4))) {
-		// not writing to this itc channel
-
-		return false;
-	}
-
-    if ((tlp == nullptr) || tlp->terminated == true) {
-		// see if there is one on the free list before making a new one
-
-		if (freeList != nullptr) {
-			workingtlp = freeList;
-			freeList = workingtlp->next;
-
-			workingtlp->terminated = false;
-			workingtlp->message = nullptr;
-		}
-		else {
-			workingtlp = new TsList();
-		}
-
-		if (tlp == nullptr) {
-			workingtlp->next = workingtlp;
-			workingtlp->prev = workingtlp;
-		}
-		else {
-			workingtlp->next = tlp;
-			workingtlp->prev = tlp->prev;
-
-			tlp->prev = workingtlp;
-			workingtlp->prev->next = workingtlp;
-		}
-
-		workingtlp->terminated = false;
-		workingtlp->startTime = tstamp;
-		workingtlp->message = &pbuff[core][pbi[core]];
-
-		tsList[core] = workingtlp;
-	}
-    else {
-    	workingtlp = tlp;
-    }
-
-	// workingtlp now points to unterminated TSList object (in progress)
-
-    workingtlp->endTime = tstamp;
-
-	char *p = (char *)&data;
-	int room = roomInITCPrintQ(core);
-
-	for (int i = 0; ((size_t)i < ((sizeof data) - (addr & 0x03))); i++ ) {
-		if (room >= 2) {
-			pbuff[core][pbi[core]] = p[i];
-			pbi[core] += 1;
-			if (pbi[core] >= buffSize) {
-				pbi[core] = 0;
-			}
-			room -= 1;
-
-			switch (p[i]) {
-			case 0:
-				numMsgs[core] += 1;
-
-				workingtlp->terminated = true;
-				break;
-			case '\n':
-			case '\r':
-				pbuff[core][pbi[core]] = 0;	// add a null termination after the eol
-				pbi[core] += 1;
-				if (pbi[core] >= buffSize) {
-					pbi[core] = 0;
-				}
-				room -= 1;
-				numMsgs[core] += 1;
-
-				workingtlp->terminated = true;
-				break;
-			default:
-				break;
-			}
-		}
-	}
-
-	// returning true means it was an itc print msg and has been processed
-	// false means it was not, and should be handled normally
-
-	pbuff[core][pbi[core]] = 0; // make sure always null terminated. This may be a temporary null termination
-
-	return true;
+	return false;
 }
 
 bool ITCPrint::haveITCPrintMsgs()
@@ -8373,6 +8479,8 @@ ObjFile::ObjFile(char *ef_name)
 		return;
 	}
 
+	cutPath = nullptr;
+
 	status = TraceDqr::DQERR_OK;
 
     // get symbol table
@@ -8398,6 +8506,11 @@ ObjFile::~ObjFile()
 
 void ObjFile::cleanUp()
 {
+	if (cutPath != nullptr) {
+		delete [] cutPath;
+		cutPath = nullptr;
+	}
+
 	if (elfReader != nullptr) {
 		delete elfReader;
 		elfReader = nullptr;
@@ -8407,6 +8520,32 @@ void ObjFile::cleanUp()
 		delete disassembler;
 		disassembler = nullptr;
 	}
+}
+
+TraceDqr::DQErr ObjFile::stripSrcPath(char *cutPath)
+{
+	if (this->cutPath != nullptr) {
+		delete [] this->cutPath;
+		this->cutPath = nullptr;
+	}
+
+	if (cutPath != nullptr) {
+		int l = strlen(cutPath)+1;
+		this->cutPath = new char [l];
+
+		strcpy(this->cutPath,cutPath);
+	}
+
+	if (disassembler != nullptr) {
+		TraceDqr::DQErr rc;
+
+		rc = disassembler->stripSrcPath(cutPath);
+
+		status = rc;
+		return rc;
+	}
+
+	return TraceDqr::DQERR_ERR;
 }
 
 TraceDqr::DQErr ObjFile::sourceInfo(TraceDqr::ADDRESS addr,Instruction &instInfo,Source &srcInfo)
@@ -8472,6 +8611,14 @@ TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
 		status = TraceDqr::DQERR_ERR;
 
 		return status;
+	}
+
+	TraceDqr::DQErr rc;
+
+	rc = disassembler->stripSrcPath(cutPath);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+		return rc;
 	}
 
 	status = TraceDqr::DQERR_OK;
@@ -8752,6 +8899,19 @@ TraceDqr::DQErr Disassembler::setPathType(TraceDqr::pathType pt)
 	return rc;
 }
 
+TraceDqr::DQErr Disassembler::stripSrcPath(char *cutPath)
+{
+	if (fileReader != nullptr) {
+		TraceDqr::DQErr rc;
+
+		rc = fileReader->stripSrcPath(cutPath);
+
+		status = rc;
+		return rc;
+	}
+
+	return TraceDqr::DQERR_ERR;
+}
 int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size)
 {
 	assert(ins != nullptr);
@@ -10763,6 +10923,7 @@ TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 	srec->valid = false;
 	srec->line = l;
 	srec->haveFRF = false;
+	srec->haveVRF = false;
 
 	// No syntax errors until find first line that starts with 'C'
 
@@ -10827,6 +10988,117 @@ TraceDqr::DQErr Simulator::parseLine(int l, SRec *srec)
 
 	while (lp[ci] == ' ') {
 		ci += 1;
+	}
+
+	if (strncmp("vrf",&lp[ci],3) == 0) {
+		ci += 3;
+
+		if (lp[ci] != '[') {
+			printf("Simulator::parseLine(): syntax error. Execpted '[' after vrf\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		srec->wReg = strtoull(&lp[ci],&ep,16);
+
+		if (&lp[ci] == ep) {
+			printf("Simulator::parseLine(): syntax error parsing vrf register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci = ep - lp;
+
+		if (lp[ci] != ']') {
+			printf("Simulator::parseLine(): syntax error. Expected ']' after vr register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != '=') {
+			printf("Simulator::parseLine(): syntax error. Expected '=' after frf register number\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != '[') {
+			printf("Simulator::parseLine(): syntax error. Expected '[' after vrf[%d]=\n",srec->wReg);
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		// have the vector register value here in hex. What to big to put anywhere. Just scan it for now
+
+		while ((lp[ci] != ']') && (lp[ci] != 0)) {
+			ci += 1;
+		}
+
+		if (lp[ci] != ']') {
+			printf("Simulator::parseLine(): syntax error parsing vrf value\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		if (lp[ci] != '[') {
+			printf("Simulator::parseLine(): syntax error parsing vrf value\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while ((lp[ci] != ']') && (lp[ci] != 0)) {
+			ci += 1;
+		}
+
+		if (lp[ci] != ']') {
+			printf("Simulator::parseLine(): syntax error parsing vrf value\n");
+			printf("Line %d:%d: '%s'\n",l,ci+1,lp);
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		ci += 1;
+
+		while (lp[ci] == ' ') {
+			ci += 1;
+		}
+
+		if (lp[ci] != 0) {
+			printf("Simulator::parseLine(): extra input on end of line parsing vrf; ignoring\n");
+		}
+
+		// don't set srec->valid to true because frf records are different
+
+		srec->haveVRF = true;
+		srec->validLine = true;
+
+		return TraceDqr::DQERR_OK;
 	}
 
 	if (strncmp("frf",&lp[ci],3) == 0) {
@@ -11635,7 +11907,7 @@ TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage 
 						done = true;
 					}
 				}
-				else if (nextSrec.validLine && nextSrec.haveFRF) {
+				else if (nextSrec.validLine && (nextSrec.haveFRF || nextSrec.haveVRF)) {
 					// for now, just ignore frf records. Don't update time because cycle
 					// count time for frf records does not seem to be associated with an
 					// instruction

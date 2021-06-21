@@ -1159,12 +1159,15 @@ int Trace::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstT
 
 Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq)
 {
+  status = TraceDqr::DQERR_OK;
+
   sfp          = nullptr;
   elfReader    = nullptr;
   symtab       = nullptr;
   disassembler = nullptr;
   caTrace      = nullptr;
   counts       = nullptr;//delete this line if compile error
+  cutPath      = nullptr;
 
   syncCount = 0;
   caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -1174,6 +1177,7 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
   traceType = TraceDqr::TRACETYPE_BTM;
 
   itcPrint = nullptr;
+  nlsStrings = nullptr;
 
   srcbits = srcBits;
 
@@ -1342,7 +1346,8 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 	  enterISR[i] = TraceDqr::isNone;
   }
 
-  status = TraceDqr::DQERR_OK;
+  status = setITCPrintOptions(TraceDqr::ITC_OPT_NLS,4096,0);
+
 }
 
 Trace::~Trace()
@@ -1366,6 +1371,11 @@ void Trace::cleanUp()
 		elfReader = nullptr;
 	}
 
+	if (cutPath != nullptr) {
+		delete [] cutPath;
+		cutPath = nullptr;
+	}
+
 	// do not delete the symtab object!! It is the same symtab object type the elfReader object
 	// contains, and deleting the elfRead above will delete the symtab object below!
 
@@ -1377,6 +1387,18 @@ void Trace::cleanUp()
 	if (itcPrint  != nullptr) {
 		delete itcPrint;
 		itcPrint = nullptr;
+	}
+
+	if (nlsStrings != nullptr) {
+		for (int i = 0; i < 32; i++) {
+			if (nlsStrings[i].format != nullptr) {
+				delete [] nlsStrings[i].format;
+				nlsStrings[i].format = nullptr;
+			}
+		}
+
+		delete [] nlsStrings;
+		nlsStrings = nullptr;
 	}
 
 	if (counts != nullptr) {
@@ -1435,9 +1457,38 @@ TraceDqr::DQErr Trace::setTraceType(TraceDqr::TraceType tType)
 TraceDqr::DQErr Trace::setPathType(TraceDqr::pathType pt)
 {
 	if (disassembler != nullptr) {
-		disassembler->setPathType(pt);
+		TraceDqr::DQErr rc;
 
-		return TraceDqr::DQERR_OK;
+		rc = disassembler->setPathType(pt);
+
+		status = rc;
+		return rc;
+	}
+
+	return TraceDqr::DQERR_ERR;
+}
+
+TraceDqr::DQErr Trace::stripSrcPath(char *cutPath)
+{
+	if (this->cutPath != nullptr) {
+		delete [] this->cutPath;
+		this->cutPath = nullptr;
+	}
+
+	if (cutPath != nullptr) {
+		int l = strlen(cutPath)+1;
+
+		this->cutPath = new char [l];
+		strcpy(this->cutPath,cutPath);
+	}
+
+	if (disassembler != nullptr) {
+		TraceDqr::DQErr rc;
+
+		rc = disassembler->stripSrcPath(cutPath);
+
+		status = rc;
+		return rc;
 	}
 
 	return TraceDqr::DQERR_ERR;
@@ -1501,6 +1552,15 @@ TraceDqr::DQErr Trace::setLabelMode(bool labelsAreFuncs)
 		status = TraceDqr::DQERR_ERR;
 
 		return status;
+	}
+
+	TraceDqr::DQErr rc;
+
+	rc = disassembler->stripSrcPath(cutPath);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+
+		return rc;
 	}
 
 	status = TraceDqr::DQERR_OK;
@@ -1658,40 +1718,32 @@ const char *Trace::getNextSymbolByAddress()
 	return symtab->getNextSymbolByAddress();
 }
 
-TraceDqr::DQErr Trace::setITCPrintOptions(int buffSize,int channel)
+TraceDqr::DQErr Trace::setITCPrintOptions(int itcFlags,int buffSize,int channel)
 {
 	if (itcPrint != nullptr) {
 		delete itcPrint;
 		itcPrint = nullptr;
 	}
 
-	// get the strings here, and give them to the itcprint object
+	if (itcFlags != TraceDqr::ITC_OPT_NONE) {
+		if ((nlsStrings == nullptr) && (elfReader != nullptr)) {
+			TraceDqr::DQErr rc;
 
-	TraceDqr::nlStrings *nlsStrings;
+			nlsStrings = new TraceDqr::nlStrings[32];
 
-	nlsStrings = nullptr;
+			rc = elfReader->parseNLSStrings(nlsStrings);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = rc;
 
-	if (elfReader != nullptr) {
-		TraceDqr::DQErr rc;
+				delete [] nlsStrings;
+				nlsStrings = nullptr;
 
-		nlsStrings = new TraceDqr::nlStrings[32];
-
-		rc = elfReader->parseNLSStrings(nlsStrings);
-		if (rc != TraceDqr::DQERR_OK) {
-			status = rc;
-
-			delete [] nlsStrings;
-			nlsStrings = nullptr;
-
-			return rc;
+				return rc;
+			}
 		}
 
-//		for (int i = 0; i < 32; i++) {
-//			printf("nlsStrings[%d]: %d  %02x %s\n",i,nlsStrings[i].nf,nlsStrings[i].signedMask,nlsStrings[i].format);
-//		}
+		itcPrint = new ITCPrint(itcFlags,1 << srcbits,buffSize,channel,nlsStrings);
 	}
-
-	itcPrint = new ITCPrint(1 << srcbits,buffSize,channel,nlsStrings);
 
 	return TraceDqr::DQERR_OK;
 }
@@ -4118,8 +4170,11 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				(*instInfo)->brFlags = brFlags;
 
 				if ((caTrace != nullptr) && (syncCount == 0)) {
+					// note: start signal is one cycle after execution begins. End signal is two cycles after end
+
 					(*instInfo)->timestamp = pipeCycles;
 					(*instInfo)->pipeCycles = eCycleCount[currentCore];
+
 					(*instInfo)->VIStartCycles = viStartCycles - prevCycle;
 					(*instInfo)->VIFinishCycles = viFinishCycles - prevCycle - 1;
 
