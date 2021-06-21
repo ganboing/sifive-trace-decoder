@@ -9,6 +9,8 @@ There are 32 ITC channels, but writing the upper 16 will map to the lower 16 wit
 
 Three helper functions to setup the itc channels are provided: `itc_enable()`, `itc_disable()`, and `itc_set_print_channel()`. Both  `itc_enable()` and `itc_disable()` take a single parameter, which channel to act upon, and enables or disables that channel for stimulus writes. Enabling or dissabling channels can also be done through the trace configuration tool in Freedom Studio. By default, all channels are disabled. The `itc_set_print_channel()` takes a channel number between 0 and 31, and subsequent `itc_puts()` and `itc_printf()` function calls will print to that channel, until the channel is changed using the `itc_set_print_channel()` again.
 
+Note: The itc_enable/dissable functions are for specific channels, and not to enable or disable itc functionality on the target. For that Freedom Studio or Sifive_trace.h can be used to enable ITC mode.
+
 
 ## int itc_enable(int channel)
 Enables one of the ITC stimmulus channels, 0-31, bassed of the value of the parameter. If the value `ITC_ALL_CHANNELS` is passed as the channel argument, all 32 channels will be enabled. Returns 1 if the specified channel is not in the range 0-31, otehrwise 0. 
@@ -48,7 +50,7 @@ Writes `data1:data2:data3:data4` to the ITC stimmulus register at the specified 
 
 ## Example:
 ### Example Code
-Below is an example program to demonstrate the functionality of itc_utils. 
+Below is an example program to demonstrate the functionality of itc_utils. If using Freedom Studio, ITC can be enabed through the trace control dialog instead of `using sifive_trace.h`.
 
 
 ```
@@ -56,6 +58,7 @@ Below is an example program to demonstrate the functionality of itc_utils.
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "itc_utils.h"
+#include "sifive_trace.h"
 #include <stdio.h>
 
 // No load string definitions for channels 1-5
@@ -68,6 +71,34 @@ Below is an example program to demonstrate the functionality of itc_utils.
 
 int main() {
 
+    // Use Sifive_Trace to enbale ITC on the target
+    // Create the register map objects.
+
+    #define traceBaseAddress 0x10000000
+
+    // create the trace memory map object, with one core
+
+    struct TraceRegMemMap volatile * const tmm[] = {(struct TraceRegMemMap*)traceBaseAddress};
+
+    #define caBaseAddress 0x1000f000
+
+    // create the cycle accurate trace memory map object
+
+    struct CaTraceRegMemMap volatile * const cmm[] = {(struct CaTraceRegMemMap*)caBaseAddress};
+
+    // set tfBaseAddress to zero to indicate that the funnel is not in use
+
+    #define tfBaseAddress 0
+
+    // create the trace funnel memory map object
+
+    struct TfTraceRegMemMap volatile * const fmm = (struct TfTraceRegMemMap*)tfBaseAddress;
+
+    // Enable ITC proccessing on core 0
+
+	setTeInstrumentation(0, TE_INSTRUMENTATION_ITC);
+
+    // use ITC_Utils to enable a specific channel (could also be done using Sifive_trace)
 	// Enable all ITC channels
 	itc_enable(ITC_ALL_CHANNELS);
 

@@ -2048,3 +2048,52 @@ int main() {
 
 }
 ```
+
+### Print ITC string using ITC-Util's itc_printf
+This example will print the ITC trace message `Hello World!` through the ITC stimulus register using channel 0.
+```
+#include "sifive_trace.h"
+#include "itc_utils.h"
+
+int main() {
+
+  // Create the register map objects.
+
+  #define traceBaseAddress 0x10000000
+
+  // create the trace memory map object, with one core
+
+  struct TraceRegMemMap volatile * const tmm[] = {(struct TraceRegMemMap*)traceBaseAddress};
+
+  #define caBaseAddress 0x1000f000
+
+  // create the cycle accurate trace memory map object
+
+  struct CaTraceRegMemMap volatile * const cmm[] = {(struct CaTraceRegMemMap*)caBaseAddress};
+
+  // set tfBaseAddress to zero to indicate that the funnel is not in use
+
+  #define tfBaseAddress 0
+
+  // create the trace funnel memory map object
+
+  struct TfTraceRegMemMap volatile * const fmm = (struct TfTraceRegMemMap*)tfBaseAddress;
+
+  // Enable ITC proccessing on core 0
+
+	setTeInstrumentation(0, TE_INSTRUMENTATION_ITC);
+
+  // Enable a specific ITC channel to write to
+
+  ItcEnableChannel(0, 0x0);
+
+  // Code 
+	
+  // Write 'Hello World!' to a specified ITC channel using ITC_Utils
+
+  itc_printf("Hello World!");
+
+  // Code 
+
+}
+```
