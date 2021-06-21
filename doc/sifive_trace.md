@@ -2030,6 +2030,10 @@ int main() {
 
   struct TfTraceRegMemMap volatile * const fmm = (struct TfTraceRegMemMap*)tfBaseAddress;
 
+  // Enable ITC proccessing on core 0
+
+	setTeInstrumentation(0, TE_INSTRUMENTATION_ITC);
+
   // Enable a specific ITC channel to write to
 
   ItcEnableChannel(0, 0x1);

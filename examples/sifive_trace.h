@@ -18,7 +18,7 @@ Value Replacement Macros
 #define TE_INSTRUCTION_HTM         6
 #define TE_INSTRUCTION_HTMSYNC     7
 
-// Values for intrumentation selection
+// Values for instrumentation selection
 #define TE_INSTRUMENTATION_NONE               0
 #define TE_INSTRUMENTATION_ITC                1
 #define TE_INSTRUMENTATION_OWNERSHIP          2
@@ -290,8 +290,8 @@ Register Manipulation
 #define setTeInstruction(core, opt)     (_setGeneric(getTeControl(core), 0x70, (opt), 0x4))
 #define getTeInstruction(core)          (_getGeneric(getTeControl(core), 0x70, 0x4))
 
-#define setTeIntrumentation(core, opt)  (_setGeneric(getTeControl(core), 0x180, (opt), 0x7))
-#define getTeIntrumentation(core)       (_getGeneric(getTeControl(core), 0x180, 0x7))
+#define setTeInstrumentation(core, opt)  (_setGeneric(getTeControl(core), 0x180, (opt), 0x7))
+#define getTeInstrumentation(core)       (_getGeneric(getTeControl(core), 0x180, 0x7))
 
 #define setTeStallOrOverflow(core, opt) (_setGeneric(getTeControl(core), 0x1000, (opt), 0xC))
 #define getTeStallOrOverflow(core)      (_getGeneric(getTeControl(core), 0x1000, 0xC))
@@ -849,7 +849,7 @@ Manual Tracing -- Can be either a single core, or all cores using TRACE_CORES_AL
 // helper function for macro below
 #define _traceConfig(core, inst, instru, overflow, stall, sow, srcInhib, maxBtm, maxInst, teSink){      \
     setTeInstruction(core, inst);                                                                       \
-    setTeIntrumentation(core, instru);                                                                  \
+    setTeInstrumentation(core, instru);                                                                 \
     setTeStallOrOverflow(core, overflow);                                                               \
     setTeStallEnable(core, stall);                                                                      \
     setTeStopOnWrap(core, sow);                                                                         \
@@ -1330,8 +1330,8 @@ Print Macros
             printf(" Reserved          |\n");                                                                                       \
             break;                                                                                                                  \
     }                                                                                                                               \
-    printf("|   8-7 | teInstrumentation |    %02X |", getTeIntrumentation(core));                                                   \
-    switch (getTeIntrumentation(core)){                                                                                             \
+    printf("|   8-7 | teInstrumentation |    %02X |", getTeInstrumentation(core));                                                  \
+    switch (getTeInstrumentation(core)){                                                                                            \
         case 0:                                                                                                                     \
             printf(" ITC Disabled      |\n");                                                                                       \
             break;                                                                                                                  \
