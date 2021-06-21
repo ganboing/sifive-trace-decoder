@@ -8615,10 +8615,12 @@ TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
 
 	TraceDqr::DQErr rc;
 
-	rc = disassembler->stripSrcPath(cutPath);
-	if (rc != TraceDqr::DQERR_OK) {
-		status = rc;
-		return rc;
+	if (cutPath != nullptr) {
+		rc = disassembler->stripSrcPath(cutPath);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return rc;
+		}
 	}
 
 	status = TraceDqr::DQERR_OK;

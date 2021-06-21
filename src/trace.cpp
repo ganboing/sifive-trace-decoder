@@ -1480,16 +1480,18 @@ TraceDqr::DQErr Trace::stripSrcPath(char *cutPath)
 
 		this->cutPath = new char [l];
 		strcpy(this->cutPath,cutPath);
+
+		if (disassembler != nullptr) {
+			TraceDqr::DQErr rc;
+
+			rc = disassembler->stripSrcPath(cutPath);
+
+			status = rc;
+			return rc;
+		}
 	}
 
-	if (disassembler != nullptr) {
-		TraceDqr::DQErr rc;
-
-		rc = disassembler->stripSrcPath(cutPath);
-
-		status = rc;
-		return rc;
-	}
+	status = TraceDqr::DQERR_ERR;
 
 	return TraceDqr::DQERR_ERR;
 }
@@ -1554,13 +1556,15 @@ TraceDqr::DQErr Trace::setLabelMode(bool labelsAreFuncs)
 		return status;
 	}
 
-	TraceDqr::DQErr rc;
+	if (cutPath != nullptr) {
+		TraceDqr::DQErr rc;
 
-	rc = disassembler->stripSrcPath(cutPath);
-	if (rc != TraceDqr::DQERR_OK) {
-		status = rc;
+		rc = disassembler->stripSrcPath(cutPath);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
 
-		return rc;
+			return rc;
+		}
 	}
 
 	status = TraceDqr::DQERR_OK;
