@@ -125,10 +125,11 @@ public:
 	fileReader(/*paths?*/);
 	~fileReader();
 
-	TraceDqr::DQErr stripSrcPath(char *cutPath);
+	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 	fileList *findFile(const char *file);
 private:
 	char *cutPath;
+	char *newRoot;
 
 	fileList *readFile(const char *file);
 
@@ -308,7 +309,7 @@ public:
 	Source      getSourceInfo() { return source; }
 
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
-	TraceDqr::DQErr stripSrcPath(char *cutPath);
+	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 
 	TraceDqr::DQErr getStatus() {return status;}
 

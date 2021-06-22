@@ -706,12 +706,19 @@ fileReader::fileReader(/*paths*/)
 	lastFile = nullptr;
 	files = nullptr;
 	cutPath = nullptr;
+	newRoot = nullptr;
 }
 
 fileReader::~fileReader()
 {
 	if (cutPath != nullptr) {
 		delete [] cutPath;
+		cutPath = nullptr;
+	}
+
+	if (newRoot != nullptr) {
+		delete [] newRoot;
+		newRoot = nullptr;
 	}
 
 	for (fileList *fl = files; fl != nullptr;) {
@@ -850,7 +857,25 @@ fileReader::fileList *fileReader::readFile(const char *file)
 //			printf("no match!\n");
 //		}
 
-		f.open(&file[fi], std::ifstream::binary);
+		if ((match == true) &&(newRoot != nullptr)) {
+			int fl = strlen(&file[fi]);
+			int rl = strlen(newRoot);
+			char *newName;
+			newName = new char [fl+rl+1];
+
+			strcpy(newName,newRoot);
+			strcpy(&newName[rl],&file[fi]);
+
+//			printf("newName: %s\n",newName);
+
+			f.open(newName,std::ifstream::binary);
+
+			delete [] newName;
+			newName = nullptr;
+		}
+		else {
+			f.open(&file[fi],std::ifstream::binary);
+		}
 	}
 	else {
 		f.open(file, std::ifstream::binary);
@@ -1009,22 +1034,33 @@ fileReader::fileList *fileReader::findFile(const char *file)
 	return fp;
 }
 
-TraceDqr::DQErr fileReader::stripSrcPath(char *cutPath)
+TraceDqr::DQErr fileReader::subSrcPath(const char *cutPath,const char *newRoot)
 {
 	if (this->cutPath != nullptr) {
 		delete [] this->cutPath;
 		this->cutPath = nullptr;
 	}
 
-	if (cutPath == nullptr) {
-		return TraceDqr::DQERR_ERR;
+	if (this->newRoot != nullptr) {
+		delete [] this->newRoot;
+		this->newRoot = nullptr;
 	}
 
-	int l = strlen(cutPath) + 1;
+	if (cutPath != nullptr) {
+		int l = strlen(cutPath) + 1;
 
-	this->cutPath = new char [l];
+		this->cutPath = new char [l];
 
-	strcpy(this->cutPath,cutPath);
+		strcpy(this->cutPath,cutPath);
+	}
+
+	if (newRoot != nullptr) {
+		int l = strlen(newRoot) + 1;
+
+		this->newRoot = new char [l];
+
+		strcpy(this->newRoot,newRoot);
+	}
 
 	return TraceDqr::DQERR_OK;
 }
@@ -8486,6 +8522,7 @@ ObjFile::ObjFile(char *ef_name)
 	}
 
 	cutPath = nullptr;
+	newRoot = nullptr;
 
 	status = TraceDqr::DQERR_OK;
 
@@ -8517,6 +8554,11 @@ void ObjFile::cleanUp()
 		cutPath = nullptr;
 	}
 
+	if (newRoot != nullptr) {
+		delete [] newRoot;
+		newRoot = nullptr;
+	}
+
 	if (elfReader != nullptr) {
 		delete elfReader;
 		elfReader = nullptr;
@@ -8528,11 +8570,16 @@ void ObjFile::cleanUp()
 	}
 }
 
-TraceDqr::DQErr ObjFile::stripSrcPath(char *cutPath)
+TraceDqr::DQErr ObjFile::subSrcPath(const char *cutPath,const char *newRoot)
 {
 	if (this->cutPath != nullptr) {
 		delete [] this->cutPath;
 		this->cutPath = nullptr;
+	}
+
+	if (this->newRoot != nullptr) {
+		delete [] this->newRoot;
+		this->newRoot = nullptr;
 	}
 
 	if (cutPath != nullptr) {
@@ -8542,10 +8589,17 @@ TraceDqr::DQErr ObjFile::stripSrcPath(char *cutPath)
 		strcpy(this->cutPath,cutPath);
 	}
 
+	if (newRoot != nullptr) {
+		int l = strlen(newRoot)+1;
+		this->newRoot = new char [l];
+
+		strcpy(this->newRoot,newRoot);
+	}
+
 	if (disassembler != nullptr) {
 		TraceDqr::DQErr rc;
 
-		rc = disassembler->stripSrcPath(cutPath);
+		rc = disassembler->subSrcPath(cutPath,newRoot);
 
 		status = rc;
 		return rc;
@@ -8621,12 +8675,10 @@ TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
 
 	TraceDqr::DQErr rc;
 
-	if (cutPath != nullptr) {
-		rc = disassembler->stripSrcPath(cutPath);
-		if (rc != TraceDqr::DQERR_OK) {
-			status = rc;
-			return rc;
-		}
+	rc = disassembler->subSrcPath(cutPath,newRoot);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+		return rc;
 	}
 
 	status = TraceDqr::DQERR_OK;
@@ -8907,12 +8959,12 @@ TraceDqr::DQErr Disassembler::setPathType(TraceDqr::pathType pt)
 	return rc;
 }
 
-TraceDqr::DQErr Disassembler::stripSrcPath(char *cutPath)
+TraceDqr::DQErr Disassembler::subSrcPath(const char *cutPath,const char *newRoot)
 {
 	if (fileReader != nullptr) {
 		TraceDqr::DQErr rc;
 
-		rc = fileReader->stripSrcPath(cutPath);
+		rc = fileReader->subSrcPath(cutPath,newRoot);
 
 		status = rc;
 		return rc;

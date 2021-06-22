@@ -206,6 +206,7 @@ int main(int argc, char *argv[])
 	TraceDqr::CATraceType caType = TraceDqr::CATRACE_NONE;
 	TraceDqr::TraceType traceType = TraceDqr::TRACETYPE_BTM;
 	char *cutPath = nullptr;
+	char *newRoot = nullptr;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -702,7 +703,7 @@ int main(int argc, char *argv[])
 		if (cutPath != nullptr) {
 			TraceDqr::DQErr rc;
 
-			rc = trace->stripSrcPath(cutPath);
+			rc = trace->subSrcPath(cutPath,".\\");
 			if (rc != TraceDqr::DQERR_OK) {
 				printf("Error: Could not set source path strip\n");
 				return 1;

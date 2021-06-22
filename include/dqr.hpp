@@ -746,7 +746,7 @@ public:
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
-	TraceDqr::DQErr stripSrcPath(char *cutPath);
+	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 
 	TraceDqr::DQErr getSymbolByName(char *symName,TraceDqr::ADDRESS &addr);
 	TraceDqr::DQErr parseNLSStrings(TraceDqr::nlStrings (&nlsStrings)[32]);
@@ -756,6 +756,7 @@ public:
 private:
 	TraceDqr::DQErr        status;
     char                  *cutPath;
+    char                  *newRoot;
 	class ElfReader       *elfReader;
 	class Disassembler    *disassembler;
 };
@@ -786,7 +787,7 @@ public:
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 	TraceDqr::DQErr setCATraceFile(char *caf_name,TraceDqr::CATraceType catype);
 
-	TraceDqr::DQErr stripSrcPath(char *cutPath);
+	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
 	enum TraceFlags {
@@ -848,6 +849,7 @@ private:
 	class Symtab          *symtab;
 	class Disassembler    *disassembler;
 	char                  *cutPath;
+	char                  *newRoot;
 	class ITCPrint        *itcPrint;
 	TraceDqr::nlStrings   *nlsStrings;
 	TraceDqr::ADDRESS      currentAddress[DQR_MAXCORES];

@@ -1168,6 +1168,7 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
   caTrace      = nullptr;
   counts       = nullptr;//delete this line if compile error
   cutPath      = nullptr;
+  newRoot      = nullptr;
 
   syncCount = 0;
   caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -1376,6 +1377,11 @@ void Trace::cleanUp()
 		cutPath = nullptr;
 	}
 
+	if (newRoot != nullptr) {
+		delete [] newRoot;
+		newRoot = nullptr;
+	}
+
 	// do not delete the symtab object!! It is the same symtab object type the elfReader object
 	// contains, and deleting the elfRead above will delete the symtab object below!
 
@@ -1468,27 +1474,39 @@ TraceDqr::DQErr Trace::setPathType(TraceDqr::pathType pt)
 	return TraceDqr::DQERR_ERR;
 }
 
-TraceDqr::DQErr Trace::stripSrcPath(char *cutPath)
+TraceDqr::DQErr Trace::subSrcPath(const char *cutPath,const char *newRoot)
 {
 	if (this->cutPath != nullptr) {
 		delete [] this->cutPath;
 		this->cutPath = nullptr;
 	}
 
+	if (this->newRoot != nullptr) {
+		delete [] this->newRoot;
+		this->newRoot = nullptr;
+	}
+
 	if (cutPath != nullptr) {
 		int l = strlen(cutPath)+1;
 
-		this->cutPath = new char [l];
+		this->cutPath = new char[l];
 		strcpy(this->cutPath,cutPath);
+	}
 
-		if (disassembler != nullptr) {
-			TraceDqr::DQErr rc;
+	if (newRoot != nullptr) {
+		int l = strlen(newRoot)+1;
 
-			rc = disassembler->stripSrcPath(cutPath);
+		this->newRoot = new char[l];
+		strcpy(this->newRoot,newRoot);
+	}
 
-			status = rc;
-			return rc;
-		}
+	if (disassembler != nullptr) {
+		TraceDqr::DQErr rc;
+
+		rc = disassembler->subSrcPath(cutPath,newRoot);
+
+		status = rc;
+		return rc;
 	}
 
 	status = TraceDqr::DQERR_ERR;
@@ -1556,15 +1574,13 @@ TraceDqr::DQErr Trace::setLabelMode(bool labelsAreFuncs)
 		return status;
 	}
 
-	if (cutPath != nullptr) {
-		TraceDqr::DQErr rc;
+	TraceDqr::DQErr rc;
 
-		rc = disassembler->stripSrcPath(cutPath);
-		if (rc != TraceDqr::DQERR_OK) {
-			status = rc;
+	rc = disassembler->subSrcPath(cutPath,newRoot);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
 
-			return rc;
-		}
+		return rc;
 	}
 
 	status = TraceDqr::DQERR_OK;
