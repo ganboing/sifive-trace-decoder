@@ -784,10 +784,39 @@ int main(int argc, char *argv[])
 							sfp = stripPath(strip_flag,srcInfo->sourceFile);
 
 							if (srcbits > 0) {
-								printf("[%d] File: %s:%d\n",srcInfo->coreId,sfp,srcInfo->sourceLineNum);
+								printf("[%d] ",srcInfo->coreId);
+							}
+
+							int sfpl = 0;
+							int sfl = 0;
+							int stripped = 0;
+
+							if (sfp != srcInfo->sourceFile) {
+								sfpl = strlen(sfp);
+								sfl = strlen(srcInfo->sourceFile);
+								stripped = sfl - sfpl;
+							}
+
+							if (stripped < srcInfo->cutPathIndex) {
+								printf("File: [");
+
+								if (sfp != srcInfo->sourceFile) {
+									printf("..");
+								}
+
+								for (int i = stripped; i < srcInfo->cutPathIndex; i++) {
+									printf("%c",srcInfo->sourceFile[i]);
+								}
+
+								printf("]%s:%d\n",&srcInfo->sourceFile[srcInfo->cutPathIndex],srcInfo->sourceLineNum);
 							}
 							else {
-								printf("File: %s:%d\n",sfp,srcInfo->sourceLineNum);
+								if (sfp != srcInfo->sourceFile) {
+									printf("File: ..%s:%d\n",sfp,srcInfo->sourceLineNum);
+								}
+								else {
+									printf("File: %s:%d\n",sfp,srcInfo->sourceLineNum);
+								}
 							}
 
 							firstPrint = false;

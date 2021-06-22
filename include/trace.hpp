@@ -58,12 +58,13 @@ private:
 
 class cachedInstInfo {
 public:
-	cachedInstInfo(const char *file,const char *func,int linenum,const char *lineTxt,const char *instText,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset);
+	cachedInstInfo(const char *file,int cutPathIndex,const char *func,int linenum,const char *lineTxt,const char *instText,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset);
 	~cachedInstInfo();
 
 	void dump();
 
 	const char *filename;
+	int         cutPathIndex;
 	const char *functionname;
 	int linenumber;
 	const char *lineptr;
@@ -91,7 +92,7 @@ public:
 	section *initSection(section **head,asection *newsp,bool enableInstCaching);
 	section *getSectionByAddress(TraceDqr::ADDRESS addr);
 
-	cachedInstInfo *setCachedInfo(TraceDqr::ADDRESS addr,const char *file,const char *func,int linenum,const char *lineTxt,const char *instTxt,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset);
+	cachedInstInfo *setCachedInfo(TraceDqr::ADDRESS addr,const char *file,int cutPathIndex,const char *func,int linenum,const char *lineTxt,const char *instTxt,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset);
 	cachedInstInfo *getCachedInfo(TraceDqr::ADDRESS addr);
 
 	section     *next;
@@ -115,6 +116,7 @@ public:
 	struct fileList {
 		fileList     *next;
 		char         *name;
+		int           cutPathIndex;
 		funcList     *funcs;
 		unsigned int  lineCount;
 		char        **lines;
@@ -127,6 +129,7 @@ public:
 	fileList *findFile(const char *file);
 private:
 	char *cutPath;
+
 	fileList *readFile(const char *file);
 
 	fileList *lastFile;
@@ -292,7 +295,7 @@ public:
 	      ~Disassembler();
 	int   Disassemble(TraceDqr::ADDRESS addr);
 
-	int   getSrcLines(TraceDqr::ADDRESS addr, const char **filename, const char **functionname, unsigned int *linenumber, const char **line);
+	int   getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *cutPathIndex,const char **functionname,unsigned int *linenumber,const char **line);
 
 	static int   decodeInstructionSize(uint32_t inst, int &inst_size);
 	static int   decodeInstruction(uint32_t instruction,int archSize,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);

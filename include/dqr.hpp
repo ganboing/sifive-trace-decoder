@@ -405,6 +405,7 @@ public:
 	%immutable sourceLine;
 #endif // SWIG
 	const char  *sourceFile;
+	int          cutPathIndex;
 	const char  *sourceFunction;
 	const char  *sourceLine;
 	unsigned int sourceLineNum;

@@ -236,11 +236,12 @@ static int stringify_callback(FILE *stream, const char *format, ...)
 }
 
 // Section Class Methods
-cachedInstInfo::cachedInstInfo(const char *file,const char *func,int linenum,const char *lineTxt,const char *instText,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset)
+cachedInstInfo::cachedInstInfo(const char *file,int cutPathIndex,const char *func,int linenum,const char *lineTxt,const char *instText,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset)
 {
 	// Don't need to allocate and copy file and function. They will remain until trace object is deleted
 
 	filename = file;
+	this->cutPathIndex = cutPathIndex;
 	functionname = func;
 	linenumber = linenum;
 	lineptr = lineTxt;
@@ -393,7 +394,7 @@ section *section::getSectionByAddress(TraceDqr::ADDRESS addr)
 	return nullptr;
 }
 
-cachedInstInfo *section::setCachedInfo(TraceDqr::ADDRESS addr,const char *file,const char *func,int linenum,const char *lineTxt,const char *instTxt,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset)
+cachedInstInfo *section::setCachedInfo(TraceDqr::ADDRESS addr,const char *file,int cutPathIndex,const char *func,int linenum,const char *lineTxt,const char *instTxt,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset)
 {
 	if ((addr >= startAddr) && (addr <= endAddr)) {
 		if (cachedInfo != nullptr) {
@@ -403,7 +404,7 @@ cachedInstInfo *section::setCachedInfo(TraceDqr::ADDRESS addr,const char *file,c
 			assert(cachedInfo[index] == nullptr);
 
 			cachedInstInfo *cci;
-			cci = new cachedInstInfo(file,func,linenum,lineTxt,instTxt,inst,instSize,addresslabel,addresslabeloffset,haveoperandaddress,operandaddress,operandlabel,operandlabeloffset);
+			cci = new cachedInstInfo(file,cutPathIndex,func,linenum,lineTxt,instTxt,inst,instSize,addresslabel,addresslabeloffset,haveoperandaddress,operandaddress,operandlabel,operandlabeloffset);
 
 			cachedInfo[index] = cci;
 
@@ -751,16 +752,16 @@ fileReader::fileList *fileReader::readFile(const char *file)
 
 	std::ifstream  f;
 	const char *original_file_name = file;
-	char cpDrive = 0;
-	char fnDrive = 0;
+	int fi = 0; // file name inmdex
 
 	if ((cutPath != nullptr) && (cutPath[0] != 0)) {
 		// the plan is to strip off the cutpath portion of the file name and try to open the file
 		// if that doesn't work, try the original file name
 		// if that doesn't work, try just the file name with no path info
 
+		char cpDrive = 0;
+		char fnDrive = 0;
 		int ci = 0; // cut path index
-		int fi = 0; // file name inmdex
 
 		// the tricky part is if this is windows and there is a drive designator, handle that
 		// the cut path may or may not have a drive designator.
@@ -833,6 +834,10 @@ fileReader::fileList *fileReader::readFile(const char *file)
 			match = false;
 		}
 
+		if (match == false) {
+			fi = 0;
+		}
+
 //		printf("cutPath: %s\n",cutPath);
 //		printf("file: %s\n",file);
 //
@@ -881,6 +886,7 @@ fileReader::fileList *fileReader::readFile(const char *file)
 	strcpy(name,original_file_name);
 
 	fl->name = name;
+	fl->cutPathIndex = fi;
 
 	if (!f) {
 		// always return a file list pointer, even if a file isn't found. If file not
@@ -10225,7 +10231,7 @@ void static sanePath(TraceDqr::pathType pt,const char *src,char *dst)
 	dst[w] = 0;
 }
 
-int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, const char **functionname, unsigned int *linenumber, const char **lineptr)
+int Disassembler::getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *cutPathIndex,const char **functionname,unsigned int *linenumber,const char **lineptr)
 {
 	const char *file = nullptr;
 	const char *function = nullptr;
@@ -10237,6 +10243,7 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 	section *sp;
 
 	*filename = nullptr;
+	*cutPathIndex = 0;
 	*functionname = nullptr;
 	*linenumber = 0;
 	*lineptr = nullptr;
@@ -10296,6 +10303,7 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr, const char **filename, con
 	assert(fl != nullptr);
 
 	*filename = fl->name;
+	*cutPathIndex = fl->cutPathIndex;
 
 	// save function name and line src in function list struct so it will be saved for reuse, or later use throughout the
 	// life of the object. Won't be overwritten. This is not caching.
@@ -10448,6 +10456,7 @@ int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 	cii = sp->getCachedInfo(addr);
 	if (cii != nullptr) {
 		source.sourceFile = cii->filename;
+		source.cutPathIndex = cii->cutPathIndex;
 		source.sourceFunction = cii->functionname;
 		source.sourceLineNum = cii->linenumber;
 		source.sourceLine = cii->lineptr;
@@ -10470,7 +10479,7 @@ int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 		return 0;
 	}
 
-	getSrcLines(addr, &source.sourceFile, &source.sourceFunction, &source.sourceLineNum, &source.sourceLine);
+	getSrcLines(addr,&source.sourceFile,&source.cutPathIndex,&source.sourceFunction,&source.sourceLineNum,&source.sourceLine);
 
 	setInstructionAddress(vma);
 
@@ -10495,7 +10504,7 @@ int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 
 	// output from disassemble_func is in instruction.instrucitonText
 
-	sp->setCachedInfo(addr,source.sourceFile,source.sourceFunction,source.sourceLineNum,source.sourceLine,instruction.instructionText,instruction.instruction,instruction.instSize,instruction.addressLabel,instruction.addressLabelOffset,instruction.haveOperandAddress,instruction.operandAddress,instruction.operandLabel,instruction.operandLabelOffset);
+	sp->setCachedInfo(addr,source.sourceFile,source.cutPathIndex,source.sourceFunction,source.sourceLineNum,source.sourceLine,instruction.instructionText,instruction.instruction,instruction.instSize,instruction.addressLabel,instruction.addressLabelOffset,instruction.haveOperandAddress,instruction.operandAddress,instruction.operandLabel,instruction.operandLabelOffset);
 
 	return rc;
 }
