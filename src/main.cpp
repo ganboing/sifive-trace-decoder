@@ -53,10 +53,10 @@ static void usage(char *name)
 	printf("-htm:         Specify the type of the trace file as htm (history trace messages).\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
-	printf("-cutpath=<base path>: When searching for source files, <base path> is removed from the path name found in the\n");
-	printf("              elf file for the source file name. This allows having a local copy of the source file sub-tree in the\n");
-	printf("              folder the trace decoder is executed from. If <base path> is not part of the file location, the original\n");
-	printf("              source path is used.\n");
+	printf("-cutpath=<cutPath>[,<newRoot>]: When searching for source files, <cutPath> is removed from the beginning of thepath name\n");
+	printf("              found in the elf file for the source file name. If <newRoot> is given, it is prepended to the begging of the\n");
+	printf("              after removing <cutPath>. If <cutPath> is not found, <newRoot> is not prepended. This allows having a local copy\n");
+	printf("              of the source file sub-tree. If <cutPath> is not part of the file location, the original source path is used.\n");
 	printf("-src:         Enable display of source lines in output if available (on by default).\n");
 	printf("-nosrc:       Disable display of source lines in output.\n");
 	printf("-file:        Display source file information in output (on by default).\n");
@@ -338,12 +338,15 @@ int main(int argc, char *argv[])
 		else if (strncmp("-cutpath=",argv[i],strlen("-cutpath=")) == 0) {
 			cutPath = argv[i]+strlen("-cutpath=");
 
-			if (cutPath[0] == '"') {
-				cutPath += 1;
+			// see if newRoot is provided
 
-				if (cutPath[strlen(cutPath)] == '"') {
-					cutPath[strlen(cutPath)] = 0;
-				}
+			int i;
+			for (i = 0; (cutPath[i] != 0) && (cutPath[i] != ','); i++) { /* empty */ }
+
+			if (cutPath[i] == ',') {
+				cutPath[i] = 0;
+
+				newRoot = &cutPath[i+1];
 			}
 		}
 		else if (strcmp("-v",argv[i]) == 0) {
@@ -703,9 +706,9 @@ int main(int argc, char *argv[])
 		if (cutPath != nullptr) {
 			TraceDqr::DQErr rc;
 
-			rc = trace->subSrcPath(cutPath,".\\");
+			rc = trace->subSrcPath(cutPath,newRoot);
 			if (rc != TraceDqr::DQERR_OK) {
-				printf("Error: Could not set source path strip\n");
+				printf("Error: Could not set cutPath or newRoot\n");
 				return 1;
 			}
 		}
