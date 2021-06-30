@@ -22,7 +22,7 @@ public class jdqr {
 	    System.exit(1);
     }
 
-    System.out.printf("dqrdll version: %s\n",Trace.version());
+//    System.out.printf("dqrdll version: %s\n",Trace.version());
  
     Trace t = new Trace(argv[0],argv[1],32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
     if (t == null) {
@@ -35,7 +35,7 @@ public class jdqr {
       System.exit(1);
     }
 
-    t.setITCPrintOptions(4096,0);
+    t.setITCPrintOptions(TraceDqr.ITCOptions.ITC_OPT_PRINT.swigValue() | TraceDqr.ITCOptions.ITC_OPT_NLS.swigValue(),4096,0);
 
     Instruction instInfo = new Instruction();
 
