@@ -1145,6 +1145,710 @@ TraceDqr::DQErr CATrace::parseNextCATraceRec(CATraceRec &car)
 	return TraceDqr::DQERR_OK;
 }
 
+// class TraceSettings methods
+
+TraceSettings::TraceSettings()
+{
+	tfName = nullptr;
+	efName = nullptr;
+	caName = nullptr;
+	caType = TraceDqr::CATRACE_NONE;
+	srcBits = 0;
+	numAddrBits = 0;
+	itcPrintOpts = TraceDqr::ITC_OPT_NLS;
+	itcPrintChannel = 0;
+	srcRoot = nullptr;
+	pathType = TraceDqr::PATH_TO_UNIX;
+	labelsAsFunctions = true;
+	freq = 0;
+	addrDispFlags = 0;
+	tsSize = 40;
+}
+
+TraceSettings::~TraceSettings()
+{
+	if (tfName != nullptr) {
+		delete [] tfName;
+		tfName = nullptr;
+	}
+
+	if (efName != nullptr) {
+		delete [] efName;
+		efName = nullptr;
+	}
+
+	if (caName != nullptr) {
+		delete [] caName;
+		caName = nullptr;
+	}
+
+	if (srcRoot != nullptr) {
+		delete [] srcRoot;
+		srcRoot = nullptr;
+	}
+}
+
+TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
+{
+	TraceDqr::DQErr rc;
+	char *name = nullptr;
+	char *value = nullptr;
+
+	properties->rewind();
+
+	do {
+		rc = properties->getNextProperty(&name,&value);
+		if (rc == TraceDqr::DQERR_OK) {
+//			printf("name: %s, value: %s\n",name,value);
+
+			if (strcasecmp("rtd",name) == 0) {
+				rc = propertyToTFName(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set trace file name in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("elf",name) == 0) {
+				rc = propertyToEFName(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set elf file name in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("srcbits",name) == 0) {
+				rc = propertyToSrcBits(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set srcBits in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("bits",name) == 0) {
+				rc = propertyToNumAddrBits(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set numAddrBits in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("trace.config.boolean.enable.itc.print.processing",name) == 0) {
+				rc = propertyToITCPrintOpts(value); // value should be nul, true, or false
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set ITC print options in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("trace.config.int.itc.print.channel",name) == 0) {
+				rc = propertyToITCPrintChannel(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set ITC print channel value in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("source.root",name) == 0) {
+				rc = propertyToSrcRoot(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set src root path in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("caFile",name) == 0) {
+				rc = propertyToCAName(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set CA file name in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("caType",name) == 0) {
+				rc = propertyToCAType(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set CA type in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("TSSize",name) == 0) {
+				rc = propertyToTSSize(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set TS size in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("pathType",name) == 0) {
+				rc = propertyToPathType(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set path type in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("labelsAsFunctions",name) == 0) {
+				rc = propertyToLabelsAsFuncs(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set labels as functions in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("freq",name) == 0) {
+				rc = propertyToFreq(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace(): Could not set frequency in settings\n");
+					return rc;
+				}
+			}
+		}
+	} while (rc == TraceDqr::DQERR_OK);
+
+	if (rc != TraceDqr::DQERR_EOF) {
+		printf("Error: TraceSettings::addSettings(): problem parsing properties file: %d\n",rc);
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToTFName(char *value)
+{
+	if (value != nullptr) {
+		if (tfName != nullptr) {
+			delete [] tfName;
+			tfName = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		tfName = new char [l];
+		strcpy(tfName,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToEFName(char *value)
+{
+	if (value != nullptr) {
+		if (efName != nullptr) {
+			delete [] efName;
+			efName = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		efName = new char [l];
+		strcpy(efName,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToSrcBits(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		srcBits = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToNumAddrBits(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		numAddrBits = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToITCPrintOpts(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		if (strcasecmp(value,"true") == 0) {
+			itcPrintOpts = TraceDqr::ITC_OPT_PRINT | TraceDqr::ITC_OPT_NLS;
+		}
+		else if (strcasecmp(value,"false") == 0) {
+			itcPrintOpts = TraceDqr::ITC_OPT_NLS;
+		}
+		else {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToITCPrintChannel(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		itcPrintChannel = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToSrcRoot(char *value)
+{
+	if (value != nullptr) {
+		if (srcRoot != nullptr) {
+			delete [] srcRoot;
+			srcRoot = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		srcRoot = new char [l];
+		strcpy(srcRoot,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToCAName(char *value)
+{
+	if (value != nullptr) {
+		int l;
+		l = strlen(value) + 1;
+
+		caName = new char [l];
+		strcpy(caName,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToCAType(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		if (strcasecmp(value,"none") == 0) {
+			caType = TraceDqr::CATRACE_NONE;
+		}
+		else if (strcasecmp(value,"vector") == 0) {
+			caType = TraceDqr::CATRACE_VECTOR;
+		}
+		else if (strcasecmp(value,"instruction") == 0) {
+			caType = TraceDqr::CATRACE_INSTRUCTION;
+		}
+		else {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToPathType(char *value)
+{
+	if ((value == nullptr) && (value[0] != '\0')) {
+		if (strcasecmp("unix",value) == 0) {
+			pathType = TraceDqr::PATH_TO_UNIX;
+		}
+		else if (strcasecmp("windows",value) == 0) {
+			pathType = TraceDqr::PATH_TO_WINDOWS;
+		}
+		else if (strcasecmp("raw",value) == 0) {
+			pathType = TraceDqr::PATH_RAW;
+		}
+		else {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToLabelsAsFuncs(char *value)
+{
+	if ((value == nullptr) && (value[0] != '\0')) {
+		if (strcasecmp("true",value) == 0) {
+			labelsAsFunctions = true;		}
+		else if (strcasecmp("false",value) == 0) {
+			labelsAsFunctions = false;
+		}
+		else {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToFreq(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		freq = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToTSSize(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		tsSize = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+// class propertiesParser methods
+
+propertiesParser::propertiesParser(char *srcData)
+{
+	status = TraceDqr::DQERR_OK;
+
+	propertiesBuff = nullptr;
+	lines = nullptr;
+	numLines = 0;
+	nextLine = 0;
+	size = 0;
+
+	if (srcData == nullptr) {
+		return;
+	}
+
+	std::ifstream  f;
+
+	f.open(srcData, std::ifstream::binary);
+	if (!f) {
+		printf("Error: propertiesParser::propertiesParser(): could not open file %s for input\n",srcData);
+
+		status = TraceDqr::DQERR_OPEN;
+		return;
+	}
+
+	// get length of file:
+
+	f.seekg(0, f.end);
+	size = f.tellg();
+	f.seekg(0, f.beg);
+
+	if (size < 0) {
+		printf("Error: propertiesParser::propertiesParser(): could not get size of file %s for input\n",srcData);
+
+		f.close();
+
+		status = TraceDqr::DQERR_OPEN;
+		return;
+	}
+
+	// allocate memory:
+
+	propertiesBuff = new char [size+1]; // allocate an extra byte in case the file doesn't end with \n
+
+	// read file into buffer
+
+	f.read(propertiesBuff,size);
+	int numRead = f.gcount();
+	f.close();
+
+	if (numRead != size) {
+		printf("Error: propertiesParser::propertiesParser(): could not read file %s into memory\n",srcData);
+
+		delete [] propertiesBuff;
+		propertiesBuff = nullptr;
+		size = 0;
+
+		status = TraceDqr::DQERR_OPEN;
+		return;
+	}
+
+	// count lines
+
+	numLines = 0;
+
+	for (int i = 0; i < size; i++) {
+		if (propertiesBuff[i] == '\n') {
+			numLines += 1;
+		}
+		else if (i == size-1) {
+			// last line does not have a \n
+			numLines += 1;
+		}
+	}
+
+	// create array of line pointers
+
+	lines = new line [numLines];
+
+	// initialize array of ptrs
+
+	int l;
+	int s;
+
+	l = 0;
+	s = 1;
+
+	for (int i = 0; i < numLines; i++) {
+		lines[i].line = nullptr;
+		lines[i].name = nullptr;
+		lines[i].value = nullptr;
+	}
+
+	for (int i = 0; i < size;i++) {
+		if (s != 0) {
+			lines[l].line = &propertiesBuff[i];
+			l += 1;
+			s = 0;
+		}
+
+		// strip out CRs and LFs
+
+		if (propertiesBuff[i] == '\r') {
+			propertiesBuff[i] = 0;
+		}
+		else if (propertiesBuff[i] == '\n') {
+			propertiesBuff[i] = 0;
+			s = 1;
+		}
+	}
+
+	propertiesBuff[size] = 0;	// make sure last line is nul terminated
+
+	if (l != numLines) {
+		printf("Error: propertiesParser::propertiesParser(): Error computing line count for file %s, l:%d, lc: %d\n",srcData,l,numLines);
+
+		delete [] lines;
+		lines = nullptr;
+		delete [] propertiesBuff;
+		propertiesBuff = nullptr;
+		size = 0;
+		numLines = 0;
+
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+}
+
+propertiesParser::~propertiesParser()
+{
+	if (propertiesBuff != nullptr) {
+		delete [] propertiesBuff;
+		propertiesBuff = nullptr;
+	}
+
+	if (lines != nullptr) {
+		delete [] lines;
+		lines = nullptr;
+	}
+}
+
+void propertiesParser::rewind()
+{
+	nextLine = 0;
+}
+
+TraceDqr::DQErr propertiesParser::getNextToken(char *inputText,int &startIndex,int &endIndex)
+{
+	if (inputText == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	// stripi ws
+
+	bool found;
+
+	for (found = false; !found; ) {
+		switch (inputText[startIndex]) {
+		case '\t':
+		case ' ':
+			// skip this char
+			startIndex += 1;
+			break;
+		default:
+			found = true;
+			break;
+		}
+	}
+
+	endIndex = startIndex;
+
+	// check for end of line
+
+	switch (inputText[startIndex]) {
+	case '#':
+	case '\0':
+	case '\n':
+	case '\r':
+		// end of line. If end == start, nothing was found
+
+		return TraceDqr::DQERR_OK;
+	}
+
+	// scan to end of token
+
+	// will not start with #, =, \0, \r, \n
+	// so scan until we find an end
+
+	for (found = false; !found; ) {
+		switch (inputText[endIndex]) {
+		case ' ':
+		case '#':
+		case '\0':
+		case '\n':
+		case '\r':
+			found = true;
+			break;
+		case '=':
+			if (startIndex == endIndex) {
+				endIndex += 1;
+			}
+			found = true;
+			break;
+		default:
+			endIndex += 1;
+		}
+	}
+
+//	printf("getNextToken(): start %d, end %d ,'",startIndex,endIndex);
+//	for (int i = startIndex; i < endIndex; i++) {
+//		printf("%c",inputText[i]);
+//	}
+//	printf("'\n");
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr propertiesParser::getNextProperty(char **name,char **value)
+{
+	if (status != TraceDqr::DQERR_OK) {
+		return status;
+	}
+
+	if (lines == nullptr) {
+		status = TraceDqr::DQERR_EOF;
+		return TraceDqr::DQERR_EOF;
+	}
+
+	if ((name == nullptr) || (value == nullptr)) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	// if we are at the end, return EOF
+
+	if (nextLine >= numLines) {
+		return TraceDqr::DQERR_EOF;
+	}
+
+	// If this name/value pair has already been found, return it
+
+	if ((lines[nextLine].name != nullptr) && (lines[nextLine].value != nullptr)) {
+		*name = lines[nextLine].name;
+		*value = lines[nextLine].value;
+
+		nextLine += 1;
+
+		return TraceDqr::DQERR_OK;
+	}
+
+	// get name
+
+	int nameStart = 0;
+	int nameEnd = 0;
+
+	TraceDqr::DQErr rc;
+
+	do {
+		rc = getNextToken(lines[nextLine].line,nameStart,nameEnd);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return rc;
+		}
+
+		if (nameStart == nameEnd) {
+			nextLine += 1;
+		}
+	} while (nameStart == nameEnd);
+
+	// check if we got a name, or an '='
+
+	if (((nameStart - nameEnd) == 1) && (lines[nextLine].line[nameStart] == '=')) {
+		// error - name cannot be '='
+		printf("Error: propertiesParser::getNextProperty(): Line %d: syntax error\n",nextLine);
+
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
+	}
+
+	int eqStart = nameEnd;
+	int eqEnd = nameEnd;
+
+	// get '='
+	rc = getNextToken(lines[nextLine].line,eqStart,eqEnd);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+		return rc;
+	}
+
+	if ((eqStart == eqEnd) || ((eqEnd - eqStart) != 1) || (lines[nextLine].line[eqStart] != '=')) {
+		printf("Error: propertiesParser::getNextProperty(): Line %d: expected '='\n",nextLine);
+
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
+	}
+
+	// get value or end of line
+
+	int valueStart = eqEnd;
+	int valueEnd = eqEnd;
+
+	rc = getNextToken(lines[nextLine].line,valueStart,valueEnd);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
+		return rc;
+	}
+
+	if (((valueStart - valueEnd) == 1) && (lines[nextLine].line[nameStart] == '=')) {
+		// error - value cannot be '='
+		printf("Error: propertiesParser::getNextProperty(): Line %d: syntax error\n",nextLine);
+
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
+	}
+
+	lines[nextLine].line[nameEnd] = 0;
+	lines[nextLine].name = &lines[nextLine].line[nameStart];
+
+	*name = lines[nextLine].name;
+
+	lines[nextLine].line[valueEnd] = 0;
+	lines[nextLine].value = &lines[nextLine].line[valueStart];
+
+	*value = lines[nextLine].value;
+
+	nextLine += 1;
+
+	return TraceDqr::DQERR_OK;
+}
+
+
 // class trace methods
 
 int Trace::decodeInstructionSize(uint32_t inst, int &inst_size)
@@ -1157,203 +1861,289 @@ int Trace::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstT
 	return disassembler->decodeInstruction(instruction,getArchSize(),inst_size,inst_type,rs1,rd,immediate,is_branch);
 }
 
-Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq)
+Trace::Trace(char *mf_name)
 {
-  status = TraceDqr::DQERR_OK;
-
-  sfp          = nullptr;
-  elfReader    = nullptr;
-  symtab       = nullptr;
-  disassembler = nullptr;
-  caTrace      = nullptr;
-  counts       = nullptr;//delete this line if compile error
-  cutPath      = nullptr;
-  newRoot      = nullptr;
-
-  syncCount = 0;
-  caSyncAddr = (TraceDqr::ADDRESS)-1;
-
-  assert(tf_name != nullptr);
-
-  traceType = TraceDqr::TRACETYPE_BTM;
-
-  itcPrint = nullptr;
-  nlsStrings = nullptr;
-
-  srcbits = srcBits;
-
-  analytics.setSrcBits(srcBits);
-
-  sfp = new (std::nothrow) SliceFileParser(tf_name,srcbits);
-
-  assert(sfp != nullptr);
-
-  if (sfp->getErr() != TraceDqr::DQERR_OK) {
-	printf("Error: cannot open trace file '%s' for input\n",tf_name);
-	delete sfp;
-	sfp = nullptr;
-
-	status = TraceDqr::DQERR_ERR;
-
-	return;
-  }
-
-  if (ef_name != nullptr ) {
-	// create elf object
-
-//    printf("ef_name:%s\n",ef_name);
-
-    elfReader = new (std::nothrow) ElfReader(ef_name);
-
-    assert(elfReader != nullptr);
-
-    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
-    	if (sfp != nullptr) {
-    		delete sfp;
-    		sfp = nullptr;
-    	}
-
-    	delete elfReader;
-    	elfReader = nullptr;
-
-    	status = TraceDqr::DQERR_ERR;
-
-    	return;
-    }
-
-    // create disassembler object
-
-    bfd *abfd;
-    abfd = elfReader->get_bfd();
-
-	disassembler = new (std::nothrow) Disassembler(abfd,true);
-
-	assert(disassembler != nullptr);
-
-	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
-		if (sfp != nullptr) {
-			delete sfp;
-			sfp = nullptr;
-		}
-
-		if (elfReader != nullptr) {
-			delete elfReader;
-			elfReader = nullptr;
-		}
-
-		delete disassembler;
-		disassembler = nullptr;
+	if (mf_name == nullptr) {
+		printf("Error: Trace(): mf_name argument null\n");
 
 		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	TraceDqr::DQErr rc;
+
+	propertiesParser properties(mf_name);
+
+	rc = properties.getStatus();
+	if (rc != TraceDqr::DQERR_OK) {
+		printf("Error: Trace(): new propertiesParser(%s) from file failed with %d\n",mf_name,rc);
+		status = rc;
+		return;
+	}
+
+	TraceSettings settings;
+
+	rc = settings.addSettings(&properties);
+	if (rc != TraceDqr::DQERR_OK) {
+		printf("what the stink!\n");
+		exit(1);
+	}
+
+	rc = configure(settings);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = rc;
 
 		return;
 	}
 
-    // get symbol table
+	status = TraceDqr::DQERR_OK;
+}
 
-    symtab = elfReader->getSymtab();
-    if (symtab == nullptr) {
-    	delete elfReader;
-    	elfReader = nullptr;
+Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq)
+{
+	TraceDqr::DQErr rc;
 
-    	delete sfp;
-    	sfp = nullptr;
+	TraceSettings ts;
+	ts.propertyToTFName(tf_name);
+	ts.propertyToEFName(ef_name);
+	ts.numAddrBits = numAddrBits;
+	ts.addrDispFlags = addrDispFlags;
+	ts.srcBits = srcBits;
+	ts.freq = freq;
 
-    	status = TraceDqr::DQERR_ERR;
-
-    	return;
-    }
-  }
-  else {
- 	elfReader = nullptr;
-	disassembler = nullptr;
-	symtab = nullptr;
-  }
-
-  for (int i = 0; (size_t)i < sizeof lastFaddr / sizeof lastFaddr[0]; i++ ) {
-	lastFaddr[i] = 0;
-  }
-
-  for (int i = 0; (size_t)i < sizeof currentAddress / sizeof currentAddress[0]; i++ ) {
-	currentAddress[i] = 0;
-  }
-
-  counts = new Count [DQR_MAXCORES];
-
-  for (int i = 0; (size_t)i < sizeof state / sizeof state[0]; i++ ) {
-	state[i] = TRACE_STATE_GETFIRSTSYNCMSG;
-  }
-
-  readNewTraceMessage = true;
-  currentCore = 0;	// as good as eny!
-
-  for (int i = 0; (size_t)i < sizeof lastTime / sizeof lastTime[0]; i++) {
-	  lastTime[i] = 0;
-  }
-
-  for (int i = 0; (size_t)i < sizeof lastCycle / sizeof lastCycle[0]; i++) {
-	  lastCycle[i] = 0;
-  }
-
-  for (int i = 0; (size_t)i < sizeof eCycleCount / sizeof eCycleCount[0]; i++) {
-	  eCycleCount[i] = 0;
-  }
-
-  instructionInfo.CRFlag = TraceDqr::isNone;
-  instructionInfo.brFlags = TraceDqr::BRFLAG_none;
-
-  instructionInfo.address = 0;
-  instructionInfo.instruction = 0;
-  instructionInfo.instSize = 0;
-
-  if (numAddrBits != 0 ) {
-	  instructionInfo.addrSize = numAddrBits;
-  }
-  else if (elfReader == nullptr) {
-	  instructionInfo.addrSize = 0;
-  }
-  else {
-	  instructionInfo.addrSize = elfReader->getBitsPerAddress();
-  }
-
-  instructionInfo.addrDispFlags = addrDispFlags;
-
-  instructionInfo.addrPrintWidth = (instructionInfo.addrSize + 3) / 4;
-
-  instructionInfo.addressLabel = nullptr;
-  instructionInfo.addressLabelOffset = 0;
-  instructionInfo.haveOperandAddress = false;
-  instructionInfo.operandAddress = 0;
-  instructionInfo.operandLabel = nullptr;
-  instructionInfo.operandLabelOffset = 0;
-
-  instructionInfo.timestamp = 0;
-  instructionInfo.caFlags = TraceDqr::CAFLAG_NONE;
-  instructionInfo.pipeCycles = 0;
-  instructionInfo.VIStartCycles = 0;
-  instructionInfo.VIFinishCycles = 0;
-
-  sourceInfo.sourceFile = nullptr;
-  sourceInfo.sourceFunction = nullptr;
-  sourceInfo.sourceLineNum = 0;
-  sourceInfo.sourceLine = nullptr;
-
-  NexusMessage::targetFrequency = freq;
-
-  tsSize = 40;
-//  tsBase = 0;
-
-  for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
-	  enterISR[i] = TraceDqr::isNone;
-  }
-
-  status = setITCPrintOptions(TraceDqr::ITC_OPT_NLS,4096,0);
-
+	rc = configure(ts);
+	status = rc;
 }
 
 Trace::~Trace()
 {
 	cleanUp();
+}
+
+// configure should probably take a options object that contains the seetings for all the options. Easier to add
+// new options that way without the arg list getting unmanageable
+
+TraceDqr::DQErr Trace::configure(TraceSettings &settings)
+{
+	TraceDqr::DQErr rc;
+
+	status = TraceDqr::DQERR_OK;
+
+	sfp          = nullptr;
+	elfReader    = nullptr;
+	symtab       = nullptr;
+	disassembler = nullptr;
+	caTrace      = nullptr;
+	counts       = nullptr;//delete this line if compile error
+	cutPath      = nullptr;
+	newRoot      = nullptr;
+
+	syncCount = 0;
+	caSyncAddr = (TraceDqr::ADDRESS)-1;
+
+	assert(settings.tfName != nullptr);
+
+	traceType = TraceDqr::TRACETYPE_BTM;
+
+	itcPrint = nullptr;
+	nlsStrings = nullptr;
+
+	srcbits = settings.srcBits;
+
+	analytics.setSrcBits(srcbits);
+
+	sfp = new (std::nothrow) SliceFileParser(settings.tfName,srcbits);
+
+	assert(sfp != nullptr);
+
+	if (sfp->getErr() != TraceDqr::DQERR_OK) {
+		printf("Error: cannot open trace file '%s' for input\n",settings.tfName);
+		delete sfp;
+		sfp = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	if (settings.efName != nullptr ) {
+		// create elf object
+
+		elfReader = new (std::nothrow) ElfReader(settings.efName);
+
+	    assert(elfReader != nullptr);
+
+	    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
+	    	if (sfp != nullptr) {
+	    		delete sfp;
+	    		sfp = nullptr;
+	    	}
+
+	    	delete elfReader;
+	    	elfReader = nullptr;
+
+	    	status = TraceDqr::DQERR_ERR;
+
+	    	return TraceDqr::DQERR_ERR;
+	    }
+
+	    // create disassembler object
+
+	    bfd *abfd;
+	    abfd = elfReader->get_bfd();
+
+		disassembler = new (std::nothrow) Disassembler(abfd,settings.labelsAsFunctions);
+
+		assert(disassembler != nullptr);
+
+		if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+			if (sfp != nullptr) {
+				delete sfp;
+				sfp = nullptr;
+			}
+
+			if (elfReader != nullptr) {
+				delete elfReader;
+				elfReader = nullptr;
+			}
+
+			delete disassembler;
+			disassembler = nullptr;
+
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_ERR;
+		}
+
+		rc = disassembler->setPathType(settings.pathType);
+		if (rc != TraceDqr::DQERR_OK) {
+			if (sfp != nullptr) {
+				delete sfp;
+				sfp = nullptr;
+			}
+
+			if (elfReader != nullptr) {
+				delete elfReader;
+				elfReader = nullptr;
+			}
+
+			delete disassembler;
+			disassembler = nullptr;
+
+			status = rc;
+			return rc;
+		}
+
+	    // get symbol table
+
+	    symtab = elfReader->getSymtab();
+	    if (symtab == nullptr) {
+	    	delete elfReader;
+	    	elfReader = nullptr;
+
+	    	delete sfp;
+	    	sfp = nullptr;
+
+	    	status = TraceDqr::DQERR_ERR;
+
+	    	return TraceDqr::DQERR_ERR;
+	    }
+	}
+	else {
+		elfReader = nullptr;
+		disassembler = nullptr;
+		symtab = nullptr;
+	}
+
+	for (int i = 0; (size_t)i < sizeof lastFaddr / sizeof lastFaddr[0]; i++ ) {
+		lastFaddr[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof currentAddress / sizeof currentAddress[0]; i++ ) {
+		currentAddress[i] = 0;
+	}
+
+	counts = new Count[DQR_MAXCORES];
+
+	for (int i = 0; (size_t)i < sizeof state / sizeof state[0]; i++ ) {
+		state[i] = TRACE_STATE_GETFIRSTSYNCMSG;
+	}
+
+	readNewTraceMessage = true;
+	currentCore = 0;	// as good as eny!
+
+	for (int i = 0; (size_t)i < sizeof lastTime / sizeof lastTime[0]; i++) {
+		lastTime[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof lastCycle / sizeof lastCycle[0]; i++) {
+		lastCycle[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof eCycleCount / sizeof eCycleCount[0]; i++) {
+		eCycleCount[i] = 0;
+	}
+
+	instructionInfo.CRFlag = TraceDqr::isNone;
+	instructionInfo.brFlags = TraceDqr::BRFLAG_none;
+
+	instructionInfo.address = 0;
+	instructionInfo.instruction = 0;
+	instructionInfo.instSize = 0;
+
+	if (settings.numAddrBits != 0 ) {
+		instructionInfo.addrSize = settings.numAddrBits;
+	}
+	else if (elfReader == nullptr) {
+		instructionInfo.addrSize = 0;
+	}
+	else {
+		instructionInfo.addrSize = elfReader->getBitsPerAddress();
+	}
+
+	instructionInfo.addrDispFlags = settings.addrDispFlags;
+
+	instructionInfo.addrPrintWidth = (instructionInfo.addrSize + 3) / 4;
+
+	instructionInfo.addressLabel = nullptr;
+	instructionInfo.addressLabelOffset = 0;
+	instructionInfo.haveOperandAddress = false;
+	instructionInfo.operandAddress = 0;
+	instructionInfo.operandLabel = nullptr;
+	instructionInfo.operandLabelOffset = 0;
+
+	instructionInfo.timestamp = 0;
+	instructionInfo.caFlags = TraceDqr::CAFLAG_NONE;
+	instructionInfo.pipeCycles = 0;
+	instructionInfo.VIStartCycles = 0;
+	instructionInfo.VIFinishCycles = 0;
+
+	sourceInfo.sourceFile = nullptr;
+	sourceInfo.sourceFunction = nullptr;
+	sourceInfo.sourceLineNum = 0;
+	sourceInfo.sourceLine = nullptr;
+
+	NexusMessage::targetFrequency = settings.freq;
+
+	tsSize = settings.tsSize;
+
+	for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
+		enterISR[i] = TraceDqr::isNone;
+	}
+
+	status = setITCPrintOptions(TraceDqr::ITC_OPT_NLS,4096,0);
+
+	if ((settings.caName != nullptr) && (settings.caType != TraceDqr::CATRACE_NONE)) {
+		rc = setCATraceFile(settings.caName,settings.caType);
+		if (rc != TraceDqr::DQERR_OK) {
+			cleanUp();
+
+			status = rc;
+			return status;
+		}
+	}
+
+	return status;
 }
 
 void Trace::cleanUp()
@@ -2713,148 +3503,6 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 
 	return TraceDqr::DQERR_OK;
 }
-
-#ifdef foodog
-OrderedTraceInfo::OrderedTraceInfo()
-{
-	messageIn = 0;
-	messageOut = 0;
-	instructionIn = 0;
-	instructionOut = 0;
-	sourceIn = 0;
-	sourceOut = 0;
-}
-
-OrderedTraceInfo::~OrderedTraceInfo()
-{
-	for (int i = 0; i < DQR_MAXCORES; i++) {
-		messageIn[i] = 0;
-		messageOut[i] = 0;
-	}
-}
-
-TraceDqr::DQErr qTraceMessage(NexusMessage **msgInfo)
-{
-	if ((msgInfo == nullptr) || (*msgInfo == nullptr) {
-		return TraceDqr::DQERR_ERR;
-	}
-
-	core = *msgInfo->coreId;
-
-	if (core >= DQR_MAXCORES) {
-		return TraceDqr::DQERR_ERR;
-	}
-
-	is the -1 below correct? could it go negative?
-
-	if ((messageIn[core] == messageOut[core]-1) || ((messageIn[core] == sizeof messageIn / sizeof mesageIn[0]) && (messageOut[core] == 0))) {
-		printf("Error: qTraceMessage(): Q is full\n");
-		return TraceDqr::DQERR_ERR;
-	}
-
-	// Add message to message Q
-
-	messageQ[core][messageIn[core]] = **msgInfo;
-
-	messageIn[core] += 1;
-	if (messageInf[core] >= sizeof messageIn / sizeof messageIn[0]) {
-		messageIn[core] = 0;
-	}
-
-	return TraceDqr::DQERR_OK;
-}
-
-int OrderedTraceInfo::getOrderedTraceMessage(int core,TraceDqr::ADDRESS address,TraceDqr::TIMESTAMP timestamp,nexusMessage **msgInfo)
-{
-	nexusMessage *message;
-
-	if ((msgInfo == nullptr) || (*msgInfo == nullptr)) {
-		return -1;
-	}
-
-	// see if there is a matching trace record for core, address | timestamp
-	// only match by timestamp if address is not available
-
-	int out;
-	int in;
-
-	in = messageIn[core];
-	out = messageOut[core];
-
-	if (in == out) {
-		// q is empty
-
-		return 0;
-	}
-
-	message = messageQ[core][out];
-
-	//Dont want to do this for every instruction record!!!!
-	if (address != 0) {
-		//match by address
-		//the problem is messages with uaddrs aren't going to be able to figure out if address match. Need more info
-		need last faddr also??
-		switch (message->tcode) {
-		case TCODE_DEBUG_STATUS:
-		case TCODE_DEVICE_ID:
-		case TCODE_OWNERSHIP_TRACE:
-		case TCODE_DIRECT_BRANCH:
-		case TCODE_INDIRECT_BRANCH:
-		case TCODE_DATA_WRITE:
-		case TCODE_DATA_READ:
-		case TCODE_DATA_ACQUISITION:
-		case TCODE_ERROR:
-		case TCODE_SYNC:
-		case TCODE_CORRECTION:
-		case TCODE_DIRECT_BRANCH_WS:
-		case TCODE_INDIRECT_BRANCH_WS:
-		case TCODE_DATA_WRITE_WS:
-		case TCODE_DATA_READ_WS:
-		case TCODE_WATCHPOINT:
-		case TCODE_OUTPUT_PORTREPLACEMENT:
-		case TCODE_INPUT_PORTREPLACEMENT:
-		case TCODE_AUXACCESS_READ:
-		case TCODE_AUXACCESS_WRITE:
-		case TCODE_AUXACCESS_READNEXT:
-		case TCODE_AUXACCESS_WRITENEXT:
-		case TCODE_AUXACCESS_RESPONSE:
-		case TCODE_RESOURCEFULL:
-		case TCODE_INDIRECTBRANCHHISTORY:
-		case TCODE_INDIRECTBRANCHHISTORY_WS:
-		case TCODE_REPEATBRANCH:
-		case TCODE_REPEATINSTRUCTION:
-		case TCODE_REPEATINSTRUCTION_WS:
-		case TCODE_CORRELATION:
-		case TCODE_INCIRCUITTRACE:
-		case TCODE_INCIRCUITTRACE_WS:
-
-		case TCODE_UNDEFINED:
-		default:
-			break;
-
-		}
-	}
-	else if (timestamp != 0) {
-		// match by timestamp
-	}
-	else {
-
-	}
-
-	// may have message, inst, and src info all, or may just have msg info, or just inst info. Should always have inst info with src info
-	// unless, not asking for inst info!!
-
-	// If we just have inst info or src info, see if there is anything in the q
-
-//foodog
-
-//	how do we order messages? nexus messages can be oredered by number? instruciton by address. source machted to instruciton. What if there is not insturciton? should there always be an insturcition if there is a source?
-
-//need some small arrays to use as q's Do I need one for each object? Probablly
-
-//need to know what messages don't contribute to counts or are not syncs. They will always get dumped in here. Others will to'
-}
-#endif // foodog
 
 TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgInfo,Source *srcInfo,int *flags)
 {

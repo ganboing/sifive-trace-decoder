@@ -10614,15 +10614,6 @@ TraceDqr::ADDRESS AddrStack::pop()
 	return t;
 }
 
-#ifdef foodog
-NexusMessageSync::NexusMessageSync()
-{
-	firstMsgNum = 0;
-	lastMsgNum  = 0;
-	index = 0;
-}
-#endif // foodog
-
 Simulator::Simulator(char *f_name,int arch_size)
 {
 	TraceDqr::DQErr ec;
@@ -10648,12 +10639,6 @@ Simulator::Simulator(char *f_name,int arch_size)
 		status = ec;
 		return;
 	}
-
-//	ec = parseFile();
-//	if (ec != TraceDqr::DQERR_OK) {
-//		status = ec;
-//		return;
-//	}
 
 	// prep the dissasembler
 

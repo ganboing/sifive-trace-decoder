@@ -37,7 +37,7 @@ using namespace std;
 static void usage(char *name)
 {
 	printf("Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] [-btm | -htm] -basename name\n");
-	printf("           [-srcbits=nn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]\n");
+	printf("           [-pf propfile] [-srcbits=nn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]\n");
 	printf("           [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]\n");
 	printf("           [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]\n");
 	printf("           [-noanalytics] [-freq nn] [-tssize=n] [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n]\n");
@@ -47,6 +47,8 @@ static void usage(char *name)
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
 	printf("-s simfile:   Specify the name of the simulator output file. When using a simulator output file, cannot use\n");
 	printf("              a tracefile (-t option). Can provide an elf file (-e option), but is not required.\n");
+	printf("-pf propfile: Specify a properties file containing information on trace. Properties may be overridden using command\n");
+	printf("              flags.\n");
 	printf("-ca cafile:   Specify the name of the cycle accurate trace file. Must also specify the -t and -e switches.\n");
 	printf("-catype nn:   Specify the type of the CA trace file. Valid options are none, instruction, and vector\n");
 	printf("-btm:         Specify the type of the trace file as btm (branch trace messages). On by default.\n");
@@ -175,14 +177,11 @@ int main(int argc, char *argv[])
 	char *ef_name = nullptr;
 	char *sf_name = nullptr;
 	char *ca_name = nullptr;
+	char *pf_name = nullptr;
 	char buff[128];
 	int buff_index = 0;
 	bool usage_flag = false;
 	bool version_flag = false;
-#ifdef foodog
-	int start_msg_num = 0;
-	int stop_msg_num = 0;
-#endif // foodog
 	bool src_flag = true;
 	bool file_flag = true;
 	bool dasm_flag = true;
@@ -248,6 +247,16 @@ int main(int argc, char *argv[])
 
 			ef_name = argv[i];
 		}
+		else if (strcmp("-pf",argv[i]) == 0) {
+			i += 1;
+			if (i >= argc) {
+				printf("Error: option -pf requires a file name\n");
+				usage(argv[0]);
+				return 1;
+			}
+
+			pf_name = argv[i];
+		}
 		else if (strcmp("-ca",argv[i]) == 0) {
 			i += 1;
 			if (i >= argc) {
@@ -264,36 +273,6 @@ int main(int argc, char *argv[])
 		else if (strcmp("-htm",argv[i]) == 0) {
 			traceType = TraceDqr::TRACETYPE_HTM;
 		}
-#ifdef foodog
-		else if (strcmp("-start",argv[i]) == 0) {
-			i += 1;
-			if (i >= argc) {
-				printf("Error: option -start requires a trace message number\n");
-				usage(argv[0]);
-				return 1;
-			}
-
-			start_msg_num = atoi(argv[i]);
-			if (start_msg_num <= 0) {
-				printf("Error: starting message number must be >= 1\n");
-				return 1;
-			}
-		}
-		else if (strcmp("-stop",argv[i]) == 0) {
-			i += 1;
-			if (i >= argc) {
-				printf("Error: option -stop requires a trace message number\n");
-				usage(argv[0]);
-				return 1;
-			}
-
-			stop_msg_num = atoi(argv[i]);
-			if (stop_msg_num <= 0) {
-				printf("Error: stopping message number must be >= 1\n");
-				return 1;
-			}
-		}
-#endif // foodog
 		else if (strcmp("-src",argv[i]) == 0) {
 			src_flag = true;
 		}
@@ -629,12 +608,6 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
-	if ((sf_name == nullptr) && (tf_name == nullptr) && (base_name == nullptr)) {
-		printf("Error: must specify either simulator file, trace file, SWT trace server, or base name\n");
-		usage(argv[0]);
-		return 1;
-	}
-
 	if (base_name != nullptr) {
 		tf_name = &buff[buff_index];
 		strcpy(tf_name,base_name);
@@ -649,8 +622,6 @@ int main(int argc, char *argv[])
 
 	Trace *trace = nullptr;
 	Simulator *sim = nullptr;
-
-	// might want to include some path info!
 
 	if (sf_name != nullptr) {
 		if ( ef_name != nullptr) {
@@ -672,7 +643,15 @@ int main(int argc, char *argv[])
 
 		sim->setLabelMode(labelFlag);
 	}
-	else {
+	else if (pf_name != nullptr) {
+		//need to allow override if switches are given!! include cafiles!
+
+		// see if there are any overrides, and if so, build the string for them
+
+
+		trace = new (std::nothrow) Trace(pf_name);
+	}
+	else if (tf_name != nullptr ) {
 		trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
 
 		assert(trace != nullptr);
@@ -697,9 +676,6 @@ int main(int argc, char *argv[])
 			}
 		}
 
-#ifdef foodog
-		trace->setTraceRange(start_msg_num,stop_msg_num);
-#endif // foodog
 		trace->setTSSize(tssize);
 		trace->setPathType(pt);
 
@@ -721,6 +697,11 @@ int main(int argc, char *argv[])
 		}
 
 		trace->setLabelMode(labelFlag);
+	}
+	else {
+		printf("Error: must specify either simulator file, trace file, SWT trace server, properties file, or base name\n");
+		usage(argv[0]);
+		return 1;
 	}
 
 	TraceDqr::DQErr ec;

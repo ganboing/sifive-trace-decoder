@@ -41,6 +41,7 @@
 #include <cstring>
 #include <cstdint>
 #include <cassert>
+#include <fcntl.h>
 
 #ifdef DO_TIMES
 class Timer {
@@ -288,6 +289,75 @@ private:
   TraceDqr::DQErr parseICTWS(NexusMessage &nm,Analytics &analytics);
 };
 
+class propertiesParser {
+public:
+	propertiesParser(char *srcData);
+	~propertiesParser();
+
+	TraceDqr::DQErr getStatus() { return status; }
+
+	void            rewind();
+	TraceDqr::DQErr getNextProperty(char **name,char **value);
+
+private:
+	TraceDqr::DQErr status;
+
+	struct line {
+		char *name;
+		char *value;
+		char *line;
+	};
+
+	int   size;
+	int   numLines;
+	int   nextLine;
+	line *lines;
+	char *propertiesBuff;
+
+	TraceDqr::DQErr getNextToken(char *inputText,int &startIndex,int &endIndex);
+};
+
+// class TraceSettings. Used to initialize trace objects
+
+class TraceSettings {
+public:
+	TraceSettings();
+	~TraceSettings();
+
+	TraceDqr::DQErr addSettings(propertiesParser *properties);
+
+	TraceDqr::DQErr propertyToTFName(char *value);
+	TraceDqr::DQErr propertyToEFName(char *value);
+	TraceDqr::DQErr propertyToSrcBits(char *value);
+	TraceDqr::DQErr propertyToNumAddrBits(char *value);
+	TraceDqr::DQErr propertyToITCPrintOpts(char *value);
+	TraceDqr::DQErr propertyToITCPrintChannel(char *value);
+	TraceDqr::DQErr propertyToSrcRoot(char *value);
+	TraceDqr::DQErr propertyToCAName(char *value);
+	TraceDqr::DQErr propertyToCAType(char *value);
+	TraceDqr::DQErr propertyToPathType(char *value);
+	TraceDqr::DQErr propertyToLabelsAsFuncs(char *value);
+	TraceDqr::DQErr propertyToFreq(char *value);
+	TraceDqr::DQErr propertyToTSSize(char *value);
+
+	char *tfName;
+	char *efName;
+	char *caName;
+	TraceDqr::CATraceType caType;
+	int srcBits;
+	int numAddrBits;
+	int itcPrintOpts;
+	int itcPrintChannel;
+	char *srcRoot;
+	TraceDqr::pathType pathType;
+	bool labelsAsFunctions;
+	uint32_t freq;
+	uint32_t addrDispFlags;
+	int tsSize;
+
+private:
+};
+
 // class Disassembler: class to help in the dissasemblhy of instrucitons
 
 class Disassembler {
@@ -383,17 +453,6 @@ private:
 	TraceDqr::ADDRESS *stack;
 };
 
-#ifdef foodog
-class NexusMessageSync {
-public:
-	NexusMessageSync();
-	int          firstMsgNum;
-	int          lastMsgNum;
-	int          index;
-	NexusMessage msgs[512];
-};
-#endif // foodog
-
 class Count {
 public:
 	Count();
@@ -441,21 +500,6 @@ private:
     int notTakenCount[DQR_MAXCORES];
     AddrStack stack[DQR_MAXCORES];
 };
-
-#ifdef foodog
-class OrderedTraceInfo {
-public:
-	OrderedTraceInfo();
-	~OrderedTraceInfo();
-	TraceDqr::DQErr qTraceMessage(NexusMessage **msgInfo);
-	int getOrderedTraceMessage(int core,TraceDqr::ADDRESS,TraceDqr::TIMESTAMP,NexusMessage **msgInfo);
-
-private:
-	NexusMessage messageQ[DQR_MAXCORES][8];
-	int          messageIn[DQR_MAXCORES];
-	int          messageOut[DQR_MAXCORES];
-};
-#endif // foodog
 
 #endif /* TRACE_HPP_ */
 

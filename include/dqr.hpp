@@ -775,12 +775,10 @@ private:
 class Trace {
 public:
     Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
+    Trace(char *mf_ame);
     ~Trace();
     void cleanUp();
     static const char *version();
-#ifdef foodog
-    TraceDqr::DQErr setTraceRange(int start_msg_num,int stop_msg_num);
-#endif // foodog
     TraceDqr::DQErr setTraceType(TraceDqr::TraceType tType);
 	TraceDqr::DQErr setTSSize(int size);
 	TraceDqr::DQErr setITCPrintOptions(int intFlags,int buffSize,int channel);
@@ -830,14 +828,9 @@ private:
 		TRACE_STATE_SYNCCATE,
 		TRACE_STATE_GETFIRSTSYNCMSG,
 		TRACE_STATE_GETMSGWITHCOUNT,
-#ifdef foodog
-		TRACE_STATE_GETSTARTTRACEMSG,
-		TRACE_STATE_COMPUTESTARTINGADDRESS,
-#endif // foodog
 		TRACE_STATE_RETIREMESSAGE,
 		TRACE_STATE_GETNEXTMSG,
 		TRACE_STATE_GETNEXTINSTRUCTION,
-//		TRACE_STATE_EVENT,
 		TRACE_STATE_DONE,
 		TRACE_STATE_ERROR
 	};
@@ -884,9 +877,7 @@ private:
 	TraceDqr::TIMESTAMP lastCycle[DQR_MAXCORES];
 	int               eCycleCount[DQR_MAXCORES];
 
-#ifdef foodog
-	class NexusMessageSync *messageSync[DQR_MAXCORES];
-#endif // foodog
+	TraceDqr::DQErr configure(class TraceSettings &settings);
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
