@@ -643,60 +643,107 @@ int main(int argc, char *argv[])
 
 		sim->setLabelMode(labelFlag);
 	}
-	else if (pf_name != nullptr) {
-		//need to allow override if switches are given!! include cafiles!
+	else if ((pf_name != nullptr) || (tf_name != nullptr)) {
+		if (pf_name != nullptr) {
+			// generate error message if anything was set to not-default!
 
-		// see if there are any overrides, and if so, build the string for them
-
-
-		trace = new (std::nothrow) Trace(pf_name);
-	}
-	else if (tf_name != nullptr ) {
-		trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
-
-		assert(trace != nullptr);
-
-		if (trace->getStatus() != TraceDqr::DQERR_OK) {
-			delete trace;
-			trace = nullptr;
-
-			printf("Error: new Trace(%s,%s) failed\n",tf_name,ef_name);
-
-			return 1;
-		}
-
-		trace->setTraceType(traceType);
-
-		if (ca_name != nullptr) {
-			TraceDqr::DQErr rc;
-			rc = trace->setCATraceFile(ca_name,caType);
-			if (rc != TraceDqr::DQERR_OK) {
-				printf("Error: Could not set cycle accurate trace file\n");
+			if (tf_name != nullptr) {
+				printf("Error: cannot specify -t flag when -pf is also specified\n");
 				return 1;
 			}
-		}
 
-		trace->setTSSize(tssize);
-		trace->setPathType(pt);
-
-		if (cutPath != nullptr) {
-			TraceDqr::DQErr rc;
-
-			rc = trace->subSrcPath(cutPath,newRoot);
-			if (rc != TraceDqr::DQERR_OK) {
-				printf("Error: Could not set cutPath or newRoot\n");
+			if (ef_name != nullptr) {
+				printf("Error: cannot specify -e flag when -pf is also specified\n");
 				return 1;
 			}
+
+			trace = new (std::nothrow) Trace(pf_name);
+
+			assert(trace != nullptr);
+
+			if (trace->getStatus() != TraceDqr::DQERR_OK) {
+				delete trace;
+				trace = nullptr;
+
+				printf("Error: new Trace() failed\n",pf_name);
+
+				return 1;
+			}
+
+			trace->setTraceType(traceType);
+
+			if (ca_name != nullptr) {
+				TraceDqr::DQErr rc;
+				rc = trace->setCATraceFile(ca_name,caType);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Could not set cycle accurate trace file\n");
+					return 1;
+				}
+			}
+
+			trace->setTSSize(tssize);
+			trace->setPathType(pt);
+
+			if (cutPath != nullptr) {
+				TraceDqr::DQErr rc;
+
+				rc = trace->subSrcPath(cutPath,newRoot);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Could not set cutPath or newRoot\n");
+					return 1;
+				}
+			}
+
+			trace->setLabelMode(labelFlag);
+
 		}
+		else {
+			trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
 
-		// NLS is on by default when the trace object is created. Only
-		// set the print options if something has changed
+			assert(trace != nullptr);
 
-		if (itcPrintOpts != TraceDqr::ITC_OPT_NLS) {
-			trace->setITCPrintOptions(itcPrintOpts,4096,itcPrintChannel);
+			if (trace->getStatus() != TraceDqr::DQERR_OK) {
+				delete trace;
+				trace = nullptr;
+
+				printf("Error: new Trace(%s,%s) failed\n",tf_name,ef_name);
+
+				return 1;
+			}
+
+			trace->setTraceType(traceType);
+
+			if (ca_name != nullptr) {
+				TraceDqr::DQErr rc;
+				rc = trace->setCATraceFile(ca_name,caType);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Could not set cycle accurate trace file\n");
+					return 1;
+				}
+			}
+
+			trace->setTSSize(tssize);
+			trace->setPathType(pt);
+
+			if (cutPath != nullptr) {
+				TraceDqr::DQErr rc;
+
+				rc = trace->subSrcPath(cutPath,newRoot);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Could not set cutPath or newRoot\n");
+					return 1;
+				}
+			}
+
+			// NLS is on by default when the trace object is created. Only
+			// set the print options if something has changed
+
+			if (itcPrintOpts != TraceDqr::ITC_OPT_NLS) {
+				trace->setITCPrintOptions(itcPrintOpts,4096,itcPrintChannel);
+			}
+
+			trace->setLabelMode(labelFlag);
 		}
-
-		trace->setLabelMode(labelFlag);
 	}
 	else {
 		printf("Error: must specify either simulator file, trace file, SWT trace server, properties file, or base name\n");
