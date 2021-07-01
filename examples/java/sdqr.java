@@ -32,7 +32,7 @@ public class sdqr {
 	    System.exit(1);
     }
 
-    System.out.printf("dqrdll version: %s\n",Trace.version());
+//    System.out.printf("dqrdll version: %s\n",Trace.version());
  
     if (sim == null) {
       System.out.println("v is null");
@@ -146,6 +146,8 @@ public class sdqr {
           if (srcBits > 0) {
             System.out.printf("[%d] ", instInfo.getCoreId());
           }
+
+          System.out.printf("t:%d ",instInfo.getTimestamp());
 
           String dst = String.format("    %s:",instInfo.addressToString(0));
           System.out.print(dst);
