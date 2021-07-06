@@ -47,5 +47,5 @@ jobs:
 
       - name: Print Results
         if: always() 
-        run: cat results.log
+        run: cat result.log
 
