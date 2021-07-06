@@ -1,6 +1,8 @@
-# This is a basic workflow to help you get started with Actions
+# Copyright SiFive 2021
+# This is a workflow file to test the functionality of the trace-decoder using tests
+# provided in github.com/sifive/trace-decoder-tests. For Internal Use Only.
 
-name: CI
+name: DQR_Tets
 
 # Controls when the workflow will run
 on:
@@ -30,15 +32,6 @@ jobs:
 
       - name: Make DQR
         run: make
-
-      - name: Make DQR Install
-        run: make install
-
-      - name: Contents of ./Install
-        run: ls install/
-
-      - name: Contents of ./
-        run: ls
 
       - name: Get DQR Tests
         run: git clone https://github.com/sifive/trace-decoder-tests
