@@ -31,7 +31,7 @@ jobs:
         run: make clean
 
       - name: Make DQR
-        run: make
+        run: make && make install
 
       - name: Get DQR Tests
         run: git clone https://github.com/sifive/trace-decoder-tests
