@@ -54,6 +54,9 @@ jobs:
 
     steps:
 
+      - name: List Directory
+        run: ls
+
       - name: Test DQR
         run: cd ./trace-decoder-tests && make DQRPATH=$(pwd)/../install
 
