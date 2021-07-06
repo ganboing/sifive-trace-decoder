@@ -46,6 +46,6 @@ jobs:
         run: cd ./trace-decoder-tests && make DQRPATH=$(pwd)/../install
 
       - name: Print Results
-        if: always()
-        run: 
+        if: {{ always() }}
+          run: cat results.log
 
