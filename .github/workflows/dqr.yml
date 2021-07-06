@@ -18,7 +18,7 @@ on:
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "build"
-  build_dqr:
+  build_and_test:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
@@ -33,26 +33,11 @@ jobs:
       - name: Make DQR
         run: make
 
-  build_tests:
-
-    needs: build_dqr
-
-    runs-on: ubuntu-latest
-
-    steps:
       - name: Get DQR Tests
         run: git clone https://github.com/sifive/trace-decoder-tests
 
       - name: Clean test enviroment
         run: cd ./trace-decoder-tests && make clean
-
-  run_tests:
-
-    needs: build_tests
-
-    runs-on: ubuntu-latest
-
-    steps:
 
       - name: List Directory
         run: ls
