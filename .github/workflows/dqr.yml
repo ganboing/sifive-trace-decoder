@@ -37,7 +37,7 @@ jobs:
 
     needs: build_dqr
 
-    runs_on: ubuntu-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Get DQR Tests
@@ -50,7 +50,7 @@ jobs:
 
     needs: build_tests
 
-    runs_on: ubuntu-latest
+    runs-on: ubuntu-latest
 
     steps:
 
