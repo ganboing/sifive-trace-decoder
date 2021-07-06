@@ -45,5 +45,3 @@ jobs:
       - name: Test DQR
         run: cd ./trace-decoder-tests && make DQRPATH=$(pwd)/../install
 
-      - name: Print Results
-        run: cd ./trace-decoder-tests && cat result.log
