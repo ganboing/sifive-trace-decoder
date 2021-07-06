@@ -2,7 +2,7 @@
 # This is a workflow file to test the functionality of the trace-decoder using tests
 # provided in github.com/sifive/trace-decoder-tests. For Internal Use Only.
 
-name: DQR_Tets
+name: DQR_Tests
 
 # Controls when the workflow will run
 on:
@@ -43,9 +43,5 @@ jobs:
         run: ls
 
       - name: Test DQR
-        run: cd ./trace-decoder-tests && make DQRPATH=$(pwd)/../install
-
-      - name: Print Results
-        if: always() 
-        run: cat result.log
+        run: cd ./trace-decoder-tests && make DQRPATH=$(pwd)/../install && cat result.log
 
