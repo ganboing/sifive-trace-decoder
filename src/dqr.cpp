@@ -11698,7 +11698,7 @@ TraceDqr::DQErr Simulator::computeBranchFlags(TraceDqr::ADDRESS currentAddr,uint
 		// could include register info and then we could tell
 		break;
 	default:
-		if (currentAddr + immediate != nextAddr) {
+		if ((currentAddr + inst_size/8) != nextAddr) {
 			enterISR[currentCore] = TraceDqr::isInterrupt;
 		}
 		break;
