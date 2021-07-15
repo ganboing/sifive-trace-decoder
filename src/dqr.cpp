@@ -8673,12 +8673,14 @@ TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
 		return status;
 	}
 
-	TraceDqr::DQErr rc;
+	if ((cutPath != nullptr) || (newRoot != nullptr)) {
+		TraceDqr::DQErr rc;
 
-	rc = disassembler->subSrcPath(cutPath,newRoot);
-	if (rc != TraceDqr::DQERR_OK) {
-		status = rc;
-		return rc;
+		rc = disassembler->subSrcPath(cutPath,newRoot);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return rc;
+		}
 	}
 
 	status = TraceDqr::DQERR_OK;
@@ -10625,6 +10627,8 @@ Simulator::Simulator(char *f_name,int arch_size)
 	nextLine = 0;
 	currentCore = 0;
 	flushing = false;
+	cutPath      = nullptr;
+	newRoot      = nullptr;
 
 	elfReader = nullptr;
 	disassembler = nullptr;
@@ -10705,6 +10709,8 @@ Simulator::Simulator(char *f_name,char *e_name)
 	flushing = false;
 	elfReader = nullptr;
 	disassembler = nullptr;
+	cutPath      = nullptr;
+	newRoot      = nullptr;
 
 	if (f_name == nullptr) {
 		status = TraceDqr::DQERR_ERR;
@@ -10834,9 +10840,59 @@ TraceDqr::DQErr Simulator::setLabelMode(bool labelsAreFuncs)
 		return status;
 	}
 
+	if ((cutPath != nullptr) || (newRoot != nullptr)) {
+		TraceDqr::DQErr rc;
+
+		rc = disassembler->subSrcPath(cutPath,newRoot);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return rc;
+		}
+	}
+
 	status = TraceDqr::DQERR_OK;
 
 	return status;
+}
+
+TraceDqr::DQErr Simulator::subSrcPath(const char *cutPath,const char *newRoot)
+{
+	if (this->cutPath != nullptr) {
+		delete [] this->cutPath;
+		this->cutPath = nullptr;
+	}
+
+	if (this->newRoot != nullptr) {
+		delete [] this->newRoot;
+		this->newRoot = nullptr;
+	}
+
+	if (cutPath != nullptr) {
+		int l = strlen(cutPath)+1;
+
+		this->cutPath = new char[l];
+		strcpy(this->cutPath,cutPath);
+	}
+
+	if (newRoot != nullptr) {
+		int l = strlen(newRoot)+1;
+
+		this->newRoot = new char[l];
+		strcpy(this->newRoot,newRoot);
+	}
+
+	if (disassembler != nullptr) {
+		TraceDqr::DQErr rc;
+
+		rc = disassembler->subSrcPath(cutPath,newRoot);
+
+		status = rc;
+		return rc;
+	}
+
+	status = TraceDqr::DQERR_ERR;
+
+	return TraceDqr::DQERR_ERR;
 }
 
 TraceDqr::DQErr Simulator::readFile(char *file)
@@ -11765,6 +11821,7 @@ TraceDqr::DQErr Simulator::buildInstructionFromSrec(SRec *srec,TraceDqr::BranchF
 		return TraceDqr::DQERR_ERR;
 	}
 
+	instructionInfo.caFlags = TraceDqr::CAFLAG_NONE;
 	instructionInfo.brFlags = brFlags;
 	instructionInfo.CRFlag = crFlag;
 

@@ -933,6 +933,7 @@ public:
 	void analyticsToText(char *dst,int dst_len,int detailLevel) {/*analytics.toText(dst,dst_len,detailLevel);*/ }
 //	std::string analyticsToString(int detailLevel) { /* return analytics.toString(detailLevel);*/ }
 	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
+	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 
 private:
 	TraceDqr::DQErr status;
@@ -957,6 +958,8 @@ private:
 
 	class ElfReader    *elfReader; // need this class to create disassembler class
 	class Disassembler *disassembler;
+	char               *cutPath;
+	char               *newRoot;
 
 	disassemble_info disasm_info;
 	disassembler_ftype disasm_func;
