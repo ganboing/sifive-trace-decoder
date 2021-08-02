@@ -534,6 +534,7 @@ public:
 	uint8_t  getEType();
 	uint8_t  getCKDF();
 	uint8_t  getCKSRC();
+	TraceDqr::ADDRESS getCKData(int i);
 	uint8_t  getCDF();
 	uint8_t  getEVCode();
 	uint32_t getData();
