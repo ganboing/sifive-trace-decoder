@@ -528,6 +528,7 @@ public:
     TraceDqr::ADDRESS    getU_Addr();
     TraceDqr::ADDRESS    getF_Addr();
     TraceDqr::ADDRESS    getNextAddr() {return currentAddress;};
+    TraceDqr::ADDRESS    getICTCallReturnTarget();
     TraceDqr::BType      getB_Type();
 	TraceDqr::SyncReason getSyncReason();
 	TraceDqr::ICTReason  getICTReason();
@@ -882,6 +883,7 @@ private:
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
+	TraceDqr::DQErr nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAddr,int &crFlag);
 	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag);
 	TraceDqr::DQErr nextCAAddr(TraceDqr::ADDRESS &addr,TraceDqr::ADDRESS &savedAddr);
 
