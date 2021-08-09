@@ -822,6 +822,7 @@ public:
 	TraceDqr::TIMESTAMP processTS(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
 	int         getITCPrintMask();
 	int         getITCFlushMask();
+	TraceDqr::DQErr getInstructionByAddress(TraceDqr::ADDRESS addr, Instruction *instInfo,Source *srcInfo,int *flags);
 
 	TraceDqr::DQErr getNumBytesInSWTQ(int &numBytes);
 

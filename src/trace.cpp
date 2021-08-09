@@ -3625,6 +3625,37 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 	return TraceDqr::DQERR_OK;
 }
 
+TraceDqr::DQErr Trace::getInstructionByAddress(TraceDqr::ADDRESS addr, Instruction *instInfo,Source *srcInfo,int *flags)
+{
+	Disassemble(addr); // should error check disassembl() call!
+
+	*flags = 0;
+
+	if (instInfo != nullptr) {
+		instructionInfo.qDepth = 0;
+		instructionInfo.arithInProcess = 0;
+		instructionInfo.loadInProcess = 0;
+		instructionInfo.storeInProcess = 0;
+
+		instructionInfo.coreId = 0;
+		*instInfo = instructionInfo;
+		instInfo->CRFlag = TraceDqr::isNone;
+		instInfo->brFlags = TraceDqr::BRFLAG_none;
+
+		instInfo->timestamp = lastTime[currentCore];
+
+		*flags |= TraceDqr::TRACE_HAVE_INSTINFO;
+	}
+
+	if (srcInfo != nullptr) {
+		sourceInfo.coreId = 0;
+		*srcInfo = sourceInfo;
+		*flags |= TraceDqr::TRACE_HAVE_SRCINFO;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgInfo,Source *srcInfo,int *flags)
 {
 	TraceDqr::DQErr ec;
