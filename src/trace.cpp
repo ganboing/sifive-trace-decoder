@@ -2667,6 +2667,99 @@ std::string Trace::flushITCPrintStr(int core, bool &haveData,double &startTime,d
 	return s;
 }
 
+// Note: nextAddr() only works for inferrable calls (jal instructions
+
+TraceDqr::DQErr Trace::nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAddr,int &crFlag)
+{
+	int rc;
+	TraceDqr::DQErr ec;
+	uint32_t inst;
+	int inst_size;
+	TraceDqr::InstType inst_type;
+	int32_t immediate;
+	bool isBranch;
+	TraceDqr::Reg rs1;
+	TraceDqr::Reg rd;
+
+	ec = elfReader->getInstructionByAddress(addr,inst);
+	if (ec != TraceDqr::DQERR_OK) {
+		printf("Error: nextAddr() failed\n");
+
+		status = ec;
+		return ec;
+	}
+
+	//	Need to get the destination of the call, which is in the immediate field
+
+	crFlag = TraceDqr::isNone;
+	nextAddr = 0;
+
+	rc = decodeInstruction(inst,inst_size,inst_type,rs1,rd,immediate,isBranch);
+	if (rc != 0) {
+		printf("Error: Cann't decode size of instruction %04x\n",inst);
+
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
+	}
+
+	switch (inst_type) {
+	case TraceDqr::INST_JALR:
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
+				crFlag |= TraceDqr::isCall;
+			}
+			else if (rd != rs1) { // rd == link; rs1 == link; rd != rs1
+				crFlag |= TraceDqr::isSwap;
+			}
+			else { // rd == link; rs1 == link; rd == rs1
+				crFlag |= TraceDqr::isCall;
+			}
+		}
+		else if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) { // rd != link; rs1 == link
+			crFlag |= TraceDqr::isReturn;
+		}
+		break;
+	case TraceDqr::INST_JAL:
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			crFlag = TraceDqr::isCall;
+		}
+
+		nextAddr = addr + immediate;
+		break;
+	case TraceDqr::INST_C_JAL:
+		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
+			crFlag = TraceDqr::isCall;
+		}
+
+		nextAddr = addr + immediate;
+		break;
+	case TraceDqr::INST_C_JR:
+		// pc = pc + rs1
+		// not inferrable unconditional
+
+		if ((rs1 == TraceDqr::REG_1) || (rs1 == TraceDqr::REG_5)) {
+			crFlag |= TraceDqr::isReturn;
+		}
+		break;
+	case TraceDqr::INST_EBREAK:
+	case TraceDqr::INST_ECALL:
+		crFlag = TraceDqr::isException;
+		break;
+	case TraceDqr::INST_MRET:
+	case TraceDqr::INST_SRET:
+	case TraceDqr::INST_URET:
+		crFlag = TraceDqr::isExceptionReturn;
+		break;
+	default:
+		printf("Error: Trace::nextAddr(): Instruction at 0x%08x is not a JAL, JALR, C_JAL, C_JR, EBREAK, ECALL, MRET, SRET, or URET\n",addr);
+
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 // this function takes the starting address and runs one instruction only!!
 // The result is the address it stops at. It also consumes the counts (i-cnt,
 // history, taken, not-taken) when appropriate!
@@ -3297,6 +3390,20 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			if (nm.ict.ckdf == 0) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				pc = faddr;
+
+				TraceDqr::DQErr rc;
+				TraceDqr::ADDRESS nextPC;
+				int crFlags;
+
+				rc = nextAddr(pc,nextPC,crFlags);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+					return TraceDqr::DQERR_ERR;
+				}
+
+				// we will store the target address back in ckdata[1] in case it is needed later
+
+				nm.ict.ckdata[1] = nextPC;
 			}
 			else if (nm.ict.ckdf == 1) {
 				pc = faddr ^ (nm.ict.ckdata[0] << 1);
@@ -3408,6 +3515,20 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			if (nm.ictWS.ckdf == 0) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
+
+				TraceDqr::DQErr rc;
+				TraceDqr::ADDRESS nextPC;
+				int crFlags;
+
+				rc = nextAddr(pc,nextPC,crFlags);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+					return TraceDqr::DQERR_ERR;
+				}
+
+				// we will store the target address back in ckdata[1] in case it is needed later
+
+				nm.ict.ckdata[1] = nextPC;
 			}
 			else if (nm.ictWS.ckdf == 1) {
 				pc = nm.ict.ckdata[0] << 1;
@@ -3499,6 +3620,37 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		printf("Error: Trace::processTraceMessage(): Unsupported TCODE\n");
 
 		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Trace::getInstructionByAddress(TraceDqr::ADDRESS addr, Instruction *instInfo,Source *srcInfo,int *flags)
+{
+	Disassemble(addr); // should error check disassembl() call!
+
+	*flags = 0;
+
+	if (instInfo != nullptr) {
+		instructionInfo.qDepth = 0;
+		instructionInfo.arithInProcess = 0;
+		instructionInfo.loadInProcess = 0;
+		instructionInfo.storeInProcess = 0;
+
+		instructionInfo.coreId = 0;
+		*instInfo = instructionInfo;
+		instInfo->CRFlag = TraceDqr::isNone;
+		instInfo->brFlags = TraceDqr::BRFLAG_none;
+
+		instInfo->timestamp = lastTime[currentCore];
+
+		*flags |= TraceDqr::TRACE_HAVE_INSTINFO;
+	}
+
+	if (srcInfo != nullptr) {
+		sourceInfo.coreId = 0;
+		*srcInfo = sourceInfo;
+		*flags |= TraceDqr::TRACE_HAVE_SRCINFO;
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -3777,7 +3929,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 						return status;
 					}
-                                }
+				}
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;

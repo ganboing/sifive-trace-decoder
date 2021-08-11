@@ -4273,6 +4273,72 @@ TraceDqr::ADDRESS NexusMessage::getF_Addr()
 //	return addr;
 //}
 
+// Note: for this function to return the correct target address, processTraceMessage() must have already
+// been called for this messages if it is a TCODE_INCIRCUITTRACE message. If it is a TCODE_INCIRCUIRCIUTTRACE_WS,
+// it will work either way
+
+TraceDqr::ADDRESS    NexusMessage::getICTCallReturnTarget()
+{
+	switch (tcode) {
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+		if (ict.cksrc == TraceDqr::ICT_INFERABLECALL) {
+			if (ict.ckdf == 0) {
+				return ict.ckdata[1];
+			}
+			else {
+				return currentAddress ^ (ict.ckdata[1] << 1);
+			}
+		}
+		break;
+	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+		if (ictWS.cksrc == TraceDqr::ICT_INFERABLECALL) {
+			if (ictWS.ckdf == 0) {
+				return ictWS.ckdata[1];
+			}
+			else {
+				return currentAddress ^ (ict.ckdata[1] << 1);
+			}
+		}
+		break;
+	case TraceDqr::TCODE_INDIRECT_BRANCH:
+	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+	case TraceDqr::TCODE_DEBUG_STATUS:
+	case TraceDqr::TCODE_DEVICE_ID:
+	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+	case TraceDqr::TCODE_DIRECT_BRANCH:
+	case TraceDqr::TCODE_DATA_WRITE:
+	case TraceDqr::TCODE_DATA_READ:
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+	case TraceDqr::TCODE_ERROR:
+	case TraceDqr::TCODE_SYNC:
+	case TraceDqr::TCODE_CORRECTION:
+	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+	case TraceDqr::TCODE_DATA_WRITE_WS:
+	case TraceDqr::TCODE_DATA_READ_WS:
+	case TraceDqr::TCODE_WATCHPOINT:
+	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+	case TraceDqr::TCODE_AUXACCESS_READ:
+	case TraceDqr::TCODE_AUXACCESS_WRITE:
+	case TraceDqr::TCODE_AUXACCESS_READNEXT:
+	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+	case TraceDqr::TCODE_RESOURCEFULL:
+	case TraceDqr::TCODE_REPEATBRANCH:
+	case TraceDqr::TCODE_REPEATINSTRUCTION:
+	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+	case TraceDqr::TCODE_CORRELATION:
+	case TraceDqr::TCODE_UNDEFINED:
+		break;
+	default:
+		break;
+	}
+
+	return -1;
+}
+
 TraceDqr::BType NexusMessage::getB_Type()
 {
 	switch (tcode) {
