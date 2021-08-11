@@ -1099,7 +1099,7 @@ Manual Tracing -- Can be either a single core, or all cores using TRACE_CORES_AL
 }
 
 // Accurate Trace on -- Defaults, HTM -- Not for end user
-#define _caTraceConfigHTMDefaults(core, sink){                                          \
+#define _caTraceConfigHTMDefaults(core, sink)({                                          \
     setTeActive(core, 0);                                                               \
     setCaActive(core, 0);                                                               \
     setTeActive(core, 1);                                                               \
@@ -1112,12 +1112,12 @@ Manual Tracing -- Can be either a single core, or all cores using TRACE_CORES_AL
     setCaSinkRpReg(core, 0);                                                            \
     _caParamSticher(core,TE_INSTRUCTION_HTMSYNC,TE_INSTRUMENTATION_NONE,TE_DISABLE,     \
     TE_ENABLE,TE_ENABLE,SYNC_MAX_BTM_256,SYNC_MAX_INST_1024,sink,1);                    \
-}
+})
 
 
 
 // Cycle Accurate Trace on -- Defaults, BTM -- Not for end user
-#define _caTraceConfigBTMDefaults(core, sink){                                          \
+#define _caTraceConfigBTMDefaults(core, sink)({                                          \
     setTeActive(core, 0);                                                               \
     setCaActive(core, 0);                                                               \
     setTeActive(core, 1);                                                               \
@@ -1130,16 +1130,18 @@ Manual Tracing -- Can be either a single core, or all cores using TRACE_CORES_AL
     setCaSinkRpReg(core, 0);                                                            \
     _caParamSticher(core,TE_INSTRUCTION_BTMSYNC,TE_INSTRUMENTATION_NONE,TE_DISABLE,     \
     TE_ENABLE,TE_ENABLE,SYNC_MAX_BTM_256,SYNC_MAX_INST_1024,sink,1);                    \
-}
+})
 
 
 // helper function for macro below
-#define _caTraceConfigDefaults(core){                                                   \
+#define _caTraceConfigDefaults(core, origcore){                                                   \
     if (checkHaveHTM(core)){                                                            \
-        _caTraceConfigHTMDefaults(core);                                                \
+        (origcore != TRACE_CORES_ALL) ? _caTraceConfigHTMDefaults(core, TE_SINK_SRAM) :     \
+         _caTraceConfigHTMDefaults(core, TE_SINK_FUNNEL);                               \
     }                                                                                   \
-    else if (checkHaveBTM(core){                                                        \
-        _caTraceConfigBTMDefaults(core);                                                \
+    else if (checkHaveBTM(core)){                                                       \
+        (origcore != TRACE_CORES_ALL) ? _caTraceConfigBTMDefaults(core, TE_SINK_SRAM) :     \
+         _caTraceConfigBTMDefaults(core, TE_SINK_FUNNEL);                               \
     }                                                                                   \
 }
 
@@ -1148,11 +1150,11 @@ Manual Tracing -- Can be either a single core, or all cores using TRACE_CORES_AL
 #define caTraceConfigDefaults(core){                                                    \
     if(core ==  TRACE_CORES_ALL){                                                       \
         for(int i = 0; i < CORE_COUNT; i++){                                            \
-            _caTraceConfigDefaults(i);                                                  \
+            _caTraceConfigDefaults(i, core);                                                  \
         }                                                                               \
     }                                                                                   \
     else{                                                                               \
-        _caTraceConfigDefaults(core);                                                   \
+        _caTraceConfigDefaults(core, core);                                                   \
     }                                                                                   \
 }
 
