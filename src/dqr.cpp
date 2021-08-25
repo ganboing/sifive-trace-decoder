@@ -4434,52 +4434,6 @@ TraceDqr::SyncReason NexusMessage::getSyncReason()
 	return TraceDqr::SYNC_NONE;
 }
 
-TraceDqr::ICTReason NexusMessage::getICTReason()
-{
-	switch (tcode) {
-	case TraceDqr::TCODE_INCIRCUITTRACE:
-		return ict.cksrc;
-	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-		return ictWS.cksrc;
-	case TraceDqr::TCODE_SYNC:
-	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
-	case TraceDqr::TCODE_DEBUG_STATUS:
-	case TraceDqr::TCODE_DEVICE_ID:
-	case TraceDqr::TCODE_OWNERSHIP_TRACE:
-	case TraceDqr::TCODE_DIRECT_BRANCH:
-	case TraceDqr::TCODE_INDIRECT_BRANCH:
-	case TraceDqr::TCODE_DATA_WRITE:
-	case TraceDqr::TCODE_DATA_READ:
-	case TraceDqr::TCODE_DATA_ACQUISITION:
-	case TraceDqr::TCODE_ERROR:
-	case TraceDqr::TCODE_CORRECTION:
-	case TraceDqr::TCODE_DATA_WRITE_WS:
-	case TraceDqr::TCODE_DATA_READ_WS:
-	case TraceDqr::TCODE_WATCHPOINT:
-	case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
-	case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
-	case TraceDqr::TCODE_AUXACCESS_READ:
-	case TraceDqr::TCODE_AUXACCESS_WRITE:
-	case TraceDqr::TCODE_AUXACCESS_READNEXT:
-	case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
-	case TraceDqr::TCODE_AUXACCESS_RESPONSE:
-	case TraceDqr::TCODE_RESOURCEFULL:
-	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
-	case TraceDqr::TCODE_REPEATBRANCH:
-	case TraceDqr::TCODE_REPEATINSTRUCTION:
-	case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
-	case TraceDqr::TCODE_CORRELATION:
-	case TraceDqr::TCODE_UNDEFINED:
-		break;
-	default:
-		break;
-	}
-
-	return TraceDqr::ICT_NONE;
-}
-
 uint8_t NexusMessage::getEType()
 {
 	switch (tcode) {
@@ -4570,7 +4524,7 @@ uint8_t NexusMessage::getCKDF()
 	return 0;
 }
 
-uint8_t NexusMessage::getCKSRC()
+TraceDqr::ICTReason NexusMessage::getCKSRC()
 {
 	switch (tcode) {
 	case TraceDqr::TCODE_INCIRCUITTRACE:
@@ -4613,7 +4567,7 @@ uint8_t NexusMessage::getCKSRC()
 		break;
 	}
 
-	return 0;
+	return TraceDqr::ICT_NONE;
 }
 
 TraceDqr::ADDRESS NexusMessage::getCKData(int i)
@@ -5157,7 +5111,7 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 	}
 
 	if ((tcode != TraceDqr::TCODE_INCIRCUITTRACE) && (tcode != TraceDqr::TCODE_INCIRCUITTRACE_WS)) {
-		n += snprintf(dst+n,dst_len-n,"NxtAddr: %08llx, ",currentAddress);
+		n += snprintf(dst+n,dst_len-n,"NxtAddr: %08llx, TCode: ",currentAddress);
 	}
 
 	switch (tcode) {
@@ -5586,10 +5540,10 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 		if ((ict.cksrc == TraceDqr::ICT_CONTROL) && (ict.ckdf == 0)) {
-			n += snprintf(dst+n,dst_len-n,"INCIRCUITTRACE (%d)",tcode);
+			n += snprintf(dst+n,dst_len-n,"TCode: INCIRCUITTRACE (%d)",tcode);
 		}
 		else {
-			n += snprintf(dst+n,dst_len-n,"Address: %08llx INCIRCUITTRACE (%d)",currentAddress,tcode);
+			n += snprintf(dst+n,dst_len-n,"Address: %08llx TCode: INCIRCUITTRACE (%d)",currentAddress,tcode);
 		}
 
 		if (level >= 2) {
@@ -5663,10 +5617,10 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 		if ((ictWS.cksrc == TraceDqr::ICT_CONTROL) && (ictWS.ckdf == 0)) {
-			n += snprintf(dst+n,dst_len-n,"INCIRCUITTRACE WS (%d)",tcode);
+			n += snprintf(dst+n,dst_len-n,"TCode: INCIRCUITTRACE WS (%d)",tcode);
 		}
 		else {
-			n += snprintf(dst+n,dst_len-n,"Address: %08llx INCIRCUITTRACE WS (%d)",currentAddress,tcode);
+			n += snprintf(dst+n,dst_len-n,"Address: %08llx TCode: INCIRCUITTRACE WS (%d)",currentAddress,tcode);
 		}
 
 		if (level >= 2) {
