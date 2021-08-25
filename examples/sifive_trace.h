@@ -119,7 +119,7 @@ Value Replacement Macros
 #define XTI_ACTION_NONE            0
 #define XTI_ACTION_START           2
 #define XTI_ACTION_STOP            3
-#define TI_ACTION_SYNC             4
+#define XTI_ACTION_SYNC            4
 
 // Used for selecting XTO events
 #define XTO_ACTION_STARTING        0
