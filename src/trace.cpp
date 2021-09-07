@@ -577,10 +577,12 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V0;
 
-			QStart += 1;
-			if (QStart >= traceQSize) {
-				QStart = 0;
-			}
+//			commenting out the lines below moves vecotr instructions into the vector q on the
+//			same cycle they graduate from the pipe
+//			QStart += 1;
+//			if (QStart >= traceQSize) {
+//				QStart = 0;
+//			}
 
 			return TraceDqr::DQERR_OK;
 		}
@@ -590,10 +592,12 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V1;
 
-			QStart += 1;
-			if (QStart >= traceQSize) {
-				QStart = 0;
-			}
+//			commenting out the lines below moves vecotr instructions into the vector q on the
+//			same cycle they graduate from the pipe
+//			QStart += 1;
+//			if (QStart >= traceQSize) {
+//				QStart = 0;
+//			}
 
 			return TraceDqr::DQERR_OK;
 		}
@@ -625,10 +629,12 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 				cycles = caTraceQ[QStart].cycle;
 				caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V0;
 
-				QStart += 1;
-				if (QStart >= traceQSize) {
-					QStart = 0;
-				}
+//			commenting out the lines below moves vecotr instructions into the vector q on the
+//			same cycle they graduate from the pipe
+//				QStart += 1;
+//				if (QStart >= traceQSize) {
+//					QStart = 0;
+//				}
 
 				return TraceDqr::DQERR_OK;
 			}
@@ -638,10 +644,12 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 				cycles = caTraceQ[QStart].cycle;
 				caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V1;
 
-				QStart += 1;
-				if (QStart >= traceQSize) {
-					QStart = 0;
-				}
+//			commenting out the lines below moves vecotr instructions into the vector q on the
+//			same cycle they graduate from the pipe
+//				QStart += 1;
+//				if (QStart >= traceQSize) {
+//					QStart = 0;
+//				}
 
 				return TraceDqr::DQERR_OK;
 			}
