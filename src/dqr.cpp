@@ -6307,6 +6307,7 @@ SliceFileParser::~SliceFileParser()
 	if (SWTsock >= 0) {
 #ifdef WINDOWS
 		closesocket(SWTsock);
+		WSACleanup();
 #else  // WINDOWS
 		close(SWTsock);
 #endif // WINDOWS
@@ -9040,6 +9041,7 @@ TraceDqr::DQErr Disassembler::subSrcPath(const char *cutPath,const char *newRoot
 
 	return TraceDqr::DQERR_ERR;
 }
+
 int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size)
 {
 	assert(ins != nullptr);
@@ -10261,7 +10263,7 @@ int Disassembler::decodeInstruction(uint32_t instruction,int archSize,int &inst_
 // make all path separators either '/' or '\'; also remove '/./' and /../. Remove weird double path
 // showing up on linux (libbfd issue)
 
-void static sanePath(TraceDqr::pathType pt,const char *src,char *dst)
+void sanePath(TraceDqr::pathType pt,const char *src,char *dst)
 {
 	char drive = 0;
 	int r = 0;
@@ -10693,8 +10695,8 @@ Simulator::Simulator(char *f_name,int arch_size)
 	nextLine = 0;
 	currentCore = 0;
 	flushing = false;
-	cutPath      = nullptr;
-	newRoot      = nullptr;
+	cutPath = nullptr;
+	newRoot = nullptr;
 
 	elfReader = nullptr;
 	disassembler = nullptr;
@@ -10775,8 +10777,8 @@ Simulator::Simulator(char *f_name,char *e_name)
 	flushing = false;
 	elfReader = nullptr;
 	disassembler = nullptr;
-	cutPath      = nullptr;
-	newRoot      = nullptr;
+	cutPath = nullptr;
+	newRoot = nullptr;
 
 	if (f_name == nullptr) {
 		status = TraceDqr::DQERR_ERR;

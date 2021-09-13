@@ -30,6 +30,12 @@
 #include <cstring>
 #include <cstdint>
 #include <cassert>
+#include <time.h>
+#ifdef WINDOWS
+#include <winsock2.h>
+#else // WINDOWS
+#include <unistd.h>
+#endif // WINDOWS
 
 #include "dqr.hpp"
 #include "trace.hpp"
@@ -272,11 +278,9 @@ CATrace::CATrace(char *caf_name,TraceDqr::CATraceType catype)
 	switch (catype) {
 	case TraceDqr::CATRACE_VECTOR:
 		traceQSize = 512;
-
 		caTraceQ = new CATraceQItem[traceQSize];
 		break;
 	case TraceDqr::CATRACE_INSTRUCTION:
-
 		traceQSize = 0;
 		caTraceQ = nullptr;
 		break;
@@ -577,8 +581,6 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V0;
 
-//			commenting out the lines below moves vecotr instructions into the vector q on the
-//			same cycle they graduate from the pipe
 //			QStart += 1;
 //			if (QStart >= traceQSize) {
 //				QStart = 0;
@@ -592,8 +594,6 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V1;
 
-//			commenting out the lines below moves vecotr instructions into the vector q on the
-//			same cycle they graduate from the pipe
 //			QStart += 1;
 //			if (QStart >= traceQSize) {
 //				QStart = 0;
@@ -629,8 +629,6 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 				cycles = caTraceQ[QStart].cycle;
 				caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V0;
 
-//			commenting out the lines below moves vecotr instructions into the vector q on the
-//			same cycle they graduate from the pipe
 //				QStart += 1;
 //				if (QStart >= traceQSize) {
 //					QStart = 0;
@@ -644,8 +642,6 @@ TraceDqr::DQErr CATrace::consumeCAPipe(int &QStart,uint32_t &cycles,uint32_t &pi
 				cycles = caTraceQ[QStart].cycle;
 				caTraceQ[QStart].record &= ~TraceDqr::CAVFLAG_V1;
 
-//			commenting out the lines below moves vecotr instructions into the vector q on the
-//			same cycle they graduate from the pipe
 //				QStart += 1;
 //				if (QStart >= traceQSize) {
 //					QStart = 0;
@@ -676,6 +672,8 @@ TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlag
 
 	TraceDqr::DQErr rc;
 
+	// QStart will be either traceQOut or after traceQOut
+
 	if (QStart == traceQIn) {
 		// get next record
 
@@ -687,13 +685,15 @@ TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlag
 		}
 	}
 
+	// we want the stats below at the beginning of the Q, not the end, so we grab them here!
+
 	uint8_t tQInfo = caTraceQ[QStart].qDepth;
 	uint8_t tArithInfo = caTraceQ[QStart].arithInProcess;
 	uint8_t tLoadInfo = caTraceQ[QStart].loadInProcess;
 	uint8_t tStoreInfo = caTraceQ[QStart].storeInProcess;
 
 	while (QStart != traceQIn) {
-		switch (type) {
+		switch (type) { // type is what we are looking for. When we find a VISTART in the Q, it means one was removed from the Q!
 		case TraceDqr::CAVFLAG_VISTART:
 			caTraceQ[QStart].qDepth += 1;
 			break;
@@ -711,7 +711,7 @@ TraceDqr::DQErr CATrace::consumeCAVector(int &QStart,TraceDqr::CAVectorTraceFlag
 			return TraceDqr::DQERR_ERR;
 		}
 
-		if ((caTraceQ[QStart].record & type) != 0) {
+		if ((caTraceQ[QStart].record & type) != 0) { // found what we were looking for in the q
 			cycles = caTraceQ[QStart].cycle;
 			caTraceQ[QStart].record &= ~type;
 
@@ -1153,6 +1153,1178 @@ TraceDqr::DQErr CATrace::parseNextCATraceRec(CATraceRec &car)
 	return TraceDqr::DQERR_OK;
 }
 
+// might need to add binary struct at beginning of metadata file??
+
+static const char * const CTFMetadataHeader =
+		"/* CTF 1.8 */\n"
+		"\n";
+
+static const char * const CTFMetadataTypeAlias =
+		"typealias integer {size = 8; align = 8; signed = false; } := uint8_t;\n"
+		"typealias integer {size = 16; align = 8; signed = false; } := uint16_t;\n"
+		"typealias integer {size = 32; align = 8; signed = false; } := uint32_t;\n"
+		"typealias integer {size = 64; align = 8; signed = false; } := uint64_t;\n"
+		"typealias integer {size = 64; align = 8; signed = false; } := unsigned long;\n"
+		"typealias integer {size = 5; align = 8; signed = false; } := uint5_t;\n"
+		"typealias integer {size = 27; align = 8; signed = false; } := uint27_t;\n"
+		"\n";
+
+static const char *const CTFMetadataTraceDef =
+		"trace {\n"
+		"\tmajor = 1;\n"
+		"\tminor = 8;\n"
+		"\tbyte_order = le;\n"
+		"\tpacket.header := struct {\n"
+		"\t\tuint32_t magic;\n"
+		"\t\tuint32_t stream_id;\n"
+		"\t};\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataEnvDef =
+		"env {\n"
+			"\tdomain = \"ust\";\n"
+			"\ttracer_name = \"lttng-ust\";\n"
+			"\ttracer_major = 2;\n"
+			"\ttracer_minor = 11;\n"
+			"\ttracer_buffering_scheme = \"uid\";\n"
+			"\ttracer_buffering_id = 1000;\n"
+			"\tarchitecture_bit_width = %d;\n"
+			"\ttrace_name = \"%s\";\n"
+			"\ttrace_creation_datetime = \"%s\";\n"
+			"\thostname = \"%s\";\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataClockDef =
+		"clock {\n"
+			"\tname = \"monotonic\";\n"
+			"\tuuid = \"cb35f5a5-f0a6-441f-b5c7-c7fb50c2e051\";\n"
+			"\tdescription = \"Monotonic Clock\";\n"
+			"\tfreq = %d; /* Frequency, in Hz */\n"
+			"\t/* clock value offset from Epoch is: offset * (1/freq) */\n"
+			"\toffset = %lld;\n"
+		"};\n"
+		"\n"
+		"typealias integer {\n"
+			"\tsize = 27; align = 1; signed = false;\n"
+			"\tmap = clock.monotonic.value;\n"
+		"} := uint27_clock_monotonic_t;\n"
+		"\n"
+		"typealias integer {\n"
+			"\tsize = 32; align = 8; signed = false;\n"
+			"\tmap = clock.monotonic.value;\n"
+		"} := uint32_clock_monotonic_t;\n"
+		"\n"
+		"typealias integer {\n"
+			"\tsize = 64; align = 8; signed = false;\n"
+			"\tmap = clock.monotonic.value;\n"
+		"} := uint64_clock_monotonic_t;\n"
+		"\n";
+
+static const char * const CTFMetadataPacketContext =
+		"struct packet_context {\n"
+			"\tuint64_clock_monotonic_t timestamp_begin;\n"
+			"\tuint64_clock_monotonic_t timestamp_end;\n"
+			"\tuint64_t content_size;\n"
+			"\tuint64_t packet_size;\n"
+			"\tuint64_t packet_seq_num;\n"
+			"\tunsigned long events_discarded;\n"
+			"\tuint32_t cpu_id;\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataEventHeaders =
+		"struct event_header_compact {\n"
+			"\tenum : uint5_t { compact = 0 ... 30, extended = 31 } id;\n"
+			"\tvariant <id> {\n"
+				"\t\tstruct {\n"
+					"\t\t\tuint27_clock_monotonic_t timestamp;\n"
+				"\t\t} compact;\n"
+				"\t\tstruct {\n"
+					"\t\t\tuint32_t id;\n"
+					"\t\t\tuint64_clock_monotonic_t timestamp;\n"
+				"\t\t} extended;\n"
+			"\t} v;\n"
+		"} align(8);\n"
+		"\n"
+		"struct event_header_large {\n"
+			"\tenum : uint16_t { compact = 0 ... 65534, extended = 65535 } id;\n"
+			"\tvariant <id> {\n"
+				"\t\tstruct {\n"
+					"\t\t\tuint32_clock_monotonic_t timestamp;\n"
+				"\t\t} compact;\n"
+				"\t\tstruct {\n"
+					"\t\t\tuint32_t id;\n"
+					"\t\t\tuint64_clock_monotonic_t timestamp;\n"
+				"\t\t} extended;\n"
+			"\t} v;\n"
+		"} align(8);\n"
+		"\n";
+
+static const char * const CTFMetadataStreamDef =
+		"stream {\n"
+			"\tid = 0;\n"
+			"\tevent.header := struct event_header_large;\n"
+			"\tpacket.context := struct packet_context;\n"
+			"\tevent.context := struct {\n"
+				"\t\tinteger { size = 32; align = 8; signed = 1; encoding = none; base = 10; } _vpid;\n"
+				"\t\tinteger { size = 32; align = 8; signed = 1; encoding = none; base = 10; } _vtid;\n"
+				"\t\tinteger { size = 8; align = 8; signed = 1; encoding = UTF8; base = 10; } _procname[17];\n"
+			"\t};\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataCallEventDef =
+		"event {\n"
+			"\tname = \"lttng_ust_cyg_profile:func_entry\";\n"
+			"\tid = 1;\n"
+			"\tstream_id = 0;\n"
+			"\tloglevel = 12;\n"
+			"\tfields := struct {\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 16; } _addr;\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 16; } _call_site;\n"
+			"\t};\n"
+			"};\n"
+		"\n";
+
+static const char * const CTFMetadataRetEventDef =
+		"event {\n"
+			"\tname = \"lttng_ust_cyg_profile:func_exit\";\n"
+			"\tid = 2;\n"
+			"\tstream_id = 0;\n"
+			"\tloglevel = 12;\n"
+			"\tfields := struct {\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 16; } _addr;\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 16; } _call_site;\n"
+			"\t};\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataStatedumpStart =
+		"event {\n"
+			"\tname = \"lttng_ust_statedump:start\";\n"
+			"\tid = 3;\n"
+			"\tstream_id = 0;\n"
+		    "\tloglevel = 13;\n"
+			"\tfields := struct {\n"
+			"\t};\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataStatedumpBinInfo =
+		"event {\n"
+			"\tname = \"lttng_ust_statedump:bin_info\";\n"
+			"\tid = 4;\n"
+			"\tstream_id = 0;\n"
+		    "\tloglevel = 13;\n"
+			"\tfields := struct {\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 16; } _baddr;\n"
+				"\t\tinteger { size = 64; align = 8; signed = 0; encoding = none; base = 10; } _memsz;\n"
+				"\t\tstring _path;\n"
+				"\t\tinteger { size = 8; align = 8; signed = 0; encoding = none; base = 10; } _is_pic;\n"
+				"\t\tinteger { size = 8; align = 8; signed = 0; encoding = none; base = 10; } _has_build_id;\n"
+				"\t\tinteger { size = 8; align = 8; signed = 0; encoding = none; base = 10; } _has_debug_link;\n"
+			"\t};\n"
+		"};\n"
+		"\n";
+
+static const char * const CTFMetadataStatedumpEnd =
+		"event {\n"
+			"\tname = \"lttng_ust_statedump:end\";\n"
+			"\tid = 7;\n"
+			"\tstream_id = 0;\n"
+		    "\tloglevel = 13;\n"
+			"\tfields := struct {\n"
+			"\t};\n"
+		"};\n"
+		"\n";
+
+static char CTFMetadataEnvDefDoctored[1024];
+static char CTFMetadataClockDefDoctored[1024];
+
+static const char * const CTFMetadataStructs[] = {
+		CTFMetadataHeader,
+		CTFMetadataTypeAlias,
+		CTFMetadataTraceDef,
+		CTFMetadataEnvDefDoctored,
+		CTFMetadataClockDefDoctored, // need to put freq in string!
+		CTFMetadataPacketContext,
+		CTFMetadataEventHeaders,
+		CTFMetadataStreamDef,
+		CTFMetadataCallEventDef,
+		CTFMetadataRetEventDef,
+		CTFMetadataStatedumpStart,
+		CTFMetadataStatedumpBinInfo,
+		CTFMetadataStatedumpEnd
+};
+
+// class CTFConverter methods
+
+// baseNameIn: abs or rel path and name of base file
+// fileBaseName: name of file without extention (no path info)
+// fileName: just the name of the file at baseNameIn (no path info)
+// absPath: abs path to baseNameIn without the file (just the abs path)
+
+static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,char *absPath)
+{
+	if (fileBaseName != nullptr) {
+		fileBaseName[0] = 0;
+	}
+
+	if (fileName != nullptr) {
+		fileName[0] = 0;
+	}
+
+	if (absPath != nullptr) {
+		absPath[0] = 0;
+	}
+
+	if (baseNameIn == nullptr) {
+		return;
+	}
+
+	// find elf name by scanning backwords for path separator
+
+	int l;
+	int i;
+
+	l = strlen(baseNameIn);
+
+	int sepIndex = -1;
+	int extIndex = -1;
+
+	for (i = l-1; (i >= 0) && (sepIndex == -1); i--) {
+		if (baseNameIn[i] == '/') {
+			sepIndex = i;
+		}
+		else if (baseNameIn[i] == '\\') {
+			sepIndex = i;
+		}
+		else if ((extIndex == -1) && (baseNameIn[i] == '.')) {
+			extIndex = i;
+		}
+	}
+
+	char en[256];
+	char ebn[256];
+	char fullPath[512];
+
+	bool haveAbsPath = false;
+
+	strcpy(en,&baseNameIn[sepIndex+1]);
+
+	for (i = sepIndex+1; i < extIndex; i++) {
+		ebn[i - (sepIndex+1)] = baseNameIn[i];
+	}
+
+	ebn[i - (sepIndex+1)] = 0;
+
+	// figure out if this is an abs path or a rel path in baseNameIn
+
+	if (baseNameIn[0] == '/') {
+		haveAbsPath = true;
+	}
+	else if (baseNameIn[0] == '\\') {
+		haveAbsPath = true;
+	}
+	else if ((baseNameIn[0] != 0) && (baseNameIn[1] == ':') && (baseNameIn[2] == '\\')) {
+		haveAbsPath = true;
+	}
+
+	if (haveAbsPath == false) {
+		// have a rel path. Need to make it an abs path
+
+#ifdef	WINDOWS
+		_getcwd(fullPath,sizeof fullPath);
+		char pathSep = '\\';
+#else	// WINDOWS
+		getcwd(fullPath,sizeof fullPath);
+		char pathSep = '/';
+#endif	// WINDOWS
+
+		l = strlen(fullPath);
+		fullPath[l] = pathSep;
+		l += 1;
+
+		for (i = 0; i < sepIndex+1; i++) {
+			fullPath[l+i] = baseNameIn[i];
+		}
+
+		fullPath[l+i] = 0;
+	}
+	else {
+		for (i = 0; i < sepIndex+1; i++) {
+			fullPath[i] = baseNameIn[i];
+		}
+
+		fullPath[i] = 0;
+	}
+
+	if (fileBaseName != nullptr) {
+		strcpy(fileBaseName,ebn);
+	}
+
+	if (fileName != nullptr) {
+		strcpy(fileName,en);
+	}
+
+	if (absPath != nullptr) {
+		strcpy(absPath,fullPath);
+	}
+
+//	printf("baseNameIn: %s\n",baseNameIn);
+//	printf("fileBaseName: %s\n",fileBaseName);
+//	printf("fileName: %s\n",fileName);
+//	printf("absPath: %s\n",absPath);
+}
+
+EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
+{
+	for (int i = 0; i < (int)(sizeof eventFDs / sizeof eventFDs[0]); i++) {
+		eventFDs[i] = -1;
+	}
+
+	this->numCores = numCores;
+	frequency = freq;
+
+	char elfBaseName[256];
+	char eventNameGen[512];
+	int eventNameLen;
+
+	getPathsNames(elf,elfBaseName,nullptr,nullptr);
+
+	getPathsNames(rtd,nullptr,nullptr,eventNameGen);
+
+	strcat(eventNameGen,"events");
+
+	// make the event folder
+
+#ifdef WINDOWS
+	mkdir(eventNameGen);
+	char pathSep = '\\';
+#else // WINDOWS
+	mkdir(eventNameGen,0666);
+	char pathSep = '/';
+#endif // WINDOWS
+	// now add the elf file base name
+
+	eventNameLen = strlen(eventNameGen);
+	eventNameGen[eventNameLen] = pathSep;
+	eventNameLen += 1;
+
+	strcpy(&eventNameGen[eventNameLen],elfBaseName);
+	strcat(&eventNameGen[eventNameLen],".%s");
+
+	char nameBuff[512];
+
+	const char *eventNames[] = {
+			"control",
+			"trigger",
+			"callret",
+			"exception",
+			"interrupt",
+			"context",
+			"watchpoint",
+			"periodic"
+	};
+
+	for (int i = 0; i < (int)(sizeof eventNames / sizeof eventNames[0]); i++) {
+		sprintf(nameBuff,eventNameGen,eventNames[i]);
+
+//		printf("nameBuff %d: %s\n",i,nameBuff);
+
+		eventFDs[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+
+		if (eventFDs[i] < 0) {
+			printf("Error: EventConverter::EventConverter(): Couldn't open file %s for writing\n",nameBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return;
+		}
+	}
+
+	status = TraceDqr::DQERR_OK;
+}
+
+EventConverter::~EventConverter()
+{
+	for (int i = 0; i < (int)(sizeof eventFDs / sizeof eventFDs[0]); i++) {
+		if (eventFDs[i] >= 0) {
+			close(eventFDs[i]);
+		}
+	}
+}
+
+TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_extTriggerIndex] >= 0) {
+		if (ckdf == 0) {
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x\n",core,ts,ckdf,pc);
+		}
+		else {
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,id);
+		}
+		write(eventFDs[CTF::et_extTriggerIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_watchpointIndex] >= 0) {
+		if (ckdf == 0) {
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x\n",core,ts,ckdf,pc);
+		}
+		else {
+			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,id);
+		}
+		write(eventFDs[CTF::et_watchpointIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_callRetIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,0x%08x,0x%08x\n",core,ts,ckdf,pc,pcDest,crFlags);
+		write(eventFDs[CTF::et_callRetIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_exeptionIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,cause);
+		write(eventFDs[CTF::et_exeptionIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_interruptIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,cause);
+		write(eventFDs[CTF::et_interruptIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_contextIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,context);
+		write(eventFDs[CTF::et_contextIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_periodicIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x\n",core,ts,ckdf,pc);
+		write(eventFDs[CTF::et_periodicIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc)
+{
+	char msgBuff[512];
+	int n;
+
+	if (eventFDs[CTF::et_controlIndex] >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,%d,0x%08x\n",core,ts,ckdf,control,pc);
+		write(eventFDs[CTF::et_controlIndex],msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32_t freq,int64_t t,char *hostName)
+{
+	status = TraceDqr::DQERR_OK;
+
+	archSize = arch_size;
+
+	bool tFlag;
+
+	if (t == -1) {
+		tFlag = true;
+	}
+	else {
+		tFlag = false;
+	}
+
+	for (int i = 0; i < (int)(sizeof eventIndex / sizeof eventIndex[0]); i++) {
+		eventIndex[i] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof eventBuffer / sizeof eventBuffer[0]); i++) {
+		eventBuffer[i] = nullptr;
+	}
+
+	for (int i = 0; i < (int)(sizeof fd / sizeof fd[0]); i++) {
+		fd[i] = -1;
+	}
+
+	metadataFd = -1;
+
+	for (int i = 0; i < (int)(sizeof headerFlag / sizeof headerFlag[0]); i++) {
+		headerFlag[i] = false;
+	}
+
+	packetSeqNum = 0;
+	if (freq == 0) {
+		frequency = 1000000000;
+	}
+	else {
+		frequency = freq;
+	}
+
+	this->elfName = nullptr;
+
+	// fill in the uuid member
+
+	if (elf == nullptr) {
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	if (numCores > DQR_MAXCORES) {
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	this->numCores = numCores;
+
+	for (int i = 0; i < DQR_MAXCORES; i++) {
+		eventContext[i]._vpid = 1; // don't use 0 for vpid; trace compasss uses 0 for kernel processes and does symbol resolution differently
+		eventContext[i]._vtid = i;
+		for (int j = 0; j < (int)(sizeof eventContext[i]._procname / sizeof eventContext[i]._procname[0]); j++) {
+			eventContext[i]._procname[j] = 0;
+		}
+	}
+
+	char elfBaseName[256];
+	char elfName[256];
+	char elfPath[512];
+
+	getPathsNames(elf,elfBaseName,elfName,elfPath);
+
+	// set this->elfName to the complete path and elf name
+
+	this->elfName = new char[strlen(elfPath)+strlen(elfName)+1];
+	strcpy(this->elfName,elfPath);
+	strcat(this->elfName,elfName);
+
+//	printf("full elf name: %s\n",this->elfName);
+
+	char ctfNameGen[512];
+	int ctfNameLen;
+
+	getPathsNames(rtd,nullptr,nullptr,ctfNameGen);
+
+	strcat(ctfNameGen,"ctf");
+
+	// make the ctf folder
+
+#ifdef WINDOWS
+	mkdir(ctfNameGen);
+	char pathSep = '\\';
+#else // WINDOWS
+	mkdir(ctfNameGen,0666);
+	char pathSep = '/';
+#endif // WINDOWS
+	// now add the elf file base name
+
+	ctfNameLen = strlen(ctfNameGen);
+	ctfNameGen[ctfNameLen] = pathSep;
+	ctfNameLen += 1;
+
+	strcpy(&ctfNameGen[ctfNameLen],elfBaseName);
+	strcat(&ctfNameGen[ctfNameLen],"_%d.ctf");
+
+	char nameBuff[512];
+
+	for (int i = 0; i < numCores; i++) {
+		sprintf(nameBuff,ctfNameGen,i);
+
+//		printf("nameBuff %d: %s\n",i,nameBuff);
+
+		fd[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+
+		if (fd[i] < 0) {
+			printf("Error: CTFConverter::CTFConverter(): Couldn't open file %s for writing\n",nameBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return;
+		}
+	}
+
+	// save procname in eventContext struct for all cores
+
+	if (strlen(elfName) < (int)(sizeof eventContext[0]._procname)) {
+		for (int i = 0; i < numCores; i++) {
+			strcpy((char*)eventContext[i]._procname,elfName);
+		}
+	}
+	else {
+		for (int i = 0; i < numCores; i++) {
+			strncpy((char*)eventContext[i]._procname,elfName,sizeof eventContext[i]._procname - 1);
+		}
+	}
+
+	strcpy(&nameBuff[ctfNameLen],"metadata");
+
+	metadataFd = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+
+	if (metadataFd < 0) {
+		printf("Error: CTFConverter::CTFConverter(): Couldn't open file %s for writing\n",nameBuff);
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
+	// time() will return time in seconds, which should be close enough
+
+	struct tm *lt;
+	char tbuff[256];
+
+	if (t == -1) {
+		t = (int64_t)time(nullptr);
+	}
+
+	lt = localtime(&t);
+
+	if (tFlag == true) {
+		strftime(tbuff,sizeof tbuff,"%Y%m%dT%H%M%S%z",lt);
+	}
+	else {
+		strftime(tbuff,sizeof tbuff,"%Y%m%dT%H%M%S",lt);
+	}
+
+	// get hostname
+
+	char hn[256];
+
+	if (hostName == nullptr) {
+		int rc;
+
+#ifdef WINDOWS
+		WORD wVersionRequested;
+		WSADATA wsaData;
+
+		wVersionRequested = MAKEWORD(2,2);
+		rc = WSAStartup(wVersionRequested,&wsaData);
+		if (rc != 0) {
+			printf("Error: CTFConverter::CTFConverter(): WSAStartUP() failed with error %d\n",rc);
+			status = TraceDqr::DQERR_ERR;
+			return;
+		}
+#endif // WINDOWS
+
+		rc = gethostname(hn,sizeof hn);
+		if (rc != 0) {
+			strcpy(hn,"localhost");
+		}
+
+#ifdef WINDOWS
+		WSACleanup();
+#endif // WINDOWS
+	}
+	else {
+		strcpy(hn,hostName);
+	}
+
+	// convert seconds to nanoseconds
+
+	sprintf(CTFMetadataClockDefDoctored,CTFMetadataClockDef,frequency,t * 1000000000);
+	sprintf(CTFMetadataEnvDefDoctored,CTFMetadataEnvDef,archSize,elfBaseName,tbuff,hn);
+
+	status = TraceDqr::DQERR_OK;
+}
+
+CTFConverter::~CTFConverter()
+{
+	for (int i = 0; i < (int)(sizeof eventIndex / sizeof eventIndex[0]); i++) {
+		if (eventIndex[i] > 0) {
+			flushEvents(i);
+		}
+	}
+
+	for (int i = 0; i < (int)(sizeof eventBuffer / sizeof eventBuffer[0]); i++) {
+		if (eventBuffer[i] != nullptr) {
+			delete [] eventBuffer[i];
+			eventBuffer[i] = nullptr;
+		}
+	}
+
+	for (int i = 0; i < (int)(sizeof fd / sizeof fd[0]); i++) {
+		if (fd[i] >= 0) {
+			close(fd[i]);
+			fd[i] = -1;
+		}
+	}
+
+	if (metadataFd >= 0) {
+		writeCTFMetadata();
+		close(metadataFd);
+		metadataFd = -1;
+	}
+
+	if (elfName != nullptr) {
+		delete [] elfName;
+		elfName = nullptr;
+	}
+}
+
+TraceDqr::DQErr CTFConverter::writeCTFMetadata()
+{
+	for (int i = 0; i < (int)(sizeof CTFMetadataStructs / sizeof CTFMetadataStructs[0]); i++) {
+		write(metadataFd,CTFMetadataStructs[i],strlen(CTFMetadataStructs[i]));
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::writeTracePacketHeader(int core)
+{
+	struct __attribute__ ((packed)) tracePacketHeader {
+		uint32_t magic;
+		uint32_t stream_id;
+	} tph;
+
+	tph.magic = 0xc1fc1fc1;
+	tph.stream_id = core;
+
+	int n;
+
+	n = write(fd[core],&tph,sizeof(tph));
+	if (n != sizeof(tph)) {
+		printf("Error: writeTracePacketHeader(): Could not write trace.packet.header\n");
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::writeStreamPacketContext(int core,uint64_t ts_begin,uint64_t ts_end,int size)
+{
+	struct __attribute__ ((packed)) streamPacketContext {
+		uint64_t timestamp_begin;
+		uint64_t timestamp_end;
+		uint64_t content_size;
+		uint64_t packet_size;
+		uint64_t packet_seq_num;
+		uint64_t events_discarded;
+		uint32_t cpu_id;
+	} spc;
+
+	spc.timestamp_begin = ts_begin;
+	spc.timestamp_end = ts_end;
+//	spc.content_size = size*8;
+	spc.content_size = size * 8 + sizeof spc * 8 + 8 * 8; // size of packet - padding (we don't pad)
+	spc.packet_size  = size * 8 + sizeof spc * 8 + 8 * 8; // size of ENTIRE packet!
+
+	spc.packet_seq_num = packetSeqNum;
+	spc.events_discarded = 0;
+	spc.cpu_id = core;
+
+	int n;
+
+	n = write(fd[core],&spc,sizeof spc);
+	if (n != sizeof spc) {
+		printf("Error: writeStreamPacketContext(): Could not write trace.packet.context\n");
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::writeStreamHeaders(int core,uint64_t ts_begin,uint64_t ts_end,int size)
+{
+//	printf("write headers core: %d num events: %d\n",core,eventIndex[core]);
+
+	writeTracePacketHeader(core);
+	writeStreamPacketContext(core,ts_begin,ts_end,size);
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::computeEventSizes(int core,int &size)
+{
+	uint32_t et;
+
+	size = 0;
+
+	for (int i = 0; i < eventIndex[core]; i++) {
+		size += sizeof eventBuffer[core][i].event_header.event_id;
+
+		if (eventBuffer[core][i].event_header.event_id == CTF::event_extended) {
+			size += sizeof eventBuffer[core][i].event_header.extended;
+			et = eventBuffer[core][i].event_header.extended.event_id;
+		}
+		else {
+			size += sizeof eventBuffer[core][i].event_header.compact;
+			et = eventBuffer[core][i].event_header.event_id;
+		}
+
+		size += sizeof(event_context);
+
+		switch (et) {
+		case CTF::event_funcEntry:
+			size += sizeof eventBuffer[core][i].call;
+			break;
+		case CTF::event_funcExit:
+			size += sizeof eventBuffer[core][i].ret;
+			break;
+		default:
+			printf("Error: computeEventSizes(): Invalid event type (%d)\n",eventBuffer[core][i].event_header.event_id);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::computeBinInfoSize(int &size)
+{
+	// Compute size of event headers (there will be three)
+
+	size = sizeof eventBuffer[0][0].event_header.event_id * 3;
+
+	size += sizeof eventBuffer[0][0].event_header.extended * 3;
+
+	// Compute size of event contexts (there will be three)
+
+	size += sizeof(event_context) * 3;
+
+	// compute size of events (there will be three)
+
+	// first event is a statedump start
+
+	size += 0;	// start event has 0 size
+
+	// next event is a statedump binInfo
+
+	// binInfo has a variable lenght string. We need to compute its length
+
+	int l = 0;
+	for (l = 0; elfName[l] != 0; l++) { /* empty */	}
+
+	l += 1; // account for null
+
+	size += sizeof(uint64_t) + sizeof(uint64_t) + l + sizeof(uint8_t) + sizeof(uint8_t) + sizeof(uint8_t);
+
+	// last event is a statedump end
+
+	size += 0;	// end event has 0 size
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::writeBinInfo(int core,uint64_t timestamp)
+{
+	int size;
+	event e;
+	TraceDqr::DQErr rc;
+
+	rc = computeBinInfoSize(size);
+
+	if (rc != TraceDqr::DQERR_OK) {
+		printf("Error: writeBinInfo(): could not compute BinInfoSize\n");
+
+		return rc;
+	}
+
+	// write stream header first
+
+	writeStreamHeaders(core,timestamp,timestamp,size); // packet header, packet context
+
+	// write event header for state dump start
+
+	e.event_header.event_id = CTF::event_extended;
+	e.event_header.extended.event_id = CTF::event_stateDumpStart;
+	e.event_header.extended.timestamp = timestamp;
+
+	write(fd[core],&e.event_header,sizeof e.event_header);
+
+	// write event context for state dump
+
+	write(fd[core],&eventContext[core],sizeof(event_context));
+
+	// empty event for state dump start, so nothing to write for event
+
+	// write event header for bin info
+
+	e.event_header.event_id = CTF::event_extended;
+	e.event_header.extended.event_id = CTF::event_stateDumpBinInfo;
+	e.event_header.extended.timestamp = timestamp;
+
+	write(fd[core],&e.event_header,sizeof e.event_header);
+
+	// write event context for binInfo
+
+	write(fd[core],&eventContext[core],sizeof(event_context));
+
+	// now write bininfo event
+
+	printf("need to get memory base address and size from symtab sections\n");fflush(stdout);
+
+	e.binInfo._baddr = 0x40000000;
+
+	write(fd[core],&e.binInfo._baddr,sizeof e.binInfo._baddr);
+
+	e.binInfo._memsz = 0x10000000;
+
+	write(fd[core],&e.binInfo._memsz,sizeof e.binInfo._memsz);
+
+	write(fd[core],elfName,strlen(elfName)+1);
+
+	e.binInfo._is_pic = 0;
+
+	write(fd[core],&e.binInfo._is_pic,sizeof e.binInfo._is_pic);
+
+	e.binInfo._has_build_id = 0;
+
+	write(fd[core],&e.binInfo._has_build_id,sizeof e.binInfo._has_build_id);
+
+	e.binInfo._has_debug_link = 0;
+
+	write(fd[core],&e.binInfo._baddr,sizeof e.binInfo._has_debug_link);
+
+	// write event header for state dump end
+
+	e.event_header.event_id = CTF::event_extended;
+	e.event_header.extended.event_id = CTF::event_stateDumpEnd;
+	e.event_header.extended.timestamp = timestamp;
+
+	write(fd[core],&e.event_header,sizeof e.event_header);
+
+	// write event context for state dump end
+
+	write(fd[core],&eventContext[core],sizeof(event_context));
+
+	// empty event for state dump end, so nothing to write for event
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::writeEvent(int core,int index)
+{
+	uint32_t et;
+
+	// write event headers
+
+	write(fd[core],&eventBuffer[core][index].event_header.event_id,sizeof eventBuffer[core][index].event_header.event_id);
+
+	if (eventBuffer[core][index].event_header.event_id == CTF::event_extended) {
+		et = eventBuffer[core][index].event_header.extended.event_id;
+		write(fd[core],&eventBuffer[core][index].event_header.extended,sizeof eventBuffer[core][index].event_header.extended);
+	}
+	else {
+		et = eventBuffer[core][index].event_header.event_id;
+		write(fd[core],&eventBuffer[core][index].event_header.compact,sizeof eventBuffer[core][index].event_header.compact);
+	}
+
+	// write stream.event.context
+
+	write(fd[core],&eventContext[core],sizeof(event_context));
+
+	// write event payload
+
+	switch (et) {
+	case CTF::event_funcEntry:
+		write(fd[core],&eventBuffer[core][index].call,sizeof eventBuffer[core][index].call);
+		break;
+	case CTF::event_funcExit:
+		write(fd[core],&eventBuffer[core][index].ret,sizeof eventBuffer[core][index].ret);
+		break;
+	default:
+		printf("Error: writeEvent(): Invalid event type (%d)\n",et);
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::flushEvents(int core)
+{
+	int size;
+	TraceDqr::DQErr rc;
+
+	if (eventIndex[core] == 0) {
+		return TraceDqr::DQERR_OK;
+	}
+
+	if (eventBuffer[core] == nullptr) {
+		return TraceDqr::DQERR_OK;
+	}
+
+	if (headerFlag[core] == false) {
+		rc = writeBinInfo(core, eventBuffer[core][0].event_header.extended.timestamp);
+		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: writeEvent(%d): write binInfo failed.\n",core);
+			return rc;
+		}
+
+		headerFlag[core] = true;
+	}
+
+	// need to write packet headers before events. But we need to know the size of the events we are going
+	// to write, so it can be included in the packet context fields
+
+	rc = computeEventSizes(core,size);
+	if (rc != TraceDqr::DQERR_OK) {
+		printf("Error: CTFConverter::flushEvent(): computeEventSizes() failed\n");
+
+		return TraceDqr::DQERR_OK;
+	}
+
+	uint64_t ts_begin;
+	uint64_t ts_end;
+
+	ts_begin = eventBuffer[core][0].event_header.extended.timestamp;
+	if (eventIndex[core] > 1) {
+		ts_end = ((ts_begin >> 32) << 32) | (uint64_t)eventBuffer[core][eventIndex[core]-1].event_header.compact.timestamp;
+	}
+	else {
+		ts_end = ts_begin;
+	}
+
+	writeStreamHeaders(core,ts_begin,ts_end,size);
+
+	for (int i = 0; i < eventIndex[core]; i++) {
+		writeEvent(core,i);
+	}
+
+	eventIndex[core] = 0;
+
+//	printf("wrote packet %d\n",packetSeqNum);
+
+	packetSeqNum += 1;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::addCall(int core,TraceDqr::ADDRESS srcAddr,TraceDqr::ADDRESS dstAddr,TraceDqr::TIMESTAMP eventTS)
+{
+	TraceDqr::DQErr rc;
+
+	if (eventBuffer[core] == nullptr) {
+		eventBuffer[core] = new  event[20];
+	}
+
+	// if q is full, flush it
+
+	if (eventIndex[core] == sizeof eventBuffer / sizeof eventBuffer[0]) {
+		rc = flushEvents(core);
+		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: CTFConverter::addCall() failed\n");
+
+			status = rc;
+			return rc;
+		}
+	}
+
+	if (eventIndex[core] == 0) {
+		// use a full timestamp (64 bits) on first event
+
+		eventBuffer[core][eventIndex[core]].event_header.event_id = CTF::event_extended;
+		eventBuffer[core][eventIndex[core]].event_header.extended.event_id = CTF::event_funcEntry;
+		eventBuffer[core][eventIndex[core]].event_header.extended.timestamp = eventTS;
+	}
+	else {
+		// use a compressed timestamp (32 bits) on all but first event
+
+		eventBuffer[core][eventIndex[core]].event_header.event_id = CTF::event_funcEntry;
+		eventBuffer[core][eventIndex[core]].event_header.compact.timestamp = eventTS;
+	}
+
+	eventBuffer[core][eventIndex[core]].call.pc = srcAddr;
+	eventBuffer[core][eventIndex[core]].call.pcDst = dstAddr;
+
+	eventIndex[core] += 1;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr CTFConverter::addRet(int core,TraceDqr::ADDRESS srcAddr,TraceDqr::ADDRESS dstAddr,TraceDqr::TIMESTAMP eventTS)
+{
+	TraceDqr::DQErr rc;
+
+	if (eventBuffer[core] == nullptr) {
+		eventBuffer[core] = new  event[20];
+	}
+
+	// if q is full, flush it
+
+	if (eventIndex[core] == sizeof eventBuffer / sizeof eventBuffer[0]) {
+		rc = flushEvents(core);
+		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: CTFConverter::addRet() failed\n");
+
+			status = rc;
+			return rc;
+		}
+	}
+
+	if (eventIndex[core] == 0) {
+		// use a full timestamp (64 bits) on first event
+
+		eventBuffer[core][eventIndex[core]].event_header.event_id = CTF::event_extended;
+		eventBuffer[core][eventIndex[core]].event_header.extended.event_id = CTF::event_funcExit;
+		eventBuffer[core][eventIndex[core]].event_header.extended.timestamp = eventTS;
+	}
+	else {
+		// use a compressed timestamp (32 bits) on all but first event
+
+		eventBuffer[core][eventIndex[core]].event_header.event_id = CTF::event_funcExit;
+		eventBuffer[core][eventIndex[core]].event_header.compact.timestamp = eventTS;
+	}
+
+	eventBuffer[core][eventIndex[core]].call.pc = srcAddr;
+	eventBuffer[core][eventIndex[core]].call.pcDst = dstAddr;
+
+	eventIndex[core] += 1;
+
+	return TraceDqr::DQERR_OK;
+}
+
 // class TraceSettings methods
 
 TraceSettings::TraceSettings()
@@ -1164,13 +2336,19 @@ TraceSettings::TraceSettings()
 	srcBits = 0;
 	numAddrBits = 0;
 	itcPrintOpts = TraceDqr::ITC_OPT_NLS;
+	itcPrintBufferSize = 4096;
 	itcPrintChannel = 0;
+	cutPath = nullptr;
 	srcRoot = nullptr;
 	pathType = TraceDqr::PATH_TO_UNIX;
 	labelsAsFunctions = true;
 	freq = 0;
 	addrDispFlags = 0;
 	tsSize = 40;
+	CTFConversion = false;
+	eventConversionEnable = false;
+	startTime = -1;
+	hostName = nullptr;
 }
 
 TraceSettings::~TraceSettings()
@@ -1194,6 +2372,16 @@ TraceSettings::~TraceSettings()
 		delete [] srcRoot;
 		srcRoot = nullptr;
 	}
+
+	if (cutPath != nullptr) {
+		delete [] cutPath;
+		cutPath = nullptr;
+	}
+
+	if (hostName != nullptr) {
+		delete [] hostName;
+		hostName = nullptr;
+	}
 }
 
 TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
@@ -1212,91 +2400,140 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 			if (strcasecmp("rtd",name) == 0) {
 				rc = propertyToTFName(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set trace file name in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set trace file name in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("elf",name) == 0) {
 				rc = propertyToEFName(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set elf file name in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set elf file name in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("srcbits",name) == 0) {
 				rc = propertyToSrcBits(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set srcBits in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set srcBits in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("bits",name) == 0) {
 				rc = propertyToNumAddrBits(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set numAddrBits in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set numAddrBits in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("trace.config.boolean.enable.itc.print.processing",name) == 0) {
 				rc = propertyToITCPrintOpts(value); // value should be nul, true, or false
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set ITC print options in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set ITC print options in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("trace.config.int.itc.print.channel",name) == 0) {
 				rc = propertyToITCPrintChannel(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set ITC print channel value in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set ITC print channel value in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("trace.config.int.itc.print.buffersize",name) == 0) {
+				rc = propertyToITCPrintBufferSize(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set ITC print buffer size in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("source.root",name) == 0) {
 				rc = propertyToSrcRoot(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set src root path in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set src root path in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("source.cutpath",name) == 0) {
+				rc = propertyToSrcCutPath(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set src cut path in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("caFile",name) == 0) {
 				rc = propertyToCAName(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set CA file name in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set CA file name in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("caType",name) == 0) {
 				rc = propertyToCAType(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set CA type in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set CA type in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("TSSize",name) == 0) {
 				rc = propertyToTSSize(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set TS size in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set TS size in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("pathType",name) == 0) {
 				rc = propertyToPathType(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set path type in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set path type in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("labelsAsFunctions",name) == 0) {
 				rc = propertyToLabelsAsFuncs(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set labels as functions in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set labels as functions in settings\n");
 					return rc;
 				}
 			}
 			else if (strcasecmp("freq",name) == 0) {
 				rc = propertyToFreq(value);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Trace(): Could not set frequency in settings\n");
+					printf("Error: TraceSettings::addSettings(): Could not set frequency in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("ctfenable",name) == 0) {
+				rc = propertyToCTFEnable(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set ctfEnable in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("eventConversionEnable",name) == 0) {
+				rc = propertyToEventConversionEnable(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set eventConversionEnable in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("addressdisplayflags", name) == 0) {
+				rc = propertyToAddrDispFlags(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set address display flags in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("starttime", name) == 0) {
+				rc = propertyToStartTime(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set start time in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("hostname", name) == 0) {
+				rc = propertyToHostName(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set host name in settings\n");
 					return rc;
 				}
 			}
@@ -1342,6 +2579,36 @@ TraceDqr::DQErr TraceSettings::propertyToEFName(char *value)
 
 		efName = new char [l];
 		strcpy(efName,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToAddrDispFlags(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		addrDispFlags = 0;
+
+		int l;
+		char *endptr;
+
+		l = strtol(value, &endptr, 10);
+
+		if (endptr[0] == 0 ) {
+			numAddrBits = l;
+			addrDispFlags = addrDispFlags  & ~TraceDqr::ADDRDISP_WIDTHAUTO;
+		}
+		else if (endptr[0] == '+') {
+			numAddrBits = l;
+			addrDispFlags = addrDispFlags | TraceDqr::ADDRDISP_WIDTHAUTO;
+		}
+		else {
+			return TraceDqr::DQERR_ERR;
+		}
+
+		if ((l < 32) || (l > 64)) {
+			return TraceDqr::DQERR_ERR;
+		}
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -1409,6 +2676,21 @@ TraceDqr::DQErr TraceSettings::propertyToITCPrintChannel(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
+TraceDqr::DQErr TraceSettings::propertyToITCPrintBufferSize(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		itcPrintBufferSize = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::DQErr TraceSettings::propertyToSrcRoot(char *value)
 {
 	if (value != nullptr) {
@@ -1422,6 +2704,24 @@ TraceDqr::DQErr TraceSettings::propertyToSrcRoot(char *value)
 
 		srcRoot = new char [l];
 		strcpy(srcRoot,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToSrcCutPath(char *value)
+{
+	if (value != nullptr) {
+		if (cutPath != nullptr) {
+			delete [] cutPath;
+			cutPath = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		cutPath = new char [l];
+		strcpy(cutPath,value);
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -1496,6 +2796,50 @@ TraceDqr::DQErr TraceSettings::propertyToLabelsAsFuncs(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
+TraceDqr::DQErr TraceSettings::propertyToCTFEnable(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		if (strcasecmp("true",value) == 0) {
+			CTFConversion = true;
+		}
+		else if (strcasecmp("false",value) == 0) {
+			CTFConversion = false;
+		}
+		else {
+			CTFConversion = strtol(value,&endp,0);
+			if (endp == value) {
+				return TraceDqr::DQERR_ERR;
+			}
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToEventConversionEnable(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		if (strcasecmp("true",value) == 0) {
+			eventConversionEnable = true;
+		}
+		else if (strcasecmp("false",value) == 0) {
+			eventConversionEnable = false;
+		}
+		else {
+			eventConversionEnable = strtol(value,&endp,0);
+			if (endp == value) {
+				return TraceDqr::DQERR_ERR;
+			}
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::DQErr TraceSettings::propertyToFreq(char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
@@ -1506,6 +2850,39 @@ TraceDqr::DQErr TraceSettings::propertyToFreq(char *value)
 		if (endp == value) {
 			return TraceDqr::DQERR_ERR;
 		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToStartTime(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		startTime = (int64_t)strtoll(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToHostName(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		if (hostName != nullptr) {
+			delete [] hostName;
+			hostName = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		hostName = new char [l];
+		strcpy(hostName,value);
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -1943,8 +3320,14 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	disassembler = nullptr;
 	caTrace      = nullptr;
 	counts       = nullptr;//delete this line if compile error
+	efName       = nullptr;
+	rtdName      = nullptr;
 	cutPath      = nullptr;
 	newRoot      = nullptr;
+	itcPrint     = nullptr;
+	nlsStrings   = nullptr;
+	ctf          = nullptr;
+	eventConverter = nullptr;
 
 	syncCount = 0;
 	caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -1953,12 +3336,14 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 	traceType = TraceDqr::TRACETYPE_BTM;
 
-	itcPrint = nullptr;
-	nlsStrings = nullptr;
+	pathType = settings.pathType;
 
 	srcbits = settings.srcBits;
 
 	analytics.setSrcBits(srcbits);
+
+	rtdName = new char[strlen(settings.tfName)+1];
+	strcpy(rtdName,settings.tfName);
 
 	sfp = new (std::nothrow) SliceFileParser(settings.tfName,srcbits);
 
@@ -1975,6 +3360,10 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	}
 
 	if (settings.efName != nullptr ) {
+		int l = strlen(settings.efName)+1;
+		efName = new char[l];
+		strcpy(efName,settings.efName);
+
 		// create elf object
 
 		elfReader = new (std::nothrow) ElfReader(settings.efName);
@@ -2131,6 +3520,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	sourceInfo.sourceLineNum = 0;
 	sourceInfo.sourceLine = nullptr;
 
+	freq = settings.freq;
 	NexusMessage::targetFrequency = settings.freq;
 
 	tsSize = settings.tsSize;
@@ -2141,12 +3531,53 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 	status = setITCPrintOptions(TraceDqr::ITC_OPT_NLS,4096,0);
 
+	if (settings.itcPrintOpts != TraceDqr::ITC_OPT_NONE) {
+		rc = setITCPrintOptions(settings.itcPrintOpts,settings.itcPrintBufferSize,settings.itcPrintChannel);
+		if (rc != TraceDqr::DQERR_OK) {
+			cleanUp();
+
+			status = rc;
+			return status;
+		}
+	}
+
 	if ((settings.caName != nullptr) && (settings.caType != TraceDqr::CATRACE_NONE)) {
 		rc = setCATraceFile(settings.caName,settings.caType);
 		if (rc != TraceDqr::DQERR_OK) {
 			cleanUp();
 
 			status = rc;
+			return status;
+		}
+	}
+
+	if (settings.CTFConversion != false ) {
+
+		// Do the code below only after setting efName above
+
+		rc = enableCTFConverter(settings.startTime,settings.hostName);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return status;
+		}
+	}
+
+	if (settings.eventConversionEnable != false) {
+
+		// Do the code below only after setting efName above
+
+		rc = enableEventConverter();
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return status;
+		}
+	}
+
+	if ((settings.cutPath != nullptr) || (settings.srcRoot != nullptr)) {
+		rc = subSrcPath(settings.cutPath,settings.srcRoot);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+
 			return status;
 		}
 	}
@@ -2178,6 +3609,16 @@ void Trace::cleanUp()
 	if (newRoot != nullptr) {
 		delete [] newRoot;
 		newRoot = nullptr;
+	}
+
+	if (rtdName != nullptr) {
+		delete [] rtdName;
+		rtdName = nullptr;
+	}
+
+	if (efName != nullptr) {
+		delete [] efName;
+		efName = nullptr;
 	}
 
 	// do not delete the symtab object!! It is the same symtab object type the elfReader object
@@ -2218,6 +3659,11 @@ void Trace::cleanUp()
 	if (caTrace != nullptr) {
 		delete caTrace;
 		caTrace = nullptr;
+	}
+
+	if (ctf != nullptr) {
+		delete ctf;
+		ctf = nullptr;
 	}
 }
 
@@ -2260,6 +3706,8 @@ TraceDqr::DQErr Trace::setTraceType(TraceDqr::TraceType tType)
 
 TraceDqr::DQErr Trace::setPathType(TraceDqr::pathType pt)
 {
+	pathType = pt;
+
 	if (disassembler != nullptr) {
 		TraceDqr::DQErr rc;
 
@@ -2327,6 +3775,48 @@ TraceDqr::DQErr Trace::setCATraceFile( char *caf_name,TraceDqr::CATraceType caty
 
 	for (int i = 0; (size_t)i < sizeof state / sizeof state[0]; i++ ) {
 		state[i] = TRACE_STATE_SYNCCATE;
+	}
+
+	return status;
+}
+
+TraceDqr::DQErr Trace::enableCTFConverter(int64_t startTime,char *hostName)
+{
+	if (ctf != nullptr) {
+		delete ctf;
+		ctf = nullptr;
+	}
+
+	if (efName == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	ctf = new CTFConverter(efName,rtdName,1 << srcbits,getArchSize(),freq,startTime,hostName);
+
+	status = ctf->getStatus();
+	if (status != TraceDqr::DQERR_OK) {
+		return status;
+	}
+
+	return status;
+}
+
+TraceDqr::DQErr Trace::enableEventConverter()
+{
+	if (eventConverter != nullptr) {
+		delete eventConverter;
+		eventConverter = nullptr;
+	}
+
+	if (efName == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	eventConverter = new EventConverter(efName,rtdName,1 << srcbits,freq);
+
+	status = eventConverter->getStatus();
+	if (status != TraceDqr::DQERR_OK) {
+		return status;
 	}
 
 	return status;
@@ -3476,7 +4966,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 		// for 8, 0; 14, 0 do not update pc, only faddr. 0, 0 has no address, so it never updates
-		// this is because those message types all apprear in instruction traces (non-event) and
+		// this is because those message types all appear in instruction traces (non-event) and
 		// do not want to update the current address because they have no icnt to say when to do it
 
 		if (nm.haveTimestamp) {
@@ -3488,10 +4978,18 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			if (nm.ict.ckdf == 0) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				// don't update pc
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ict.ckdf,faddr,0);
+				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ict.ckdf,faddr,nm.ict.ckdata[1]);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
@@ -3502,10 +5000,18 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			if (nm.ict.ckdf == 0) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				// don't update pc
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ict.ckdf,faddr,0);
+				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ict.ckdf,faddr,nm.ict.ckdata[1]);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
@@ -3514,26 +5020,71 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			break;
 		case TraceDqr::ICT_INFERABLECALL:
 			if (nm.ict.ckdf == 0) {
-				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
-				pc = faddr;
+				pc = faddr ^ (nm.ict.ckdata[0] << 1);
+				faddr = pc;
 
-				TraceDqr::DQErr rc;
-				TraceDqr::ADDRESS nextPC;
-				int crFlags;
+				if (ctf != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
 
-				rc = nextAddr(pc,nextPC,crFlags);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
-					return TraceDqr::DQERR_ERR;
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					ctf->addCall(nm.coreId,pc,nextPC,ts);
+
+					// we will store the target address back in ckdata[1] in case it is needed later
+
+					nm.ict.ckdata[1] = nextPC;
 				}
 
-				// we will store the target address back in ckdata[1] in case it is needed later
-
-				nm.ict.ckdata[1] = nextPC;
+				if (eventConverter != nullptr) {
+					eventConverter->emitCallRet(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1],TraceDqr::isCall);
+				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				pc = faddr ^ (nm.ict.ckdata[0] << 1);
 				faddr = pc ^ (nm.ict.ckdata[1] << 1);
+
+				if (ctf != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					if (crFlags & TraceDqr::isCall) {
+						ctf->addCall(nm.coreId,pc,faddr,ts);
+					}
+					else if (crFlags & TraceDqr::isReturn) {
+						ctf->addRet(nm.coreId,pc,faddr,ts);
+					}
+					else {
+						printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+				}
+
+				if (eventConverter != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					eventConverter->emitCallRet(nm.coreId,ts,nm.ict.ckdf,pc,faddr,crFlags);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
@@ -3549,6 +5100,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitException(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
+			}
 			break;
 		case TraceDqr::ICT_INTERRUPT:
 			if (nm.ict.ckdf == 1) {
@@ -3558,6 +5113,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
+			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitInterrupt(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_CONTEXT:
@@ -3569,6 +5128,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitContext(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
+			}
 			break;
 		case TraceDqr::ICT_PC_SAMPLE:
 			if (nm.ict.ckdf == 0) {
@@ -3579,15 +5142,27 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitPeriodic(nm.coreId,ts,nm.ict.ckdf,pc);
+			}
 			break;
 		case TraceDqr::ICT_CONTROL:
 			if (nm.ict.ckdf == 0) {
 				// nothing to do - no address
 				// does not update faddr or pc!
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitControl(nm.coreId,ts,nm.ict.ckdf,nm.ict.ckdata[0],0);
+				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitControl(nm.coreId,ts,nm.ict.ckdf,nm.ict.ckdata[1],pc);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ict.ckdf);
@@ -3613,10 +5188,18 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			if (nm.ictWS.ckdf == 0) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				// don't update pc
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ictWS.ckdf,faddr,0);
+				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
@@ -3627,10 +5210,18 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			if (nm.ictWS.ckdf == 0) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				// don'tupdate pc
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ictWS.ckdf,faddr,0);
+				}
 			}
 			else if (nm.ictWS.ckdf <= 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
@@ -3639,26 +5230,71 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			break;
 		case TraceDqr::ICT_INFERABLECALL:
 			if (nm.ictWS.ckdf == 0) {
-				faddr = nm.ictWS.ckdata[0] << 1;
-				pc = faddr;
+				pc = nm.ictWS.ckdata[0] << 1;
+				faddr = pc;
 
-				TraceDqr::DQErr rc;
-				TraceDqr::ADDRESS nextPC;
-				int crFlags;
+				if (ctf != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
 
-				rc = nextAddr(pc,nextPC,crFlags);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
-					return TraceDqr::DQERR_ERR;
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					ctf->addCall(nm.coreId,pc,nextPC,ts);
+
+					// we will store the target address back in ckdata[1] in case it is needed later
+
+					nm.ict.ckdata[1] = nextPC;
 				}
 
-				// we will store the target address back in ckdata[1] in case it is needed later
-
-				nm.ict.ckdata[1] = nextPC;
+				if (eventConverter != nullptr) {
+					eventConverter->emitCallRet(nm.coreId,ts,nm.ictWS.ckdf,pc,faddr,TraceDqr::isCall);
+				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
-				pc = nm.ict.ckdata[0] << 1;
-				faddr = pc ^ (nm.ict.ckdata[1] << 1);
+				pc = nm.ictWS.ckdata[0] << 1;
+				faddr = pc ^ (nm.ictWS.ckdata[1] << 1);
+
+				if (ctf != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					if (crFlags & TraceDqr::isCall) {
+						ctf->addCall(nm.coreId,pc,faddr,ts);
+					}
+					else if (crFlags & TraceDqr::isReturn) {
+						ctf->addRet(nm.coreId,pc,faddr,ts);
+					}
+					else {
+						printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+				}
+
+				if (eventConverter != nullptr) {
+					TraceDqr::DQErr rc;
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					eventConverter->emitCallRet(nm.coreId,ts,nm.ictWS.ckdf,pc,faddr,crFlags);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
@@ -3674,6 +5310,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitException(nm.coreId,ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
+			}
 			break;
 		case TraceDqr::ICT_INTERRUPT:
 			if (nm.ictWS.ckdf == 1) {
@@ -3683,6 +5323,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
+			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitInterrupt(nm.coreId,ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_CONTEXT:
@@ -3694,6 +5338,10 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitContext(nm.coreId,ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
+			}
 			break;
 		case TraceDqr::ICT_PC_SAMPLE:
 			if (nm.ictWS.ckdf == 0) {
@@ -3704,15 +5352,27 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
 				return TraceDqr::DQERR_ERR;
 			}
+
+			if (eventConverter != nullptr) {
+				eventConverter->emitPeriodic(nm.coreId,ts,nm.ictWS.ckdf,pc);
+			}
 			break;
 		case TraceDqr::ICT_CONTROL:
 			if (nm.ictWS.ckdf == 0) {
 				// nothing to do
 				// does not update faddr or pc!
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitControl(nm.coreId,ts,nm.ictWS.ckdf,nm.ictWS.ckdata[0],0);
+				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
+
+				if (eventConverter != nullptr) {
+					eventConverter->emitControl(nm.coreId,ts,nm.ictWS.ckdf,nm.ictWS.ckdata[1],pc);
+				}
 			}
 			else {
 				printf("Error: processTraceMessage(): Invalid ckdf field: %d\n",nm.ictWS.ckdf);
@@ -3981,7 +5641,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //			printf("TRACE_STATE_SYNCCATE\n");
 
 			if (caTrace == nullptr) {
-				// have an error! Should never have TRACE_STATE_SYNC whthout a caTrace ptr
+				// have an error! Should never have TRACE_STATE_SYNC without a caTrace ptr
 				printf("Error: caTrace is null\n");
 				status = TraceDqr::DQERR_ERR;
 				state[currentCore] = TRACE_STATE_ERROR;
@@ -4042,8 +5702,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// this could be at the start of a trace, or after leaving a trace because of
 				// a correlation message
 
-                                // we may have a valid address and time already if we saw a sync whout an exit debug
-                                // or start trace sync reason. So call processTraceMessage()
+		                // we may have a valid address and time already if we saw a sync without an exit debug				        // or start trace sync reason. So call processTraceMessage()
 
 				if (lastFaddr[currentCore] != 0) {
 					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
@@ -4055,13 +5714,13 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 						return status;
 					}
-				}
+                }
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
 
 					// currentAddresss should be 0 until we get a sync message. TS may
-                                        // have been set by a ICT control WS message
+                    // have been set by a ICT control WS message
 
 					messageInfo.currentAddress = currentAddress[currentCore];
 					messageInfo.time = lastTime[currentCore];
@@ -4405,7 +6064,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 							*instInfo = &instructionInfo;
 //							(*instInfo)->CRFlag = TraceDqr::isNone;
 //							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
-							getCRBRFlags(nm.ictWS.cksrc,currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
+							getCRBRFlags(nm.getCKSRC(),currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
 
 							(*instInfo)->timestamp = lastTime[currentCore];
 						}
@@ -4556,7 +6215,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //							(*instInfo)->CRFlag = TraceDqr::isNone;
 //							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
 							getCRBRFlags(nm.getCKSRC(),currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
-
 							(*instInfo)->timestamp = lastTime[currentCore];
 						}
 
@@ -4695,6 +6353,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					*srcInfo = &sourceInfo;
 				}
 
+				// I don't think the b_type code below actaully does anything??? Remove??
+
 				TraceDqr::BType b_type;
 				b_type = TraceDqr::BTYPE_UNDEFINED;
 
@@ -4740,7 +6400,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-				// these messages should have been retired immeadiately
+				// these messages should have been retired immediately
 
 				printf("Error: unexpected tcode of INCIRCUTTRACE or INCIRCUTTRACE_WS in state TRACE_STATE_RETIREMESSAGE\n");
 				state[currentCore] = TRACE_STATE_ERROR;
