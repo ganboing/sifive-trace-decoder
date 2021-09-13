@@ -1836,7 +1836,7 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32
 		t = (int64_t)time(nullptr);
 	}
 
-	lt = localtime(&t);
+	lt = localtime((time_t*)&t);
 
 	if (tFlag == true) {
 		strftime(tbuff,sizeof tbuff,"%Y%m%dT%H%M%S%z",lt);
