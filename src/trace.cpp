@@ -1534,7 +1534,11 @@ EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 
 //		printf("nameBuff %d: %s\n",i,nameBuff);
 
+#ifdef WINDOWS
 		eventFDs[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		eventFDs[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
 
 		if (eventFDs[i] < 0) {
 			printf("Error: EventConverter::EventConverter(): Couldn't open file %s for writing\n",nameBuff);
@@ -1781,7 +1785,11 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32
 
 //		printf("nameBuff %d: %s\n",i,nameBuff);
 
+#ifdef WINDOWS
 		fd[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		fd[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
 
 		if (fd[i] < 0) {
 			printf("Error: CTFConverter::CTFConverter(): Couldn't open file %s for writing\n",nameBuff);
@@ -1806,7 +1814,11 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32
 
 	strcpy(&nameBuff[ctfNameLen],"metadata");
 
+#ifdef WINDOWS
 	metadataFd = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+	metadataFd = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
 
 	if (metadataFd < 0) {
 		printf("Error: CTFConverter::CTFConverter(): Couldn't open file %s for writing\n",nameBuff);
