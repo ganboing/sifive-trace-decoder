@@ -8034,7 +8034,7 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 
 TraceDqr::DQErr SliceFileParser::bufferSWT()
 {
-	int br;
+	int br = 0;
 	int bytesToRead;
 
 	// compute room in buffer for read
