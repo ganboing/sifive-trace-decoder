@@ -1504,7 +1504,7 @@ EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 	mkdir(eventNameGen);
 	char pathSep = '\\';
 #else // WINDOWS
-	mkdir(eventNameGen,0666);
+	mkdir(eventNameGen,0775);
 	char pathSep = '/';
 #endif // WINDOWS
 	// now add the elf file base name
@@ -1766,7 +1766,7 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32
 	mkdir(ctfNameGen);
 	char pathSep = '\\';
 #else // WINDOWS
-	mkdir(ctfNameGen,0666);
+	mkdir(ctfNameGen,0775);
 	char pathSep = '/';
 #endif // WINDOWS
 	// now add the elf file base name
