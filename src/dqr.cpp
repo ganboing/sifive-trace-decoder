@@ -5742,19 +5742,45 @@ void NexusMessage::dump()
 		std::cout << "unsupported device id trace message\n";
 		break;
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
-//bks
-		std::cout << "  # Trace Message(" << msgNum << "): Ownership, process=" << ownership.process; // << ", TS=0x" << hex << timestamp << dec; // << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Ownership, process=" << ownership.process << std::endl; // << ", TS=0x" << hex << timestamp << dec; // << endl;
 		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH:
 //		cout << "(" << traceNum << ") ";
 //		cout << "  | Direct Branch | TYPE=DBM, ICNT=" << i_cnt << ", TS=0x" << hex << timestamp << dec; // << endl;
-//bks		cout << "  # Trace Message(" << msgNum << "): Direct Branch, ICNT=" << i_cnt; // << ", TS=0x" << hex << timestamp << dec; // << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Direct Branch, ICNT=" << directBranch.i_cnt << std::endl; // << ", TS=0x" << hex << timestamp << dec; // << endl;
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH:
 //		cout << "(" << traceNum << ") ";
 //		cout << "  | Indirect Branch | TYPE=IBM, BTYPE=" << b_type << ", ICNT=" << i_cnt << ", UADDR=0x" << hex << u_addr << ", TS=0x" << timestamp << dec;// << endl;
-//bks		cout << "  # Trace Message(" << msgNum << "): Indirect Branch, BTYPE=" << b_type << ", ICNT=" << i_cnt << ", UADDR=0x" << hex << u_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Indirect Branch, BTYPE=" << indirectBranch.b_type << ", ICNT=" << indirectBranch.i_cnt << ", UADDR=0x" << std::hex << indirectBranch.u_addr << std::dec << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
+	case TraceDqr::TCODE_RESOURCEFULL:
+		switch (resourceFull.rCode) {
+		case 0:
+			std::cout << "  # Trace Message(" << msgNum << "): Resource Full, rCode=" << resourceFull.rCode << ", ICNT=" << resourceFull.i_cnt << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
+			break;
+		case 1:
+			std::cout << "  # Trace Message(" << msgNum << "): Resource Full, rCode=" << resourceFull.rCode << ", History=0x" << std::hex << resourceFull.history << std::dec << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
+			break;
+		case 8:
+			std::cout << "  # Trace Message(" << msgNum << "): Resource Full, rCode=" << resourceFull.rCode << ", Not taken=" << resourceFull.notTakenCount << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
+			break;
+		case 9:
+			std::cout << "  # Trace Message(" << msgNum << "): Resource Full, rCode=" << resourceFull.rCode << ", Taken=" << resourceFull.takenCount << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
+			break;
+		default:
+			std::cout << "  # Trace Message(" << msgNum << "): Resource Full, Invalid or unsupported rCode for reourceFull TCODE" << std::endl;
+			break;
+		}
+		break;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		std::cout << "  # Trace Message(" << msgNum << "): Indirect Branch History, ICNT=" << indirectHistory.i_cnt << ", BTYPE=" << indirectHistory.b_type << ", UADDR=0x" << std::hex << indirectHistory.u_addr << std::dec << ", history=0x" << std::hex << indirectHistory.history << std::dec << std::endl;
+		break;
+//	case TCODE_INDIRECTBRANCHHISTORY_WS:
+//	case TCODE_CORRELATION:
+//	case TCODE_INCIRCUITTRACE:
+//	case TCODE_INCIRCUITTRACE_WS:
+//		break;
 	case TraceDqr::TCODE_DATA_WRITE:
 		std::cout << "unsupported data write trace message\n";
 		break;
@@ -5765,12 +5791,12 @@ void NexusMessage::dump()
 		std::cout << "unsupported data acquisition trace message\n";
 		break;
 	case TraceDqr::TCODE_ERROR:
-//bks		cout << "  # Trace Message(" << msgNum << "): Error, ETYPE=" << (uint32_t)etype; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Error, ETYPE=" << (uint32_t)error.etype << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
 	case TraceDqr::TCODE_SYNC:
 //		cout << "(" << traceNum << "," << syncNum << ") ";
 //		cout << "  | Sync | TYPE=SYNC, SYNC=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << ", TS=0x" << timestamp << dec;// << endl;
-//bks		cout << "  # Trace Message(" << msgNum << "): Sync, SYNCREASON=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Sync, SYNCREASON=" << sync.sync << ", ICNT=" << sync.i_cnt << ", FADDR=0x" << std::hex << sync.f_addr << std::dec << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
 	case TraceDqr::TCODE_CORRECTION:
 		std::cout << "unsupported correction trace message\n";
@@ -5778,12 +5804,12 @@ void NexusMessage::dump()
 	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 //		cout << "(" << traceNum << "," << syncNum << ") ";
 //		cout << "  | Direct Branch With Sync | TYPE=DBWS, SYNC=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << ", TS=0x" << timestamp << dec;// << endl;
-//bks		cout << "  # Trace Message(" << msgNum << "): Direct Branch With Sync, SYNCTYPE=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Direct Branch With Sync, SYNCTYPE=" << directBranchWS.sync << ", ICNT=" << directBranchWS.i_cnt << ", FADDR=0x" << std::hex << directBranchWS.f_addr << std::dec << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 //		cout << "(" << traceNum << "," << syncNum << ") ";
 //		cout << "  | Indirect Branch With Sync | TYPE=IBWS, SYNC=" << sync << ", BTYPE=" << b_type << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << ", TS=0x" << timestamp << dec;// << endl;
-//bks		cout << "  # Trace Message(" << msgNum << "): Indirect Branch With sync, SYNCTYPE=" << sync << ", BTYPE=" << b_type << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Indirect Branch With sync, SYNCTYPE=" << indirectBranchWS.sync << ", BTYPE=" << indirectBranchWS.b_type << ", ICNT=" << indirectBranchWS.i_cnt << ", FADDR=0x" << std::hex << indirectBranchWS.f_addr << std::dec << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
 	case TraceDqr::TCODE_DATA_WRITE_WS:
 		std::cout << "unsupported data write with sync trace message\n";
@@ -5795,13 +5821,13 @@ void NexusMessage::dump()
 		std::cout << "unsupported watchpoint trace message\n";
 		break;
 	case TraceDqr::TCODE_AUXACCESS_WRITE:
-//bks		cout << "  # Trace Message(" << msgNum << "): Auxillary Access Write, address=" << hex << auxAddr << dec << ", data=" << hex << data << dec; // << ", TS=0x" << hex << timestamp << dec; // << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Auxillary Access Write, address=" << std::hex << auxAccessWrite.addr << std::dec << ", data=" << std::hex << auxAccessWrite.data << std::dec << std::endl; // << ", TS=0x" << hex << timestamp << dec; // << endl;
 		break;
 	case TraceDqr::TCODE_CORRELATION:
-//bks		cout << "  # Trace Message(" << msgNum << "): Correlation, EVCODE=" << (uint32_t)evcode << ", CDF=" << (int)cdf << ", ICNT=" << i_cnt << "\n"; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Correlation, EVCODE=" << (uint32_t)correlation.evcode << ", CDF=" << (int)correlation.cdf << ", ICNT=" << correlation.i_cnt << "\n"; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
 	default:
-		std::cout << "Error: NexusMessage::dump(): Unknown TCODE " << std::hex << tcode << std::dec << "msgnum: " << msgNum << std::endl;
+		std::cout << "Error: NexusMessage::dump(): Unknown TCODE " << tcode << " (0x" << std::hex << tcode << std::dec << "), msgnum: " << msgNum << std::endl;
 	}
 }
 

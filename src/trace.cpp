@@ -5035,22 +5035,22 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = faddr ^ (nm.ict.ckdata[0] << 1);
 				faddr = pc;
 
+				TraceDqr::DQErr rc;
+				TraceDqr::ADDRESS nextPC;
+				int crFlags;
+
+				rc = nextAddr(pc,nextPC,crFlags);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+					return TraceDqr::DQERR_ERR;
+				}
+
+				// we will store the target address back in ckdata[1] in case it is needed later
+
+				nm.ict.ckdata[1] = nextPC;
+
 				if (ctf != nullptr) {
-					TraceDqr::DQErr rc;
-					TraceDqr::ADDRESS nextPC;
-					int crFlags;
-
-					rc = nextAddr(pc,nextPC,crFlags);
-					if (rc != TraceDqr::DQERR_OK) {
-						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
-						return TraceDqr::DQERR_ERR;
-					}
-
 					ctf->addCall(nm.coreId,pc,nextPC,ts);
-
-					// we will store the target address back in ckdata[1] in case it is needed later
-
-					nm.ict.ckdata[1] = nextPC;
 				}
 
 				if (eventConverter != nullptr) {
@@ -5061,7 +5061,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = faddr ^ (nm.ict.ckdata[0] << 1);
 				faddr = pc ^ (nm.ict.ckdata[1] << 1);
 
-				if (ctf != nullptr) {
+				if ((ctf != nullptr) || (eventConverter != nullptr)) {
 					TraceDqr::DQErr rc;
 					TraceDqr::ADDRESS nextPC;
 					int crFlags;
@@ -5072,30 +5072,22 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 						return TraceDqr::DQERR_ERR;
 					}
 
-					if (crFlags & TraceDqr::isCall) {
-						ctf->addCall(nm.coreId,pc,faddr,ts);
-					}
-					else if (crFlags & TraceDqr::isReturn) {
-						ctf->addRet(nm.coreId,pc,faddr,ts);
-					}
-					else {
-						printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
-						return TraceDqr::DQERR_ERR;
-					}
-				}
-
-				if (eventConverter != nullptr) {
-					TraceDqr::DQErr rc;
-					TraceDqr::ADDRESS nextPC;
-					int crFlags;
-
-					rc = nextAddr(pc,nextPC,crFlags);
-					if (rc != TraceDqr::DQERR_OK) {
-						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
-						return TraceDqr::DQERR_ERR;
+					if (ctf != nullptr) {
+						if (crFlags & TraceDqr::isCall) {
+							ctf->addCall(nm.coreId,pc,faddr,ts);
+						}
+						else if (crFlags & TraceDqr::isReturn) {
+							ctf->addRet(nm.coreId,pc,faddr,ts);
+						}
+						else {
+							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
+							return TraceDqr::DQERR_ERR;
+						}
 					}
 
-					eventConverter->emitCallRet(nm.coreId,ts,nm.ict.ckdf,pc,faddr,crFlags);
+					if (eventConverter != nullptr) {
+						eventConverter->emitCallRet(nm.coreId,ts,nm.ict.ckdf,pc,faddr,crFlags);
+					}
 				}
 			}
 			else {
@@ -5245,22 +5237,22 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = nm.ictWS.ckdata[0] << 1;
 				faddr = pc;
 
+				TraceDqr::DQErr rc;
+				TraceDqr::ADDRESS nextPC;
+				int crFlags;
+
+				rc = nextAddr(pc,nextPC,crFlags);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+					return TraceDqr::DQERR_ERR;
+				}
+
+				// we will store the target address back in ckdata[1] in case it is needed later
+
+				nm.ict.ckdata[1] = nextPC;
+
 				if (ctf != nullptr) {
-					TraceDqr::DQErr rc;
-					TraceDqr::ADDRESS nextPC;
-					int crFlags;
-
-					rc = nextAddr(pc,nextPC,crFlags);
-					if (rc != TraceDqr::DQERR_OK) {
-						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
-						return TraceDqr::DQERR_ERR;
-					}
-
 					ctf->addCall(nm.coreId,pc,nextPC,ts);
-
-					// we will store the target address back in ckdata[1] in case it is needed later
-
-					nm.ict.ckdata[1] = nextPC;
 				}
 
 				if (eventConverter != nullptr) {
@@ -5271,7 +5263,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = nm.ictWS.ckdata[0] << 1;
 				faddr = pc ^ (nm.ictWS.ckdata[1] << 1);
 
-				if (ctf != nullptr) {
+				if ((ctf != nullptr) || (eventConverter != nullptr)) {
 					TraceDqr::DQErr rc;
 					TraceDqr::ADDRESS nextPC;
 					int crFlags;
@@ -5282,30 +5274,22 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 						return TraceDqr::DQERR_ERR;
 					}
 
-					if (crFlags & TraceDqr::isCall) {
-						ctf->addCall(nm.coreId,pc,faddr,ts);
-					}
-					else if (crFlags & TraceDqr::isReturn) {
-						ctf->addRet(nm.coreId,pc,faddr,ts);
-					}
-					else {
-						printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
-						return TraceDqr::DQERR_ERR;
-					}
-				}
-
-				if (eventConverter != nullptr) {
-					TraceDqr::DQErr rc;
-					TraceDqr::ADDRESS nextPC;
-					int crFlags;
-
-					rc = nextAddr(pc,nextPC,crFlags);
-					if (rc != TraceDqr::DQERR_OK) {
-						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
-						return TraceDqr::DQERR_ERR;
+					if (ctf != nullptr) {
+						if (crFlags & TraceDqr::isCall) {
+							ctf->addCall(nm.coreId,pc,faddr,ts);
+						}
+						else if (crFlags & TraceDqr::isReturn) {
+							ctf->addRet(nm.coreId,pc,faddr,ts);
+						}
+						else {
+							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
+							return TraceDqr::DQERR_ERR;
+						}
 					}
 
-					eventConverter->emitCallRet(nm.coreId,ts,nm.ictWS.ckdf,pc,faddr,crFlags);
+					if (eventConverter != nullptr) {
+						eventConverter->emitCallRet(nm.coreId,ts,nm.ictWS.ckdf,pc,faddr,crFlags);
+					}
 				}
 			}
 			else {
@@ -6726,6 +6710,18 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					state[currentCore] = TRACE_STATE_ERROR;
 
 					status = TraceDqr::DQERR_ERR;
+
+//					nm.dumpRawMessage();
+//					nm.dump();
+//
+//					rc = sfp->readNextTraceMsg(nm,analytics,haveMsg);
+//
+//					if (rc != TraceDqr::DQERR_OK) {
+//						printf("Error: Trace file does not contain any trace messages, or is unreadable\n");
+//					} else if (haveMsg != false) {
+//						nm.dumpRawMessage();
+//						nm.dump();
+//					}
 
 					return status;
 				}
