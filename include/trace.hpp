@@ -487,6 +487,11 @@ private:
 	int numCores;
 	uint32_t frequency;
 	int eventFDs[CTF::et_numEventTypes];
+	int eventFD;
+
+	const char *getInterruptCauseText(int cause);
+	const char *getExceptionCauseText(int cause);
+	const char *getControlText(int control);
 };
 
 // class Disassembler: class to help in the dissasemblhy of instrucitons

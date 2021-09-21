@@ -1491,10 +1491,27 @@ EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 	char elfBaseName[256];
 	char eventNameGen[512];
 	int eventNameLen;
+	char nameBuff[512];
+
 
 	getPathsNames(elf,elfBaseName,nullptr,nullptr);
 
 	getPathsNames(rtd,nullptr,nullptr,eventNameGen);
+
+	sprintf(nameBuff,"%s%s.events",eventNameGen,elfBaseName);
+
+#ifdef WINDOWS
+	eventFD = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+	eventFD = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+	if (eventFD < 0) {
+		printf("Error: EventConverter::EventConverter(): Couldn't open file %s for writing\n",nameBuff);
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
 
 	strcat(eventNameGen,"events");
 
@@ -1515,8 +1532,6 @@ EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 
 	strcpy(&eventNameGen[eventNameLen],elfBaseName);
 	strcat(&eventNameGen[eventNameLen],".%s");
-
-	char nameBuff[512];
 
 	const char *eventNames[] = {
 			"control",
@@ -1556,7 +1571,13 @@ EventConverter::~EventConverter()
 	for (int i = 0; i < (int)(sizeof eventFDs / sizeof eventFDs[0]); i++) {
 		if (eventFDs[i] >= 0) {
 			close(eventFDs[i]);
+			eventFDs[i] = -1;
 		}
+	}
+
+	if (eventFD >= 0) {
+		close(eventFD);
+		eventFD = -1;
 	}
 }
 
@@ -1564,6 +1585,16 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 {
 	char msgBuff[512];
 	int n;
+
+	if (eventFD >= 0) {
+		if (ckdf == 0) {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [External Trigger] PC=0x%08x ID=[--]\n",core,ts,pc);
+		}
+		else {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [External Trigger] PC=0x%08x ID=[%d]\n",core,ts,pc,id);
+		}
+		write(eventFD,msgBuff,n);
+	}
 
 	if (eventFDs[CTF::et_extTriggerIndex] >= 0) {
 		if (ckdf == 0) {
@@ -1583,6 +1614,16 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 	char msgBuff[512];
 	int n;
 
+	if (eventFD >= 0) {
+		if (ckdf == 0) {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Watchpoint] PC=0x%08x ID=[--]\n",core,ts,pc);
+		}
+		else {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d,[Watchpoint] PC=0x%08x ID=[%d]\n",core,ts,pc,id);
+		}
+		write(eventFD,msgBuff,n);
+	}
+
 	if (eventFDs[CTF::et_watchpointIndex] >= 0) {
 		if (ckdf == 0) {
 			n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x\n",core,ts,ckdf,pc);
@@ -1596,10 +1637,83 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 	return TraceDqr::DQERR_OK;
 }
 
+const char *EventConverter::getExceptionCauseText(int cause)
+{
+	const char *exceptionCauseMap[] = {
+			"Instruction address misaligned",
+			"Instruction access fault",
+			"Illegal instruction",
+			"Breakpoint",
+			"Load address misaligned",
+			"Load access fault",
+			"Store/AMO address misaligned",
+			"Store/AMO access fault",
+			"Environment call from U-mode",
+			"Environment call from S-mode",
+			"Reserved",
+			"Environment call from M-mode",
+			"Instruction page fault",
+			"Load page fault",
+			"Reserved",
+			"Store/AMO page fault",
+	};
+
+	if ((cause >= 0) && (cause < (int)(sizeof exceptionCauseMap / sizeof exceptionCauseMap[0]))) {
+		return exceptionCauseMap[cause];
+	}
+	else if (((cause >= 24) && (cause <=31)) || ((cause >= 48) && (cause <= 63))) {
+		return "Custom";
+	}
+	else {
+		return "Reserved";
+	}
+}
+
+const char *EventConverter::getInterruptCauseText(int cause)
+{
+	const char *eventCauseMap[] = {
+			"Reserved",
+			"Supervisor software interrupt",
+			"Reserved",
+			"Machine software interrupt",
+			"Reserved",
+			"Supervisor timer interrupt",
+			"Reserved",
+			"Machine timer interrupt",
+			"Reserved",
+			"Supervisor external interrupt",
+			"Reserved",
+			"Machine external interrupt"
+	};
+
+	if ((cause >= 0) && (cause < (int)(sizeof eventCauseMap / sizeof eventCauseMap[0]))) {
+		return eventCauseMap[cause];
+	}
+	else if (cause >= 16) {
+		return "Custom";
+	}
+	else {
+		return "Reserved";
+	}
+}
+
 TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags)
 {
 	char msgBuff[512];
 	int n;
+
+	if (eventFD >= 0) {
+		if (crFlags & TraceDqr::isCall) {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call] PC=0x%08x PCDest=0x%08x\n",core,ts,pc,pcDest);
+		}
+		else if (crFlags & TraceDqr::isReturn) {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Return] PC=0x%08x PCDest=0x%08x\n",core,ts,pc,pcDest);
+		}
+		else {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call/Return?? PC=0x%08x PCDest=0x%08x\n",core,ts,pc,pcDest);
+		}
+		write(eventFD,msgBuff,n);
+	}
 
 	if (eventFDs[CTF::et_callRetIndex] >= 0) {
 		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,0x%08x,0x%08x\n",core,ts,ckdf,pc,pcDest,crFlags);
@@ -1614,6 +1728,12 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 	char msgBuff[512];
 	int n;
 
+
+	if (eventFD >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Excpetion] PC=0x%08x Cause=[%s]\n",core,ts,pc,getExceptionCauseText(cause));
+		write(eventFD,msgBuff,n);
+	}
+
 	if (eventFDs[CTF::et_exeptionIndex] >= 0) {
 		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,cause);
 		write(eventFDs[CTF::et_exeptionIndex],msgBuff,n);
@@ -1627,6 +1747,11 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 	char msgBuff[512];
 	int n;
 
+	if (eventFD >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x Cause=[%s]\n",core,ts,pc,getInterruptCauseText(cause));
+		write(eventFD,msgBuff,n);
+	}
+
 	if (eventFDs[CTF::et_interruptIndex] >= 0) {
 		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,cause);
 		write(eventFDs[CTF::et_interruptIndex],msgBuff,n);
@@ -1639,6 +1764,23 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 {
 	char msgBuff[512];
 	int n;
+	const char *newContext;
+
+	if (eventFD >= 0) {
+		switch (context & 0x3) {
+		case 2:
+			newContext = "SContext";
+			break;
+		case 3:
+			newContext = "MContext";
+			break;
+		default:
+			newContext = "Reserverd Context";
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [%s] PC=0x%08x Context=[%d]\n",core,ts,newContext,pc,context >> 2);
+		write(eventFD,msgBuff,n);
+	}
 
 	if (eventFDs[CTF::et_contextIndex] >= 0) {
 		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x,%d\n",core,ts,ckdf,pc,context);
@@ -1653,6 +1795,11 @@ TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int
 	char msgBuff[512];
 	int n;
 
+	if (eventFD >= 0) {
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [PC Sample] PC=0x%08x 0=[0]\n",core,ts,pc);
+		write(eventFD,msgBuff,n);
+	}
+
 	if (eventFDs[CTF::et_periodicIndex] >= 0) {
 		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,0x%08x\n",core,ts,ckdf,pc);
 		write(eventFDs[CTF::et_periodicIndex],msgBuff,n);
@@ -1661,10 +1808,40 @@ TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int
 	return TraceDqr::DQERR_OK;
 }
 
+const char *EventConverter::getControlText(int control)
+{
+	const char *controlMap[] = {
+			"No Event",
+			"Reserved",
+			"Trace On",
+			"Trace Off",
+			"Exit Debug",
+			"Enter Debug",
+			"Exit Reset",
+			"Enter Reset"
+	};
+
+	if ((control >= 0) && (control < (int)(sizeof controlMap / sizeof controlMap[0]))) {
+		return controlMap[control];
+	}
+
+	return "Reserved";
+}
+
 TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc)
 {
 	char msgBuff[512];
 	int n;
+
+	if (eventFD >= 0) {
+		if (ckdf == 0) {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x0 Control=[%s]\n",core,ts,getControlText(control));
+		}
+		else {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x%08x Control=[%s]\n",core,ts,pc,getControlText(control));
+		}
+		write(eventFD,msgBuff,n);
+	}
 
 	if (eventFDs[CTF::et_controlIndex] >= 0) {
 		n = snprintf(msgBuff,sizeof msgBuff,"%d,%d,%d,%d,0x%08x\n",core,ts,ckdf,control,pc);
