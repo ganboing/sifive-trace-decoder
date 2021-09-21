@@ -1704,13 +1704,13 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 
 	if (eventFD >= 0) {
 		if (crFlags & TraceDqr::isCall) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call] PC=0x%08x PCDest=0x%08x\n",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
 		}
 		else if (crFlags & TraceDqr::isReturn) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Return] PC=0x%08x PCDest=0x%08x\n",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Return] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call/Return?? PC=0x%08x PCDest=0x%08x\n",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call/Return?? PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
 		}
 		write(eventFD,msgBuff,n);
 	}
