@@ -1517,13 +1517,23 @@ EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 
 	// make the event folder
 
+	int rc;
+
 #ifdef WINDOWS
-	mkdir(eventNameGen);
+	rc = mkdir(eventNameGen);
 	char pathSep = '\\';
 #else // WINDOWS
-	mkdir(eventNameGen,0775);
+	rc = mkdir(eventNameGen,0775);
 	char pathSep = '/';
 #endif // WINDOWS
+
+	if ((rc < 0) && (errno != EEXIST)){
+		printf("Error: EventConverter::EventConverter(): Couldn't not make directory %s, errono=%d\n",eventNameGen,errno);
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
 	// now add the elf file base name
 
 	eventNameLen = strlen(eventNameGen);
@@ -1944,13 +1954,23 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32
 
 	// make the ctf folder
 
+	int rc;
+
 #ifdef WINDOWS
-	mkdir(ctfNameGen);
+	rc = mkdir(ctfNameGen);
 	char pathSep = '\\';
 #else // WINDOWS
-	mkdir(ctfNameGen,0775);
+	rc = mkdir(ctfNameGen,0775);
 	char pathSep = '/';
 #endif // WINDOWS
+
+	if ((rc < 0) && (errno != EEXIST)) {
+		printf("Error: EventConverter::CTFConveter(): Couldn't not make directory %s, errono=%d\n",ctfNameGen,errno);
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
 	// now add the elf file base name
 
 	ctfNameLen = strlen(ctfNameGen);
@@ -2065,6 +2085,10 @@ CTFConverter::CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32
 	sprintf(CTFMetadataClockDefDoctored,CTFMetadataClockDef,frequency,t * 1000000000);
 	sprintf(CTFMetadataEnvDefDoctored,CTFMetadataEnvDef,archSize,elfBaseName,tbuff,hn);
 
+	writeCTFMetadata();
+	close(metadataFd);
+	metadataFd = -1;
+
 	status = TraceDqr::DQERR_OK;
 }
 
@@ -2088,12 +2112,6 @@ CTFConverter::~CTFConverter()
 			close(fd[i]);
 			fd[i] = -1;
 		}
-	}
-
-	if (metadataFd >= 0) {
-		writeCTFMetadata();
-		close(metadataFd);
-		metadataFd = -1;
 	}
 
 	if (elfName != nullptr) {
@@ -3858,6 +3876,11 @@ void Trace::cleanUp()
 	if (ctf != nullptr) {
 		delete ctf;
 		ctf = nullptr;
+	}
+
+	if (eventConverter != nullptr) {
+		delete eventConverter;
+		eventConverter = nullptr;
 	}
 }
 
