@@ -1626,7 +1626,7 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Watchpoint] PC=0x%08x ID=[--]\n",core,ts,pc);
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d,[Watchpoint] PC=0x%08x ID=[%d]\n",core,ts,pc,id);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Watchpoint] PC=0x%08x ID=[%d]\n",core,ts,pc,id);
 		}
 
 		if (eventFD >= 0) {
@@ -1710,8 +1710,17 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 		if (crFlags & TraceDqr::isCall) {
 			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
 		}
+		else if (crFlags & TraceDqr::isInterrupt) {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
+		}
+		else if (crFlags & TraceDqr::isException) {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
+		}
 		else if (crFlags & TraceDqr::isReturn) {
 			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Return] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
+		}
+		else if (crFlags & TraceDqr::isExceptionReturn) {
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Excpetion Return] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
 		}
 		else {
 			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call/Return?? PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
@@ -2315,7 +2324,7 @@ TraceDqr::DQErr CTFConverter::writeBinInfo(int core,uint64_t timestamp)
 
 	// now write bininfo event
 
-	printf("need to get memory base address and size from symtab sections\n");fflush(stdout);
+//	printf("need to get memory base address and size from symtab sections\n");fflush(stdout);
 
 	e.binInfo._baddr = 0x40000000;
 
@@ -5290,14 +5299,15 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 					}
 
 					if (ctf != nullptr) {
+						printf("crflags: %08x\n",crFlags);
 						if (crFlags & TraceDqr::isCall) {
 							ctf->addCall(nm.coreId,pc,faddr,ts);
 						}
-						else if (crFlags & TraceDqr::isReturn) {
+						else if ((crFlags & TraceDqr::isReturn) || (crFlags & TraceDqr::isExceptionReturn)) {
 							ctf->addRet(nm.coreId,pc,faddr,ts);
 						}
 						else {
-							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
+							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion1\n");
 							return TraceDqr::DQERR_ERR;
 						}
 					}
@@ -5495,11 +5505,11 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 						if (crFlags & TraceDqr::isCall) {
 							ctf->addCall(nm.coreId,pc,faddr,ts);
 						}
-						else if (crFlags & TraceDqr::isReturn) {
+						else if ((crFlags & TraceDqr::isReturn) || (crFlags & TraceDqr::isExceptionReturn)) {
 							ctf->addRet(nm.coreId,pc,faddr,ts);
 						}
 						else {
-							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
+							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion2\n");
 							return TraceDqr::DQERR_ERR;
 						}
 					}
