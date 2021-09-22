@@ -3482,8 +3482,11 @@ Trace::Trace(char *mf_name)
 
 	rc = settings.addSettings(&properties);
 	if (rc != TraceDqr::DQERR_OK) {
-		printf("what the stink!\n");
-		exit(1);
+		printf("Error: Trace(): addSettings() failed\n");
+
+		status = rc;
+
+		return;
 	}
 
 	rc = configure(settings);
