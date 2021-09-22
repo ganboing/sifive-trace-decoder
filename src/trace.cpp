@@ -5299,7 +5299,6 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 					}
 
 					if (ctf != nullptr) {
-						printf("crflags: %08x\n",crFlags);
 						if (crFlags & TraceDqr::isCall) {
 							ctf->addCall(nm.coreId,pc,faddr,ts);
 						}
@@ -5307,7 +5306,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 							ctf->addRet(nm.coreId,pc,faddr,ts);
 						}
 						else {
-							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion1\n");
+							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
 							return TraceDqr::DQERR_ERR;
 						}
 					}
@@ -5509,7 +5508,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 							ctf->addRet(nm.coreId,pc,faddr,ts);
 						}
 						else {
-							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion2\n");
+							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
 							return TraceDqr::DQERR_ERR;
 						}
 					}
