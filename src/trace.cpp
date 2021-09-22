@@ -1735,7 +1735,7 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 	int n;
 
 	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Excpetion] PC=0x%08x Cause=[%s]\n",core,ts,pc,getExceptionCauseText(cause));
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Excpetion] PC=0x%08x Cause=[%d:%s]\n",core,ts,pc,cause,getExceptionCauseText(cause));
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
@@ -1755,7 +1755,7 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 	int n;
 
 	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x Cause=[%s]\n",core,ts,pc,getInterruptCauseText(cause));
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x Cause=[%d:%s]\n",core,ts,pc,cause,getInterruptCauseText(cause));
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
@@ -1848,10 +1848,10 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 
 	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
 		if (ckdf == 0) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x0 Control=[%s]\n",core,ts,getControlText(control));
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x0 Control=[%d:%s]\n",core,ts,control,getControlText(control));
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x%08x Control=[%s]\n",core,ts,pc,getControlText(control));
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x%08x Control=[%d:%s]\n",core,ts,pc,control,getControlText(control));
 		}
 
 		if (eventFD >= 0) {
