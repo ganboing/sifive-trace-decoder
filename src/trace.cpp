@@ -2958,10 +2958,19 @@ TraceDqr::DQErr TraceSettings::propertyToCAType(char *value)
 		if (strcasecmp(value,"none") == 0) {
 			caType = TraceDqr::CATRACE_NONE;
 		}
+		else if (strcasecmp(value,"catrace_none") == 0) {
+			caType = TraceDqr::CATRACE_NONE;
+		}
 		else if (strcasecmp(value,"vector") == 0) {
 			caType = TraceDqr::CATRACE_VECTOR;
 		}
+		else if (strcasecmp(value,"catrace_vector") == 0) {
+			caType = TraceDqr::CATRACE_VECTOR;
+		}
 		else if (strcasecmp(value,"instruction") == 0) {
+			caType = TraceDqr::CATRACE_INSTRUCTION;
+		}
+		else if (strcasecmp(value,"catrace_instruction") == 0) {
 			caType = TraceDqr::CATRACE_INSTRUCTION;
 		}
 		else {
