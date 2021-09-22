@@ -1489,7 +1489,6 @@ EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 	frequency = freq;
 
 	char elfBaseName[256];
-	char eventNameGen[512];
 	int eventNameLen;
 	char nameBuff[512];
 
@@ -1543,36 +1542,6 @@ EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 	strcpy(&eventNameGen[eventNameLen],elfBaseName);
 	strcat(&eventNameGen[eventNameLen],".%s");
 
-	const char *eventNames[] = {
-			"control",
-			"trigger",
-			"callret",
-			"exception",
-			"interrupt",
-			"context",
-			"watchpoint",
-			"periodic"
-	};
-
-	for (int i = 0; i < (int)(sizeof eventNames / sizeof eventNames[0]); i++) {
-		sprintf(nameBuff,eventNameGen,eventNames[i]);
-
-//		printf("nameBuff %d: %s\n",i,nameBuff);
-
-#ifdef WINDOWS
-		eventFDs[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
-#else // WINDOWS
-		eventFDs[i] = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
-#endif // WINDOWS
-
-		if (eventFDs[i] < 0) {
-			printf("Error: EventConverter::EventConverter(): Couldn't open file %s for writing\n",nameBuff);
-			status = TraceDqr::DQERR_ERR;
-
-			return;
-		}
-	}
-
 	status = TraceDqr::DQERR_OK;
 }
 
@@ -1595,6 +1564,23 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 {
 	char msgBuff[512];
 	int n;
+
+	if (eventFDs[CTF::et_extTriggerIndex] < 0) {
+		sprintf(msgBuff,eventNameGen,"trigger");
+
+#ifdef WINDOWS
+		eventFDs[CTF::et_extTriggerIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		eventFDs[CTF::et_extTriggerIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (eventFDs[CTF::et_extTriggerIndex] < 0) {
+			printf("Error: EventConverter::emitExtTrigEvent(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+	}
 
 	if ((eventFDs[CTF::et_extTriggerIndex] >= 0) || (eventFD >= 0)) {
 		if (ckdf == 0) {
@@ -1620,6 +1606,23 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 {
 	char msgBuff[512];
 	int n;
+
+	if (eventFDs[CTF::et_watchpointIndex] < 0) {
+		sprintf(msgBuff,eventNameGen,"watchpoint");
+
+#ifdef WINDOWS
+		eventFDs[CTF::et_watchpointIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		eventFDs[CTF::et_watchpointIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (eventFDs[CTF::et_watchpointIndex] < 0) {
+			printf("Error: EventConverter::emitWatchpoint(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+	}
 
 	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
 		if (ckdf == 0) {
@@ -1706,7 +1709,24 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 	char msgBuff[512];
 	int n;
 
-	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
+	if (eventFDs[CTF::et_callRetIndex] < 0) {
+		sprintf(msgBuff,eventNameGen,"callret");
+
+#ifdef WINDOWS
+		eventFDs[CTF::et_callRetIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		eventFDs[CTF::et_callRetIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (eventFDs[CTF::et_callRetIndex] < 0) {
+			printf("Error: EventConverter::emitWatchpoint(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+	}
+
+	if ((eventFDs[CTF::et_callRetIndex] >= 0) || (eventFD >= 0)) {
 		if (crFlags & TraceDqr::isCall) {
 			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
 		}
@@ -1743,7 +1763,24 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 	char msgBuff[512];
 	int n;
 
-	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
+	if (eventFDs[CTF::et_exeptionIndex] < 0) {
+		sprintf(msgBuff,eventNameGen,"exception");
+
+#ifdef WINDOWS
+		eventFDs[CTF::et_exeptionIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		eventFDs[CTF::et_exeptionIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (eventFDs[CTF::et_exeptionIndex] < 0) {
+			printf("Error: EventConverter::emitWatchpoint(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+	}
+
+	if ((eventFDs[CTF::et_exeptionIndex] >= 0) || (eventFD >= 0)) {
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Excpetion] PC=0x%08x Cause=[%d:%s]\n",core,ts,pc,cause,getExceptionCauseText(cause));
 
 		if (eventFD >= 0) {
@@ -1763,7 +1800,24 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 	char msgBuff[512];
 	int n;
 
-	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
+	if (eventFDs[CTF::et_interruptIndex] < 0) {
+		sprintf(msgBuff,eventNameGen,"interrupt");
+
+#ifdef WINDOWS
+		eventFDs[CTF::et_interruptIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		eventFDs[CTF::et_interruptIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (eventFDs[CTF::et_interruptIndex] < 0) {
+			printf("Error: EventConverter::emitWatchpoint(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+	}
+
+	if ((eventFDs[CTF::et_interruptIndex] >= 0) || (eventFD >= 0)) {
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x Cause=[%d:%s]\n",core,ts,pc,cause,getInterruptCauseText(cause));
 
 		if (eventFD >= 0) {
@@ -1784,7 +1838,24 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 	int n;
 	const char *newContext;
 
-	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
+	if (eventFDs[CTF::et_contextIndex] < 0) {
+		sprintf(msgBuff,eventNameGen,"context");
+
+#ifdef WINDOWS
+		eventFDs[CTF::et_contextIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		eventFDs[CTF::et_contextIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (eventFDs[CTF::et_contextIndex] < 0) {
+			printf("Error: EventConverter::emitWatchpoint(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+	}
+
+	if ((eventFDs[CTF::et_contextIndex] >= 0) || (eventFD >= 0)) {
 		switch (context & 0x3) {
 		case 2:
 			newContext = "SContext";
@@ -1815,7 +1886,24 @@ TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int
 	char msgBuff[512];
 	int n;
 
-	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
+	if (eventFDs[CTF::et_periodicIndex] < 0) {
+		sprintf(msgBuff,eventNameGen,"periodic");
+
+#ifdef WINDOWS
+		eventFDs[CTF::et_periodicIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		eventFDs[CTF::et_periodicIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (eventFDs[CTF::et_periodicIndex] < 0) {
+			printf("Error: EventConverter::emitWatchpoint(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+	}
+
+	if ((eventFDs[CTF::et_periodicIndex] >= 0) || (eventFD >= 0)) {
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [PC Sample] PC=0x%08x 0=[0]\n",core,ts,pc);
 
 		if (eventFD >= 0) {
@@ -1855,7 +1943,24 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 	char msgBuff[512];
 	int n;
 
-	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
+	if (eventFDs[CTF::et_controlIndex] < 0) {
+		sprintf(msgBuff,eventNameGen,"control");
+
+#ifdef WINDOWS
+		eventFDs[CTF::et_controlIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		eventFDs[CTF::et_controlIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (eventFDs[CTF::et_controlIndex] < 0) {
+			printf("Error: EventConverter::emitWatchpoint(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+	}
+
+	if ((eventFDs[CTF::et_controlIndex] >= 0) || (eventFD >= 0)) {
 		if (ckdf == 0) {
 			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x0 Control=[%d:%s]\n",core,ts,control,getControlText(control));
 		}

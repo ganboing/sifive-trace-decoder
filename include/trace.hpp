@@ -486,6 +486,7 @@ private:
 	TraceDqr::DQErr status;
 	int numCores;
 	uint32_t frequency;
+	char eventNameGen[512];
 	int eventFDs[CTF::et_numEventTypes];
 	int eventFD;
 
