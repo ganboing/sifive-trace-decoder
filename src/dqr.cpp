@@ -5826,6 +5826,102 @@ void NexusMessage::dump()
 	case TraceDqr::TCODE_CORRELATION:
 		std::cout << "  # Trace Message(" << msgNum << "): Correlation, EVCODE=" << (uint32_t)correlation.evcode << ", CDF=" << (int)correlation.cdf << ", ICNT=" << correlation.i_cnt << "\n"; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+		switch (ict.cksrc) {
+	    case TraceDqr::ICT_EXT_TRIG:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace External Trigger, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf  << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec;
+			if (ict.ckdf > 0) {
+				std::cout << ", ID=" << ict.ckdata[1];
+			}
+			std::cout << std::endl;
+			break;
+	    case TraceDqr::ICT_CONTROL:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Control, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf;
+			if (ict.ckdf > 0) {
+				std::cout << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec << ", Control=" << ict.ckdata[1] << std::endl;
+			}
+			else {
+				std::cout << ", Control=" << ict.ckdata[0] << std::endl;
+			}
+	    	break;
+	    case TraceDqr::ICT_INFERABLECALL:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Call/Return, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec;
+			if (ict.ckdf > 0) {
+				std::cout << ", PCDest=0x" << std::hex << ict.ckdata[1] << std::dec;
+			}
+			std::cout << std::endl;
+			break;
+	    case TraceDqr::ICT_EXCEPTION:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Exception, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec << ", Cause=" << ict.ckdata[1] << std::endl;
+			break;
+	    case TraceDqr::ICT_INTERRUPT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Interrupt, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec << ", Cause=" << ict.ckdata[1] << std::endl;
+			break;
+	    case TraceDqr::ICT_CONTEXT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Context, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec << ", Context=0x" << std::hex << ict.ckdata[1] << std::dec << std::endl;
+			break;
+	    case TraceDqr::ICT_WATCHPOINT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Watchpoint, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex <<ict.ckdata[0] << std::dec;
+			if (ict.ckdf > 0) {
+				std::cout << ", ID=" << ict.ckdata[1];
+			}
+			std::cout << std::endl;
+	    	break;
+	    case TraceDqr::ICT_PC_SAMPLE:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace PC Sample, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec << std::endl;
+			break;
+	    case TraceDqr::ICT_NONE:
+			break;
+		}
+		break;
+	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+		switch (ictWS.cksrc) {
+	    case TraceDqr::ICT_EXT_TRIG:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS External Trigger, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf  << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec;
+			if (ictWS.ckdf > 0) {
+				std::cout << ", ID=" << ictWS.ckdata[1];
+			}
+			std::cout << std::endl;
+			break;
+	    case TraceDqr::ICT_CONTROL:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Control, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf;
+			if (ictWS.ckdf > 0) {
+				std::cout << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec << ", Control=" << ictWS.ckdata[1] << std::endl;
+			}
+			else {
+				std::cout << ", Control=" << ictWS.ckdata[0] << std::endl;
+			}
+	    	break;
+	    case TraceDqr::ICT_INFERABLECALL:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Call/Return, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec;
+			if (ictWS.ckdf > 0) {
+				std::cout << ", PCDest=0x" << std::hex << ictWS.ckdata[1] << std::dec;
+			}
+			std::cout << std::endl;
+			break;
+	    case TraceDqr::ICT_EXCEPTION:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Exception, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec << ", Cause=" << ictWS.ckdata[1] << std::endl;
+			break;
+	    case TraceDqr::ICT_INTERRUPT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Interrupt, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec << ", Cause=" << ictWS.ckdata[1] << std::endl;
+			break;
+	    case TraceDqr::ICT_CONTEXT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Context, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec << ", Context=0x" << std::hex << ictWS.ckdata[1] << std::dec << std::endl;
+			break;
+	    case TraceDqr::ICT_WATCHPOINT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Watchpoint, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex <<ictWS.ckdata[0] << std::dec;
+			if (ictWS.ckdf > 0) {
+				std::cout << ", ID=" << ictWS.ckdata[1];
+			}
+			std::cout << std::endl;
+	    	break;
+	    case TraceDqr::ICT_PC_SAMPLE:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS PC Sample, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec << std::endl;
+			break;
+	    case TraceDqr::ICT_NONE:
+			break;
+		}
+		break;
 	default:
 		std::cout << "Error: NexusMessage::dump(): Unknown TCODE " << tcode << " (0x" << std::hex << tcode << std::dec << "), msgnum: " << msgNum << std::endl;
 	}

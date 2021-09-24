@@ -4700,6 +4700,14 @@ TraceDqr::DQErr Trace::nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAd
 			crFlag |= TraceDqr::isReturn;
 		}
 		break;
+	case TraceDqr::INST_C_JALR:
+		if (rs1 == TraceDqr::REG_5) { // is it reg5 only, or also reg1 like non-compact JALR?
+			crFlag |= TraceDqr::isSwap;
+		}
+		else {
+			crFlag |= TraceDqr::isCall;
+		}
+		break;
 	case TraceDqr::INST_EBREAK:
 	case TraceDqr::INST_ECALL:
 		crFlag = TraceDqr::isException;
@@ -4710,7 +4718,31 @@ TraceDqr::DQErr Trace::nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAd
 		crFlag = TraceDqr::isExceptionReturn;
 		break;
 	default:
-		printf("Error: Trace::nextAddr(): Instruction at 0x%08x is not a JAL, JALR, C_JAL, C_JR, EBREAK, ECALL, MRET, SRET, or URET\n",addr);
+		printf("Error: Trace::nextAddr(): Instruction at 0x%08x is not a JAL, JALR, C_JAL, C_JR, C_JALR, EBREAK, ECALL, MRET, SRET, or URET\n",addr);
+
+#ifdef foodog
+		printf("Instruction type: %d\n",inst_type);
+
+		// disassemble and display instruction
+
+		Disassemble(addr);
+
+		char dst[256];
+		instructionInfo.addressToText(dst,sizeof dst,0);
+
+		if (instructionInfo.addressLabel != nullptr) {
+			printf("<%s",instructionInfo.addressLabel);
+			if (instructionInfo.addressLabelOffset != 0) {
+				printf("+%x",instructionInfo.addressLabelOffset);
+			}
+			printf(">\n");
+		}
+
+		printf("    %s:    ",dst);
+
+		instructionInfo.instructionToText(dst,sizeof dst,2);
+		printf("  %s\n",dst);
+#endif // foodog
 
 		status = TraceDqr::DQERR_ERR;
 		return TraceDqr::DQERR_ERR;
