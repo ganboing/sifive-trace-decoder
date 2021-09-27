@@ -29,7 +29,6 @@
 #include <fstream>
 #include <cstring>
 #include <cstdint>
-#include <cassert>
 #include <time.h>
 #ifdef WINDOWS
 #include <winsock2.h>
@@ -3670,7 +3669,12 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	syncCount = 0;
 	caSyncAddr = (TraceDqr::ADDRESS)-1;
 
-	assert(settings.tfName != nullptr);
+	if (settings.tfName == nullptr) {
+		printf("Error: Trace::configure(): No trace file name specified\n");
+		status = TraceDqr::DQERR_ERR;
+
+		return TraceDqr::DQERR_ERR;
+	}
 
 	traceType = TraceDqr::TRACETYPE_BTM;
 
@@ -3685,10 +3689,17 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 	sfp = new (std::nothrow) SliceFileParser(settings.tfName,srcbits);
 
-	assert(sfp != nullptr);
+	if (sfp == nullptr) {
+		printf("Error: Trace::configure(): Could not create SliceFileParser object\n");
+
+		status = TraceDqr::DQERR_ERR;
+
+		return TraceDqr::DQERR_ERR;
+	}
 
 	if (sfp->getErr() != TraceDqr::DQERR_OK) {
-		printf("Error: cannot open trace file '%s' for input\n",settings.tfName);
+		printf("Error: Trace::Configure(): Could not open trace file '%s' for input\n",settings.tfName);
+
 		delete sfp;
 		sfp = nullptr;
 
@@ -3706,7 +3717,13 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		elfReader = new (std::nothrow) ElfReader(settings.efName);
 
-	    assert(elfReader != nullptr);
+		if (elfReader == nullptr) {
+			printf("Error: Trace::Configure(): Could not create ElfReader object\n");
+
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_ERR;
+		}
 
 	    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
 	    	if (sfp != nullptr) {
@@ -3729,7 +3746,13 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		disassembler = new (std::nothrow) Disassembler(abfd,settings.labelsAsFunctions);
 
-		assert(disassembler != nullptr);
+		if (disassembler == nullptr) {
+			printf("Error: Trace::Configure(): Could not creat disassembler object\n");
+
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_ERR;
+		}
 
 		if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
 			if (sfp != nullptr) {
@@ -4189,7 +4212,12 @@ TraceDqr::DQErr Trace::setLabelMode(bool labelsAreFuncs)
 
 	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
 
-	assert(disassembler != nullptr);
+	if (disassembler == nullptr) {
+		printf("Error: Trace::setLabelMode(): Could not create disassembler object\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
 
 	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
 		if (elfReader != nullptr) {
@@ -4335,7 +4363,13 @@ TraceDqr::ADDRESS Trace::computeAddress()
 
 int Trace::Disassemble(TraceDqr::ADDRESS addr)
 {
-	assert(disassembler != nullptr);
+	if (disassembler == nullptr) {
+		printf("Error: Trace::Disassemble(): No disassembler object\n");
+
+		status = TraceDqr::DQERR_ERR;
+
+		return 0;
+	}
 
 	int   rc;
 	TraceDqr::DQErr s;
@@ -5874,7 +5908,16 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgIn
 
 TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo)
 {
-	assert(sfp != nullptr);
+	if (sfp == nullptr) {
+		printf("Error: Trace::NextInstructin(): Null sfp object\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
+
+	if (status != TraceDqr::DQERR_OK) {
+		return status;
+	}
 
 	TraceDqr::DQErr rc;
 	TraceDqr::ADDRESS addr;

@@ -28,7 +28,6 @@
 #include <fstream>
 #include <cstring>
 #include <cstdint>
-#include <cassert>
 
 #include "dqr.hpp"
 
@@ -638,7 +637,10 @@ int main(int argc, char *argv[])
 			sim = new (std::nothrow) Simulator(sf_name,archSize);
 		}
 
-		assert(sim != nullptr);
+		if (sim == nullptr) {
+			printf("Error: Could not creat Simulator object\n");
+			return 1;
+		}
 
 		if (sim->getStatus() != TraceDqr::DQERR_OK) {
 			delete sim;
@@ -678,7 +680,11 @@ int main(int argc, char *argv[])
 
 			trace = new (std::nothrow) Trace(pf_name);
 
-			assert(trace != nullptr);
+			if (trace == nullptr) {
+				printf("Error: Could not create Trace object\n");
+
+				return 1;
+			}
 
 			if (trace->getStatus() != TraceDqr::DQERR_OK) {
 				delete trace;
@@ -692,7 +698,11 @@ int main(int argc, char *argv[])
 		else {
 			trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
 
-			assert(trace != nullptr);
+			if (trace == nullptr) {
+				printf("Error: Could not create Trace object\n");
+
+				return 1;
+			}
 
 			if (trace->getStatus() != TraceDqr::DQERR_OK) {
 				delete trace;
