@@ -2979,7 +2979,20 @@ TraceDqr::DQErr TraceSettings::propertyToITCPrintOpts(char *value)
 			itcPrintOpts = TraceDqr::ITC_OPT_NLS;
 		}
 		else {
-			return TraceDqr::DQERR_ERR;
+			char *endp;
+			int v;
+
+			v = strtol(value,&endp,0);
+			if (endp == value) {
+				return TraceDqr::DQERR_ERR;
+			}
+
+			if (v) {
+				itcPrintOpts = TraceDqr::ITC_OPT_PRINT | TraceDqr::ITC_OPT_NLS;
+			}
+			else {
+				itcPrintOpts = TraceDqr::ITC_OPT_NLS;
+			}
 		}
 	}
 
