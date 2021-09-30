@@ -1739,7 +1739,7 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Return] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
 		}
 		else if (crFlags & TraceDqr::isExceptionReturn) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Excpetion Return] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception Return] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
 		}
 		else {
 			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call/Return?? PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
@@ -1780,7 +1780,7 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 	}
 
 	if ((eventFDs[CTF::et_exeptionIndex] >= 0) || (eventFD >= 0)) {
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Excpetion] PC=0x%08x Cause=[%d:%s]\n",core,ts,pc,cause,getExceptionCauseText(cause));
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception] PC=0x%08x Cause=[%d:%s]\n",core,ts,pc,cause,getExceptionCauseText(cause));
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
@@ -2674,6 +2674,7 @@ TraceSettings::TraceSettings()
 	eventConversionEnable = false;
 	startTime = -1;
 	hostName = nullptr;
+	filterControlEvents = false;
 }
 
 TraceSettings::~TraceSettings()
@@ -2841,6 +2842,13 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
+			else if (strcasecmp("filterControlEvents",name) == 0) {
+				rc = propertyToFilterControlEvents(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set eventConversionEnable in settings\n");
+					return rc;
+				}
+			}
 			else if (strcasecmp("addressdisplayflags", name) == 0) {
 				rc = propertyToAddrDispFlags(value);
 				if (rc != TraceDqr::DQERR_OK) {
@@ -2971,29 +2979,20 @@ TraceDqr::DQErr TraceSettings::propertyToNumAddrBits(char *value)
 
 TraceDqr::DQErr TraceSettings::propertyToITCPrintOpts(char *value)
 {
-	if ((value != nullptr) && (value[0] != '\0')) {
-		if (strcasecmp(value,"true") == 0) {
-			itcPrintOpts = TraceDqr::ITC_OPT_PRINT | TraceDqr::ITC_OPT_NLS;
-		}
-		else if (strcasecmp(value,"false") == 0) {
-			itcPrintOpts = TraceDqr::ITC_OPT_NLS;
-		}
-		else {
-			char *endp;
-			int v;
+	TraceDqr::DQErr rc;
+	bool opts;
 
-			v = strtol(value,&endp,0);
-			if (endp == value) {
-				return TraceDqr::DQERR_ERR;
-			}
+	rc = propertyToBool(value,opts);
 
-			if (v) {
-				itcPrintOpts = TraceDqr::ITC_OPT_PRINT | TraceDqr::ITC_OPT_NLS;
-			}
-			else {
-				itcPrintOpts = TraceDqr::ITC_OPT_NLS;
-			}
-		}
+	if (rc != TraceDqr::DQERR_OK) {
+		return rc;
+	}
+
+	if (opts) {
+		itcPrintOpts = TraceDqr::ITC_OPT_PRINT | TraceDqr::ITC_OPT_NLS;
+	}
+	else {
+		itcPrintOpts = TraceDqr::ITC_OPT_NLS;
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -3109,7 +3108,7 @@ TraceDqr::DQErr TraceSettings::propertyToCAType(char *value)
 
 TraceDqr::DQErr TraceSettings::propertyToPathType(char *value)
 {
-	if ((value == nullptr) && (value[0] != '\0')) {
+	if ((value != nullptr) && (value[0] != '\0')) {
 		if (strcasecmp("unix",value) == 0) {
 			pathType = TraceDqr::PATH_TO_UNIX;
 		}
@@ -3127,64 +3126,46 @@ TraceDqr::DQErr TraceSettings::propertyToPathType(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToLabelsAsFuncs(char *value)
+TraceDqr::DQErr TraceSettings::propertyToBool(char *src,bool &value)
 {
-	if ((value == nullptr) && (value[0] != '\0')) {
-		if (strcasecmp("true",value) == 0) {
-			labelsAsFunctions = true;		}
-		else if (strcasecmp("false",value) == 0) {
-			labelsAsFunctions = false;
+	if ((src != nullptr) && (src[0] != '\0')) {
+		if (strcasecmp("true",src) == 0) {
+			value = true;		}
+		else if (strcasecmp("false",src) == 0) {
+			value = false;
 		}
 		else {
-			return TraceDqr::DQERR_ERR;
+			char *endp;
+
+			value = strtol(src,&endp,0);
+			if (endp == src) {
+				return TraceDqr::DQERR_ERR;
+			}
 		}
 	}
 
 	return TraceDqr::DQERR_OK;
+}
+
+
+TraceDqr::DQErr TraceSettings::propertyToLabelsAsFuncs(char *value)
+{
+	return propertyToBool(value,labelsAsFunctions);
 }
 
 TraceDqr::DQErr TraceSettings::propertyToCTFEnable(char *value)
 {
-	if ((value != nullptr) && (value[0] != '\0')) {
-		char *endp;
-
-		if (strcasecmp("true",value) == 0) {
-			CTFConversion = true;
-		}
-		else if (strcasecmp("false",value) == 0) {
-			CTFConversion = false;
-		}
-		else {
-			CTFConversion = strtol(value,&endp,0);
-			if (endp == value) {
-				return TraceDqr::DQERR_ERR;
-			}
-		}
-	}
-
-	return TraceDqr::DQERR_OK;
+	return propertyToBool(value,CTFConversion);
 }
 
 TraceDqr::DQErr TraceSettings::propertyToEventConversionEnable(char *value)
 {
-	if ((value != nullptr) && (value[0] != '\0')) {
-		char *endp;
+	return propertyToBool(value,eventConversionEnable);
+}
 
-		if (strcasecmp("true",value) == 0) {
-			eventConversionEnable = true;
-		}
-		else if (strcasecmp("false",value) == 0) {
-			eventConversionEnable = false;
-		}
-		else {
-			eventConversionEnable = strtol(value,&endp,0);
-			if (endp == value) {
-				return TraceDqr::DQERR_ERR;
-			}
-		}
-	}
-
-	return TraceDqr::DQERR_OK;
+TraceDqr::DQErr TraceSettings::propertyToFilterControlEvents(char *value)
+{
+	return propertyToBool(value,filterControlEvents);
 }
 
 TraceDqr::DQErr TraceSettings::propertyToFreq(char *value)
@@ -3678,6 +3659,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	nlsStrings   = nullptr;
 	ctf          = nullptr;
 	eventConverter = nullptr;
+	eventFilterMask = 0;
 
 	syncCount = 0;
 	caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -3694,6 +3676,10 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	pathType = settings.pathType;
 
 	srcbits = settings.srcBits;
+
+	if (settings.filterControlEvents) {
+		eventFilterMask = (1 << CTF::et_controlIndex);
+	}
 
 	analytics.setSrcBits(srcbits);
 
@@ -5946,6 +5932,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	uint8_t loadInProcess;
 	uint8_t storeInProcess;
 
+	Instruction  **savedInstPtr = nullptr;
+	NexusMessage **savedMsgPtr = nullptr;
+	Source       **savedSrcPtr = nullptr;
+
 	if (instInfo != nullptr) {
 		*instInfo = nullptr;
 	}
@@ -5963,6 +5953,21 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 //		staying in the same state that expects to get another message!!
 
 		bool haveMsg;
+
+		if (savedInstPtr != nullptr) {
+			instInfo = savedInstPtr;
+			savedInstPtr = nullptr;
+		}
+
+		if (savedMsgPtr != nullptr) {
+			msgInfo = savedMsgPtr;
+			savedMsgPtr = nullptr;
+		}
+
+		if (savedSrcPtr != nullptr) {
+			srcInfo = savedSrcPtr;
+			savedSrcPtr = nullptr;
+		}
 
 		if (readNewTraceMessage != false) {
 			rc = sfp->readNextTraceMsg(nm,analytics,haveMsg);
@@ -6048,6 +6053,24 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					return status;
 				}
+			}
+
+			// Check if this is a ICT Control message and if we are filtering them out
+
+			switch (nm.tcode) {
+			case TraceDqr::TCODE_INCIRCUITTRACE:
+			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+				if ((nm.getCKSRC() == TraceDqr::ICT_CONTROL) && (eventFilterMask & (1 << CTF::et_controlIndex))) {
+					savedInstPtr = instInfo;
+					instInfo = nullptr;
+					savedMsgPtr = msgInfo;
+					msgInfo = nullptr;
+					savedSrcPtr = srcInfo;
+					srcInfo = nullptr;
+				}
+				break;
+			default:
+				break;
 			}
 		}
 
