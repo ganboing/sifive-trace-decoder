@@ -1835,45 +1835,53 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 {
 	char msgBuff[512];
 	int n;
-	const char *newContext;
 
-	if (eventFDs[CTF::et_contextIndex] < 0) {
-		sprintf(msgBuff,eventNameGen,"context");
+	const char *newContext;
+	const char *extention;
+	CTF::event_t ei;
+
+	switch (context & 0x3) {
+	case 2:
+		ei = CTF::et_mContextIndex;
+		newContext = "SContext";
+		extention = "scontext";
+		break;
+	case 3:
+		ei = CTF::et_sContextIndex;
+		newContext = "MContext";
+		extention = "mcontext";
+		break;
+	default:
+		printf("Error: EventConverter::emitContext(): Unknown context type (0x%x)\n",context);
+		return TraceDqr::DQERR_ERR;
+	}
+
+	if (eventFDs[ei] < 0) {
+		sprintf(msgBuff,eventNameGen,extention);
 
 #ifdef WINDOWS
-		eventFDs[CTF::et_contextIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+		eventFDs[ei] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
 #else // WINDOWS
-		eventFDs[CTF::et_contextIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+		eventFDs[ei] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
 #endif // WINDOWS
 
-		if (eventFDs[CTF::et_contextIndex] < 0) {
+		if (eventFDs[ei] < 0) {
 			printf("Error: EventConverter::emitWatchpoint(): Couldn't open file %s for writing\n",msgBuff);
 			status = TraceDqr::DQERR_ERR;
 
-			return TraceDqr::DQERR_OK;
+			return TraceDqr::DQERR_ERR;
 		}
 	}
 
-	if ((eventFDs[CTF::et_contextIndex] >= 0) || (eventFD >= 0)) {
-		switch (context & 0x3) {
-		case 2:
-			newContext = "SContext";
-			break;
-		case 3:
-			newContext = "MContext";
-			break;
-		default:
-			newContext = "Reserverd Context";
-		}
-
+	if ((eventFDs[ei] >= 0) || (eventFD >= 0)) {
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [%s] PC=0x%08x Context=[%d]\n",core,ts,newContext,pc,context >> 2);
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
 		}
 
-		if (eventFDs[CTF::et_contextIndex] >= 0) {
-			write(eventFDs[CTF::et_contextIndex],msgBuff,n);
+		if (eventFDs[ei] >= 0) {
+			write(eventFDs[ei],msgBuff,n);
 		}
 	}
 

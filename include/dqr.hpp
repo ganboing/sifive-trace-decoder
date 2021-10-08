@@ -105,7 +105,8 @@ public:
 		et_callRetIndex,
 		et_exeptionIndex,
 		et_interruptIndex,
-		et_contextIndex,
+		et_mContextIndex,
+		et_sContextIndex,
 		et_watchpointIndex,
 		et_periodicIndex,
 		et_numEventTypes
