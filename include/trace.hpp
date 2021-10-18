@@ -493,6 +493,8 @@ private:
 	int eventFDs[CTF::et_numEventTypes];
 	int eventFD;
 
+	char *elfNamePath;
+
 	const char *getInterruptCauseText(int cause);
 	const char *getExceptionCauseText(int cause);
 	const char *getControlText(int control);

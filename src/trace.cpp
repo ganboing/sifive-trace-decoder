@@ -1511,6 +1511,16 @@ EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 		return;
 	}
 
+	// save the elf name and path
+
+	int l = strlen(elf) + sizeof "# ELFPATH=" + 1;
+
+	elfNamePath = new char[l];
+
+	sprintf(elfNamePath,"# ELFPATH=%s\n",elf);
+
+	write(eventFD,elfNamePath,strlen(elfNamePath));
+
 	strcat(eventNameGen,"events");
 
 	// make the event folder
@@ -1557,6 +1567,11 @@ EventConverter::~EventConverter()
 		close(eventFD);
 		eventFD = -1;
 	}
+
+	if (elfNamePath != nullptr) {
+		delete [] elfNamePath;
+		elfNamePath = nullptr;
+	}
 }
 
 TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
@@ -1579,6 +1594,8 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 
 			return TraceDqr::DQERR_OK;
 		}
+
+		write(eventFDs[CTF::et_extTriggerIndex],elfNamePath,strlen(elfNamePath));
 	}
 
 	if ((eventFDs[CTF::et_extTriggerIndex] >= 0) || (eventFD >= 0)) {
@@ -1621,6 +1638,8 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 
 			return TraceDqr::DQERR_OK;
 		}
+
+		write(eventFDs[CTF::et_watchpointIndex],elfNamePath,strlen(elfNamePath));
 	}
 
 	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
@@ -1723,6 +1742,8 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 
 			return TraceDqr::DQERR_OK;
 		}
+
+		write(eventFDs[CTF::et_callRetIndex],elfNamePath,strlen(elfNamePath));
 	}
 
 	if ((eventFDs[CTF::et_callRetIndex] >= 0) || (eventFD >= 0)) {
@@ -1777,6 +1798,8 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 
 			return TraceDqr::DQERR_OK;
 		}
+
+		write(eventFDs[CTF::et_exeptionIndex],elfNamePath,strlen(elfNamePath));
 	}
 
 	if ((eventFDs[CTF::et_exeptionIndex] >= 0) || (eventFD >= 0)) {
@@ -1814,6 +1837,8 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 
 			return TraceDqr::DQERR_OK;
 		}
+
+		write(eventFDs[CTF::et_interruptIndex],elfNamePath,strlen(elfNamePath));
 	}
 
 	if ((eventFDs[CTF::et_interruptIndex] >= 0) || (eventFD >= 0)) {
@@ -1871,6 +1896,8 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 
 			return TraceDqr::DQERR_ERR;
 		}
+
+		write(eventFDs[ei],elfNamePath,strlen(elfNamePath));
 	}
 
 	if ((eventFDs[ei] >= 0) || (eventFD >= 0)) {
@@ -1908,6 +1935,8 @@ TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int
 
 			return TraceDqr::DQERR_OK;
 		}
+
+		write(eventFDs[CTF::et_periodicIndex],elfNamePath,strlen(elfNamePath));
 	}
 
 	if ((eventFDs[CTF::et_periodicIndex] >= 0) || (eventFD >= 0)) {
@@ -1965,6 +1994,8 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 
 			return TraceDqr::DQERR_OK;
 		}
+
+		write(eventFDs[CTF::et_controlIndex],elfNamePath,strlen(elfNamePath));
 	}
 
 	if ((eventFDs[CTF::et_controlIndex] >= 0) || (eventFD >= 0)) {
