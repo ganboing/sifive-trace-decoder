@@ -1783,34 +1783,34 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 	char msgBuff[512];
 	int n;
 
-	if (eventFDs[CTF::et_exeptionIndex] < 0) {
+	if (eventFDs[CTF::et_exceptionIndex] < 0) {
 		sprintf(msgBuff,eventNameGen,"exception");
 
 #ifdef WINDOWS
-		eventFDs[CTF::et_exeptionIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+		eventFDs[CTF::et_exceptionIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
 #else // WINDOWS
-		eventFDs[CTF::et_exeptionIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+		eventFDs[CTF::et_exceptionIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
 #endif // WINDOWS
 
-		if (eventFDs[CTF::et_exeptionIndex] < 0) {
+		if (eventFDs[CTF::et_exceptionIndex] < 0) {
 			printf("Error: EventConverter::emitWatchpoint(): Couldn't open file %s for writing\n",msgBuff);
 			status = TraceDqr::DQERR_ERR;
 
 			return TraceDqr::DQERR_OK;
 		}
 
-		write(eventFDs[CTF::et_exeptionIndex],elfNamePath,strlen(elfNamePath));
+		write(eventFDs[CTF::et_exceptionIndex],elfNamePath,strlen(elfNamePath));
 	}
 
-	if ((eventFDs[CTF::et_exeptionIndex] >= 0) || (eventFD >= 0)) {
+	if ((eventFDs[CTF::et_exceptionIndex] >= 0) || (eventFD >= 0)) {
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception] PC=0x%08x Cause=[%d:%s]\n",core,ts,pc,cause,getExceptionCauseText(cause));
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
 		}
 
-		if (eventFDs[CTF::et_exeptionIndex] >= 0) {
-			write(eventFDs[CTF::et_exeptionIndex],msgBuff,n);
+		if (eventFDs[CTF::et_exceptionIndex] >= 0) {
+			write(eventFDs[CTF::et_exceptionIndex],msgBuff,n);
 		}
 	}
 

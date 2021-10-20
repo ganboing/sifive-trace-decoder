@@ -103,7 +103,7 @@ public:
 		et_controlIndex,
 		et_extTriggerIndex,
 		et_callRetIndex,
-		et_exeptionIndex,
+		et_exceptionIndex,
 		et_interruptIndex,
 		et_mContextIndex,
 		et_sContextIndex,
