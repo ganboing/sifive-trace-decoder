@@ -1582,8 +1582,6 @@ EventConverter::~EventConverter()
 TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
 {
 	char msgBuff[512];
-	char fileInfoBuff[512];
-	int f;
 	int n;
 
 	if (eventFDs[CTF::et_extTriggerIndex] < 0) {
@@ -1606,6 +1604,8 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 	}
 
 	if ((eventFDs[CTF::et_extTriggerIndex] >= 0) || (eventFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
 
 		strcpy(fileInfoBuff,"\n");
 		f = sizeof "\n";
@@ -1650,8 +1650,6 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
 {
 	char msgBuff[512];
-	char fileInfoBuff[512];
-	int f;
 	int n;
 
 	if (eventFDs[CTF::et_watchpointIndex] < 0) {
@@ -1674,6 +1672,8 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 	}
 
 	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
 
 		strcpy(fileInfoBuff,"\n");
 		f = sizeof "\n";
@@ -1778,8 +1778,6 @@ const char *EventConverter::getInterruptCauseText(int cause)
 TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags)
 {
 	char msgBuff[512];
-	char fileInfoBuff[512];
-	int f;
 	int n;
 
 	if (eventFDs[CTF::et_callRetIndex] < 0) {
@@ -1802,6 +1800,8 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 	}
 
 	if ((eventFDs[CTF::et_callRetIndex] >= 0) || (eventFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
 
 		strcpy(fileInfoBuff,"\n");
 		f = sizeof "\n";
@@ -1858,8 +1858,6 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
 {
 	char msgBuff[512];
-	char fileInfoBuff[512];
-	int f;
 	int n;
 
 	if (eventFDs[CTF::et_exceptionIndex] < 0) {
@@ -1882,6 +1880,8 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 	}
 
 	if ((eventFDs[CTF::et_exceptionIndex] >= 0) || (eventFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
 
 		strcpy(fileInfoBuff,"\n");
 		f = sizeof "\n";
@@ -1921,8 +1921,6 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
 {
 	char msgBuff[512];
-	char fileInfoBuff[512];
-	int f;
 	int n;
 
 	if (eventFDs[CTF::et_interruptIndex] < 0) {
@@ -1945,6 +1943,8 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 	}
 
 	if ((eventFDs[CTF::et_interruptIndex] >= 0) || (eventFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
 
 		strcpy(fileInfoBuff,"\n");
 		f = sizeof "\n";
@@ -1984,8 +1984,6 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context)
 {
 	char msgBuff[512];
-	char fileInfoBuff[512];
-	int f;
 	int n;
 
 	const char *newContext;
@@ -2028,6 +2026,8 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 	}
 
 	if ((eventFDs[ei] >= 0) || (eventFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
 
 		strcpy(fileInfoBuff,"\n");
 		f = sizeof "\n";
@@ -2067,8 +2067,6 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc)
 {
 	char msgBuff[512];
-	char fileInfoBuff[512];
-	int f;
 	int n;
 
 	if (eventFDs[CTF::et_periodicIndex] < 0) {
@@ -2091,6 +2089,8 @@ TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int
 	}
 
 	if ((eventFDs[CTF::et_periodicIndex] >= 0) || (eventFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
 
 		strcpy(fileInfoBuff,"\n");
 		f = sizeof "\n";
@@ -2150,8 +2150,6 @@ const char *EventConverter::getControlText(int control)
 TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc)
 {
 	char msgBuff[512];
-	char fileInfoBuff[512];
-	int f;
 	int n;
 
 	if (eventFDs[CTF::et_controlIndex] < 0) {
@@ -2174,6 +2172,8 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 	}
 
 	if ((eventFDs[CTF::et_controlIndex] >= 0) || (eventFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
 
 		strcpy(fileInfoBuff,"\n");
 		f = sizeof "\n";
