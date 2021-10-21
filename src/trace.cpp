@@ -1478,12 +1478,13 @@ static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,cha
 //	printf("absPath: %s\n",absPath);
 }
 
-EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
+EventConverter::EventConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t freq)
 {
 	for (int i = 0; i < (int)(sizeof eventFDs / sizeof eventFDs[0]); i++) {
 		eventFDs[i] = -1;
 	}
 
+	this->disassembler = disassembler;
 	this->numCores = numCores;
 	frequency = freq;
 
@@ -1556,6 +1557,10 @@ EventConverter::EventConverter(char *elf,char *rtd,int numCores,uint32_t freq)
 
 EventConverter::~EventConverter()
 {
+	// do not delete disassembler object - it is also a member of the Trace object and will be handled there
+
+	disassembler = nullptr;
+
 	for (int i = 0; i < (int)(sizeof eventFDs / sizeof eventFDs[0]); i++) {
 		if (eventFDs[i] >= 0) {
 			close(eventFDs[i]);
@@ -1577,6 +1582,8 @@ EventConverter::~EventConverter()
 TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
 {
 	char msgBuff[512];
+	char fileInfoBuff[512];
+	int f;
 	int n;
 
 	if (eventFDs[CTF::et_extTriggerIndex] < 0) {
@@ -1599,19 +1606,41 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 	}
 
 	if ((eventFDs[CTF::et_extTriggerIndex] >= 0) || (eventFD >= 0)) {
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n";
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+
 		if (ckdf == 0) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [External Trigger] PC=0x%08x ID=[--]\n",core,ts,pc);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [External Trigger] PC=0x%08x ID=[--]",core,ts,pc);
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [External Trigger] PC=0x%08x ID=[%d]\n",core,ts,pc,id);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [External Trigger] PC=0x%08x ID=[%d]",core,ts,pc,id);
 		}
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
+			write(eventFD,fileInfoBuff,f);
 		}
 
 		if (eventFDs[CTF::et_extTriggerIndex] >= 0) {
 			write(eventFDs[CTF::et_extTriggerIndex],msgBuff,n);
+			write(eventFDs[CTF::et_extTriggerIndex],fileInfoBuff,f);
 		}
 	}
 
@@ -1621,6 +1650,8 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
 {
 	char msgBuff[512];
+	char fileInfoBuff[512];
+	int f;
 	int n;
 
 	if (eventFDs[CTF::et_watchpointIndex] < 0) {
@@ -1643,19 +1674,41 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 	}
 
 	if ((eventFDs[CTF::et_watchpointIndex] >= 0) || (eventFD >= 0)) {
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n";
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+
 		if (ckdf == 0) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Watchpoint] PC=0x%08x ID=[--]\n",core,ts,pc);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Watchpoint] PC=0x%08x ID=[--]",core,ts,pc);
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Watchpoint] PC=0x%08x ID=[%d]\n",core,ts,pc,id);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Watchpoint] PC=0x%08x ID=[%d]",core,ts,pc,id);
 		}
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
+			write(eventFD,fileInfoBuff,f);
 		}
 
 		if (eventFDs[CTF::et_watchpointIndex] >= 0) {
 			write(eventFDs[CTF::et_watchpointIndex],msgBuff,n);
+			write(eventFDs[CTF::et_watchpointIndex],fileInfoBuff,f);
 		}
 	}
 
@@ -1725,6 +1778,8 @@ const char *EventConverter::getInterruptCauseText(int cause)
 TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags)
 {
 	char msgBuff[512];
+	char fileInfoBuff[512];
+	int f;
 	int n;
 
 	if (eventFDs[CTF::et_callRetIndex] < 0) {
@@ -1747,31 +1802,53 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 	}
 
 	if ((eventFDs[CTF::et_callRetIndex] >= 0) || (eventFD >= 0)) {
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n";
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+
 		if (crFlags & TraceDqr::isCall) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call] PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
 		}
 		else if (crFlags & TraceDqr::isInterrupt) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
 		}
 		else if (crFlags & TraceDqr::isException) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception] PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
 		}
 		else if (crFlags & TraceDqr::isReturn) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Return] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Return] PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
 		}
 		else if (crFlags & TraceDqr::isExceptionReturn) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception Return] PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception Return] PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call/Return?? PC=0x%08x PCDest=[0x%08x]\n",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call/Return?? PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
 		}
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
+			write(eventFD,fileInfoBuff,f);
 		}
 
 		if (eventFDs[CTF::et_callRetIndex] >= 0) {
 			write(eventFDs[CTF::et_callRetIndex],msgBuff,n);
+			write(eventFDs[CTF::et_callRetIndex],fileInfoBuff,f);
 		}
 	}
 
@@ -1781,6 +1858,8 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
 {
 	char msgBuff[512];
+	char fileInfoBuff[512];
+	int f;
 	int n;
 
 	if (eventFDs[CTF::et_exceptionIndex] < 0) {
@@ -1803,14 +1882,36 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 	}
 
 	if ((eventFDs[CTF::et_exceptionIndex] >= 0) || (eventFD >= 0)) {
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception] PC=0x%08x Cause=[%d:%s]\n",core,ts,pc,cause,getExceptionCauseText(cause));
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n";
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception] PC=0x%08x Cause=[%d:%s]",core,ts,pc,cause,getExceptionCauseText(cause));
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
+			write(eventFD,fileInfoBuff,f);
 		}
 
 		if (eventFDs[CTF::et_exceptionIndex] >= 0) {
 			write(eventFDs[CTF::et_exceptionIndex],msgBuff,n);
+			write(eventFDs[CTF::et_exceptionIndex],fileInfoBuff,f);
 		}
 	}
 
@@ -1820,6 +1921,8 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
 {
 	char msgBuff[512];
+	char fileInfoBuff[512];
+	int f;
 	int n;
 
 	if (eventFDs[CTF::et_interruptIndex] < 0) {
@@ -1842,14 +1945,36 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 	}
 
 	if ((eventFDs[CTF::et_interruptIndex] >= 0) || (eventFD >= 0)) {
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x Cause=[%d:%s]\n",core,ts,pc,cause,getInterruptCauseText(cause));
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n";
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x Cause=[%d:%s]",core,ts,pc,cause,getInterruptCauseText(cause));
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
+			write(eventFD,fileInfoBuff,f);
 		}
 
 		if (eventFDs[CTF::et_interruptIndex] >= 0) {
 			write(eventFDs[CTF::et_interruptIndex],msgBuff,n);
+			write(eventFDs[CTF::et_interruptIndex],fileInfoBuff,f);
 		}
 	}
 
@@ -1859,6 +1984,8 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context)
 {
 	char msgBuff[512];
+	char fileInfoBuff[512];
+	int f;
 	int n;
 
 	const char *newContext;
@@ -1901,14 +2028,36 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 	}
 
 	if ((eventFDs[ei] >= 0) || (eventFD >= 0)) {
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [%s] PC=0x%08x Context=[%d]\n",core,ts,newContext,pc,context >> 2);
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n";
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [%s] PC=0x%08x Context=[%d]",core,ts,newContext,pc,context >> 2);
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
+			write(eventFD,fileInfoBuff,f);
 		}
 
 		if (eventFDs[ei] >= 0) {
 			write(eventFDs[ei],msgBuff,n);
+			write(eventFDs[ei],fileInfoBuff,f);
 		}
 	}
 
@@ -1918,6 +2067,8 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc)
 {
 	char msgBuff[512];
+	char fileInfoBuff[512];
+	int f;
 	int n;
 
 	if (eventFDs[CTF::et_periodicIndex] < 0) {
@@ -1940,14 +2091,36 @@ TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int
 	}
 
 	if ((eventFDs[CTF::et_periodicIndex] >= 0) || (eventFD >= 0)) {
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [PC Sample] PC=0x%08x 0=[0]\n",core,ts,pc);
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n";
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [PC Sample] PC=0x%08x 0=[0]",core,ts,pc);
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
+			write(eventFD,fileInfoBuff,f);
 		}
 
 		if (eventFDs[CTF::et_periodicIndex] >= 0) {
 			write(eventFDs[CTF::et_periodicIndex],msgBuff,n);
+			write(eventFDs[CTF::et_periodicIndex],fileInfoBuff,f);
 		}
 	}
 
@@ -1977,6 +2150,8 @@ const char *EventConverter::getControlText(int control)
 TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc)
 {
 	char msgBuff[512];
+	char fileInfoBuff[512];
+	int f;
 	int n;
 
 	if (eventFDs[CTF::et_controlIndex] < 0) {
@@ -1999,19 +2174,41 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 	}
 
 	if ((eventFDs[CTF::et_controlIndex] >= 0) || (eventFD >= 0)) {
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n";
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+
 		if (ckdf == 0) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x0 Control=[%d:%s]\n",core,ts,control,getControlText(control));
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x0 Control=[%d:%s]",core,ts,control,getControlText(control));
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x%08x Control=[%d:%s]\n",core,ts,pc,control,getControlText(control));
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x%08x Control=[%d:%s]",core,ts,pc,control,getControlText(control));
 		}
 
 		if (eventFD >= 0) {
 				write(eventFD,msgBuff,n);
+				write(eventFD,fileInfoBuff,f);
 		}
 
 		if (eventFDs[CTF::et_controlIndex] >= 0) {
 			write(eventFDs[CTF::et_controlIndex],msgBuff,n);
+			write(eventFDs[CTF::et_controlIndex],fileInfoBuff,f);
 		}
 	}
 
@@ -4216,7 +4413,7 @@ TraceDqr::DQErr Trace::enableEventConverter()
 		return TraceDqr::DQERR_ERR;
 	}
 
-	eventConverter = new EventConverter(efName,rtdName,1 << srcbits,freq);
+	eventConverter = new EventConverter(efName,rtdName,disassembler,1 << srcbits,freq);
 
 	status = eventConverter->getStatus();
 	if (status != TraceDqr::DQERR_OK) {

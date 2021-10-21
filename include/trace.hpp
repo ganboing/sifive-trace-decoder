@@ -470,7 +470,7 @@ private:
 
 class EventConverter {
 public:
-	EventConverter(char *elf,char *rtd,int numCores,uint32_t freq);
+	EventConverter(char *elf,char *rtd,class Disassembler *disassembler,int numCores,uint32_t freq);
 	~EventConverter();
 
 	TraceDqr::DQErr getStatus() { return status; }
@@ -494,6 +494,8 @@ private:
 	int eventFD;
 
 	char *elfNamePath;
+
+	class Disassembler *disassembler;
 
 	const char *getInterruptCauseText(int cause);
 	const char *getExceptionCauseText(int cause);
