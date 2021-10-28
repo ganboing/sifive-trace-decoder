@@ -269,6 +269,7 @@ Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vec
 -nodebug:     Do not display any debug information for the trace decoder
 -v:           Display the version number of the DQer and exit.
 -h:           Display this usage information.
+```
 
 Besides using the trace-decoder from inside Freedom Studio, the most common way to use the program is:
 
