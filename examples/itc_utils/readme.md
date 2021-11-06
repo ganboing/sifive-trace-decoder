@@ -9,6 +9,8 @@ There are 32 ITC channels, but writing the upper 16 will map to the lower 16 wit
 
 Three helper functions to setup the itc channels are provided: `itc_enable()`, `itc_disable()`, and `itc_set_print_channel()`. Both  `itc_enable()` and `itc_disable()` take a single parameter, which channel to act upon, and enables or disables that channel for stimulus writes. Enabling or dissabling channels can also be done through the trace configuration tool in Freedom Studio. By default, all channels are disabled. The `itc_set_print_channel()` takes a channel number between 0 and 31, and subsequent `itc_puts()` and `itc_printf()` function calls will print to that channel, until the channel is changed using the `itc_set_print_channel()` again.
 
+In addition, there are built in methods to create parings between defined performance counters and ITC channels, allowing for the injection of the 64 bit coutner value into the specified stimulus register through two, 32-bit writes. 
+
 Note: The itc_enable/dissable functions are for specific channels, and not to enable or disable itc functionality on the target. For that Freedom Studio or Sifive_trace.h can be used to enable ITC mode.
 
 
@@ -47,6 +49,17 @@ Writes `data1:data2:data3` to the ITC stimmulus register, with `data1` and `data
 ## int itc_nls_print_i8(int channel, uint8_t data1,  uint8_t data2, uint8_t data3,  uint8_t data4)
 Writes `data1:data2:data3:data4` to the ITC stimmulus register at the specified channel. Used for No Load String printing with two variable parameter.
 
+## struct metal_cpu *init_pc()
+Sets up the calling cpu's performance counters. Returns the cpu object's address if successful, needed for future function calls, NULL of failure.
+
+## int set_pc_channel(int hpm_coutner, int channel, struct metal_cpu *cpu)
+Creates a linking between a performance counter and a channel, will override any previous parings set to a performance counter. Multiple performance counters can be paired to the same channel. Return 1 on success, 0 on failure.
+
+## int inject_pc(int hpm_counter, struct metal_cpu)
+Write two, 32-bit messages to the ITC stimmulus register at the paired channel for the performance counter, with the loswer 32-bits of the register printed first. If a pairing between performance counter and itc channel has yet to be made, returns 0, otherwise 1 on success.
+
+## int reset_pc_counter(int hpm_counter, struct emtal_cpu)
+Sets the performance counter to zero. returns 0 on failure, 1 on success.
 
 ## Example:
 ### Example Code
@@ -59,6 +72,7 @@ Below is an example program to demonstrate the functionality of itc_utils. If us
 
 #include "itc_utils.h"
 #include "sifive_trace.h"
+#include <metal/hpm.h>
 #include <stdio.h>
 
 // No load string definitions for channels 1-5
@@ -123,6 +137,24 @@ int main() {
 
     // Print the string "Printf: Foo!\n" using itc_print and a formated string
     itc_printf("Printf: %s", "Foo!");
+
+    // get this CPU's object
+    struct metal_cpu *this_cpu =  init_pc();
+
+    // check to see if the CPU is valid
+    if (this_cpu == NULL) printf("NULL CPU!\n");
+
+    // set the cycle counter pc register to be paired with ITC channel 6
+    set_pc_channel(METAL_HPM_CYCLE, 6, this_cpu);
+
+    // Write the value of the cycle PC register to the ITC stimulus register
+    inject_pc(METAL_HPM_CYCLE, this_cpu);
+
+    // Clear the Cycle coutner PC register
+    reset_pc_counter(METAL_HPM_CYCLE, this_cpu);
+
+    // Re-write the value of the cycle PC register to the ITC stimulus register to verify it was reset
+    inject_pc(METAL_HPM_CYCLE, this_cpu);
 
     return 0;
 

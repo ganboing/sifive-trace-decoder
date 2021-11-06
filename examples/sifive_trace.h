@@ -403,7 +403,7 @@ Register Manipulation
 #define setITCStimulus16(core, regnum, value){                              \
     while(getITCStimulus(core, regnum) == 0){}                              \
     tmm[core]->itc_stimulus_register[(regnum)].reg_size_16 = (value);       \
-)
+}
 
 #define setITCStimulus8(core, regnum, value){                               \
     while(getITCStimulus(core, regnum) == 0){}                              \
@@ -604,7 +604,7 @@ Register Manipulation
 
 #define getTfAtbEmpty()                 (_getGeneric(getTfAtbControl(), 0x4, 0x2))
 
-// THe pib control register - Funnel
+// The pib control register - Funnel
 #define setTfPibControl(value)          (fmm->pib_control_register = (value))
 #define getTfPibControl()               (fmm->pib_control_register)
 

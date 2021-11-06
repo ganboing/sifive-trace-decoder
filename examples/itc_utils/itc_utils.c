@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <metal/machine/platform.h>
+#include <metal/hpm.h>
 
 #ifndef METAL_SIFIVE_TRACE_0_BASE_ADDRESS
 #error METAL_SIFIVE_TRACE_0_BASE_ADDRESS is not defined.  Does this target have trace?
@@ -349,13 +350,13 @@ inline int itc_nls_print_i8(int channel, uint8_t data1, uint8_t data2, uint8_t d
 	// check for a channel between [1, 31]
 	if ((channel < 0) || (channel > 31)) return 0;
 	
-	// get the address of the stimmulus register at the specified channel
+	// get the address of the stimulus register at the specified channel
 	uint32_t *stimulus = &itcStimulus[channel];
 
 	// block until room in FIFO
 	while (*stimulus == 0) {}	
 
-	// concatonate the 4-8 bit values into 1 32 bit value and asignt to the
+	// Concatenate the 4-8 bit values into 1 32 bit value and asignt to the
 	// stimulus register
 	*stimulus = ((uint32_t)data1<<24) | ((uint32_t)data2<<16) | ((uint32_t)data3<<8) | ((uint32_t)data4);
 
@@ -367,7 +368,7 @@ inline int itc_nls_printstr(int channel)
 	// check for a channel between [1, 31]
 	if ((channel < 0) || (channel > 31)) return 0;
 
-	// get the address of the stimmulus register at the specified channel
+	// get the address of the stimulus register at the specified channel
 	uint32_t *stimulus = &itcStimulus[channel];
 
 	// block until room in FIFO
@@ -375,6 +376,91 @@ inline int itc_nls_printstr(int channel)
 
 	// write a 0 to the register
 	*stimulus = 0;
+
+	return 1;
+}
+
+static int hpm_pairings[32];
+// returns cpu address on success, NULL on failure
+struct metal_cpu *init_pc(){
+	// Initialize the pc's for the calling CPU
+	// Get CPU device handle.
+	struct metal_cpu *cpu = metal_cpu_get(metal_cpu_get_current_hartid());
+
+
+	// Enable module
+	if (metal_hpm_init(cpu)) return NULL;
+
+	// clear the parings array
+	for (int i = 0; i < 32; i++) hpm_pairings[i] = -1;
+
+	return cpu;
+}
+
+// returns 0 on success
+int set_pc_channel(int hpm_counter, int channel, struct metal_cpu *cpu){
+	// try to pair a performance counter to a channel
+
+	// check to see if the channel is valid
+	if ((channel < 0) || (channel > 31)) return 0;
+
+	// check to see if the hpm counter value is between 0 and 31 (the range of valid counters)
+	if ((hpm_counter < 0 ) || (channel > 31)) return 0;
+
+	// check to see that CPU isnt NULL
+	if (!cpu) return 0;
+
+
+	// set the value-pair since we didnt fail at enabling
+	hpm_pairings[hpm_counter] = channel;
+
+	return 1;
+}
+int inject_pc(int hpm_counter, struct metal_cpu *cpu){
+	// if CPU isnt NULL and the channel has been configured, inject the message
+
+	// check to see if the hpm counter value is between 0 and 31 (the range of valid counters)
+	if ((hpm_counter < 0 ) || (hpm_counter > 31)) return -1;
+
+	// check to see that CPU isnt NULL
+	if (!cpu) return -2;
+
+	// see if the channel has been configured
+	if(hpm_pairings[hpm_counter] == -1) return -3;
+
+	// get the stimulus register
+	uint32_t *stimulus = &itcStimulus[hpm_pairings[hpm_counter]];
+
+	// grab the datum and send it through the register
+	// the register reads are returned as unsigned long longs (64 bits, acording to sizeof running on an arty)
+	uint64_t data = metal_hpm_read_counter(cpu, hpm_counter);
+
+	// block until room in FIFO
+	while (*stimulus == 0) {}
+
+	// write the first 32 bits
+	*stimulus = (uint32_t)data;
+
+	// shift to the high bits
+	data = data >> 32;
+
+	// block until room in FIFO
+		while (*stimulus == 0) {}
+
+	// write the first 32 bits
+	*stimulus = (uint32_t)data;
+
+	return 1;
+}
+int reset_pc_counter(int hpm_counter, struct metal_cpu *cpu){
+	// check to see if the hpm counter value is between 0 and 31 (the range of valid counters)
+	if ((hpm_counter < 0 ) || (hpm_counter > 31)) return 0;
+
+	// check to see that CPU isnt NULL
+	if (!cpu) return 0;
+
+	// clear the value
+	metal_hpm_clear_counter(cpu, hpm_counter);
 
 	return 1;
 }
