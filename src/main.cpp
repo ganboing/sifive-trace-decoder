@@ -28,7 +28,6 @@
 #include <fstream>
 #include <cstring>
 #include <cstdint>
-#include <cassert>
 
 #include "dqr.hpp"
 
@@ -206,6 +205,7 @@ int main(int argc, char *argv[])
 	TraceDqr::TraceType traceType = TraceDqr::TRACETYPE_BTM;
 	char *cutPath = nullptr;
 	char *newRoot = nullptr;
+	bool ctf_flag = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -260,12 +260,18 @@ int main(int argc, char *argv[])
 		else if (strcmp("-ca",argv[i]) == 0) {
 			i += 1;
 			if (i >= argc) {
-				printf("Error: option -ca reques a file name\n");
+				printf("Error: option -ca requires a file name\n");
 				usage(argv[0]);
 				return 1;
 			}
 
 			ca_name = argv[i];
+		}
+		else if (strcmp("-ctf",argv[i]) == 0) {
+			ctf_flag = true;
+		}
+		else if (strcmp("-noctf",argv[i]) == 0) {
+			ctf_flag = false;
 		}
 		else if (strcmp("-btm",argv[i]) == 0) {
 			traceType = TraceDqr::TRACETYPE_BTM;
@@ -631,7 +637,10 @@ int main(int argc, char *argv[])
 			sim = new (std::nothrow) Simulator(sf_name,archSize);
 		}
 
-		assert(sim != nullptr);
+		if (sim == nullptr) {
+			printf("Error: Could not creat Simulator object\n");
+			return 1;
+		}
 
 		if (sim->getStatus() != TraceDqr::DQERR_OK) {
 			delete sim;
@@ -654,6 +663,8 @@ int main(int argc, char *argv[])
 		sim->setLabelMode(labelFlag);
 	}
 	else if ((pf_name != nullptr) || (tf_name != nullptr)) {
+		TraceDqr::DQErr rc;
+
 		if (pf_name != nullptr) {
 			// generate error message if anything was set to not-default!
 
@@ -669,7 +680,11 @@ int main(int argc, char *argv[])
 
 			trace = new (std::nothrow) Trace(pf_name);
 
-			assert(trace != nullptr);
+			if (trace == nullptr) {
+				printf("Error: Could not create Trace object\n");
+
+				return 1;
+			}
 
 			if (trace->getStatus() != TraceDqr::DQERR_OK) {
 				delete trace;
@@ -679,38 +694,15 @@ int main(int argc, char *argv[])
 
 				return 1;
 			}
-
-			trace->setTraceType(traceType);
-
-			if (ca_name != nullptr) {
-				TraceDqr::DQErr rc;
-				rc = trace->setCATraceFile(ca_name,caType);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Could not set cycle accurate trace file\n");
-					return 1;
-				}
-			}
-
-			trace->setTSSize(tssize);
-			trace->setPathType(pt);
-
-			if (cutPath != nullptr) {
-				TraceDqr::DQErr rc;
-
-				rc = trace->subSrcPath(cutPath,newRoot);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: Could not set cutPath or newRoot\n");
-					return 1;
-				}
-			}
-
-			trace->setLabelMode(labelFlag);
-
 		}
 		else {
 			trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
 
-			assert(trace != nullptr);
+			if (trace == nullptr) {
+				printf("Error: Could not create Trace object\n");
+
+				return 1;
+			}
 
 			if (trace->getStatus() != TraceDqr::DQERR_OK) {
 				delete trace;
@@ -724,7 +716,6 @@ int main(int argc, char *argv[])
 			trace->setTraceType(traceType);
 
 			if (ca_name != nullptr) {
-				TraceDqr::DQErr rc;
 				rc = trace->setCATraceFile(ca_name,caType);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: Could not set cycle accurate trace file\n");
@@ -736,8 +727,6 @@ int main(int argc, char *argv[])
 			trace->setPathType(pt);
 
 			if (cutPath != nullptr) {
-				TraceDqr::DQErr rc;
-
 				rc = trace->subSrcPath(cutPath,newRoot);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: Could not set cutPath or newRoot\n");
@@ -753,6 +742,14 @@ int main(int argc, char *argv[])
 			}
 
 			trace->setLabelMode(labelFlag);
+
+			if (ctf_flag != false) {
+				rc = trace->enableCTFConverter(-1,nullptr);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Could not set CTF file\n");
+					return 1;
+				}
+			}
 		}
 	}
 	else {
@@ -1141,10 +1138,10 @@ int main(int argc, char *argv[])
 	}
 
 	if (trace != nullptr) {
-	trace->cleanUp();
+		trace->cleanUp();
 
-	delete trace;
-	trace = nullptr;
+		delete trace;
+		trace = nullptr;
 	}
 
 	if (sim != nullptr) {

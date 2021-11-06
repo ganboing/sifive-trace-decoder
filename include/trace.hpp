@@ -57,6 +57,8 @@ private:
 };
 #endif // DO_TIMES
 
+void sanePath(TraceDqr::pathType pt,const char *src,char *dst);
+
 class cachedInstInfo {
 public:
 	cachedInstInfo(const char *file,int cutPathIndex,const char *func,int linenum,const char *lineTxt,const char *instText,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset);
@@ -331,14 +333,22 @@ public:
 	TraceDqr::DQErr propertyToSrcBits(char *value);
 	TraceDqr::DQErr propertyToNumAddrBits(char *value);
 	TraceDqr::DQErr propertyToITCPrintOpts(char *value);
+	TraceDqr::DQErr propertyToITCPrintBufferSize(char *value);
 	TraceDqr::DQErr propertyToITCPrintChannel(char *value);
 	TraceDqr::DQErr propertyToSrcRoot(char *value);
+	TraceDqr::DQErr propertyToSrcCutPath(char *value);
 	TraceDqr::DQErr propertyToCAName(char *value);
 	TraceDqr::DQErr propertyToCAType(char *value);
 	TraceDqr::DQErr propertyToPathType(char *value);
 	TraceDqr::DQErr propertyToLabelsAsFuncs(char *value);
 	TraceDqr::DQErr propertyToFreq(char *value);
 	TraceDqr::DQErr propertyToTSSize(char *value);
+	TraceDqr::DQErr propertyToAddrDispFlags(char *value);
+	TraceDqr::DQErr propertyToCTFEnable(char *value);
+	TraceDqr::DQErr propertyToEventConversionEnable(char *value);
+	TraceDqr::DQErr propertyToStartTime(char *value);
+	TraceDqr::DQErr propertyToHostName(char *value);
+	TraceDqr::DQErr propertyToFilterControlEvents(char *value);
 
 	char *tfName;
 	char *efName;
@@ -347,15 +357,149 @@ public:
 	int srcBits;
 	int numAddrBits;
 	int itcPrintOpts;
+	int itcPrintBufferSize;
 	int itcPrintChannel;
+	char *cutPath;
 	char *srcRoot;
 	TraceDqr::pathType pathType;
 	bool labelsAsFunctions;
 	uint32_t freq;
 	uint32_t addrDispFlags;
+	int64_t  startTime;
 	int tsSize;
+	bool CTFConversion;
+	bool eventConversionEnable;
+	char *hostName;
+	bool filterControlEvents;
 
 private:
+	TraceDqr::DQErr propertyToBool(char *src,bool &value);
+};
+
+// class CTFConverter: class to convert nexus messages to CTF file
+
+class CTFConverter {
+public:
+	CTFConverter(char *elf,char *rtd,int numCores,int arch_size,uint32_t freq,int64_t t,char *hostName);
+	~CTFConverter();
+
+	TraceDqr::DQErr getStatus() { return status; }
+
+	TraceDqr::DQErr writeCTFMetadata();
+	TraceDqr::DQErr addCall(int core,TraceDqr::ADDRESS srcAddr,TraceDqr::ADDRESS dstAddr,TraceDqr::TIMESTAMP eventTS);
+	TraceDqr::DQErr addRet(int core,TraceDqr::ADDRESS srcAddr,TraceDqr::ADDRESS dstAddr,TraceDqr::TIMESTAMP eventTS);
+
+	TraceDqr::DQErr computeEventSizes(int core,int &size);
+
+	TraceDqr::DQErr writeStreamHeaders(int core,uint64_t ts_begin,uint64_t ts_end,int size);
+//	TraceDqr::DQErr writeStreamEventContext(int core);
+	TraceDqr::DQErr writeTracePacketHeader(int core);
+	TraceDqr::DQErr writeStreamPacketContext(int core,uint64_t ts_begin,uint64_t ts_end,int size);
+//	TraceDqr::DQErr writeStreamEventHeader(int core,int index);
+	TraceDqr::DQErr flushEvents(int core);
+	TraceDqr::DQErr writeEvent(int core,int index);
+	TraceDqr::DQErr writeBinInfo(int core,uint64_t timestamp);
+	TraceDqr::DQErr computeBinInfoSize(int &size);
+
+private:
+	struct __attribute__ ((packed)) event {
+//		CTF::event_type eventType;
+		struct __attribute__ ((packed)) {
+			uint16_t event_id;
+			union __attribute__ ((packed)) {
+				struct  __attribute__ ((packed)) {
+					uint32_t timestamp;
+				} compact;
+				struct  __attribute__ ((packed)) {
+					uint32_t event_id;
+					uint64_t timestamp;
+				} extended;
+			};
+		} event_header;
+		union  __attribute__ ((packed)) {
+			struct  __attribute__ ((packed)) {
+				uint64_t pc;
+				uint64_t pcDst;
+			} call;
+			struct  __attribute__ ((packed)) {
+				uint64_t pc;
+				uint64_t pcDst;
+			} ret;
+			struct  __attribute__ ((packed)) {
+				uint64_t pc;
+				int cause;
+			} exception;
+			struct  __attribute__ ((packed)) {
+				uint64_t pc;
+				int cause;
+			} interrupt;
+			struct __attribute__ ((packed)) {
+				uint64_t _baddr;
+				uint64_t _memsz;
+				char _path[512];
+				uint8_t _is_pic;
+				uint8_t _has_build_id;
+				uint8_t _has_debug_link;
+			} binInfo;
+		};
+	};
+
+	struct __attribute__ ((packed)) event_context {
+		uint32_t _vpid;
+		uint32_t _vtid;
+		uint8_t _procname[17];
+	};
+
+	TraceDqr::DQErr status;
+	int numCores;
+	int fd[DQR_MAXCORES];
+//	uint8_t uuid[16];
+	int metadataFd;
+	int packetSeqNum;
+	uint32_t frequency;
+	int archSize;
+	event *eventBuffer[DQR_MAXCORES];
+	int eventIndex[DQR_MAXCORES];
+	event_context eventContext[DQR_MAXCORES];
+	char *elfName;
+
+	bool headerFlag[DQR_MAXCORES];
+};
+
+// class EventConverter: class to convert nexus messages to Evebt files
+
+class EventConverter {
+public:
+	EventConverter(char *elf,char *rtd,class Disassembler *disassembler,int numCores,uint32_t freq);
+	~EventConverter();
+
+	TraceDqr::DQErr getStatus() { return status; }
+
+	TraceDqr::DQErr emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id);
+	TraceDqr::DQErr emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id);
+	TraceDqr::DQErr emitCallRet(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags);
+	TraceDqr::DQErr emitException(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause);
+	TraceDqr::DQErr emitInterrupt(int coe,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause);
+	TraceDqr::DQErr emitContext(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context);
+	TraceDqr::DQErr emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc);
+	TraceDqr::DQErr emitControl(int core,TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc);
+
+private:
+
+	TraceDqr::DQErr status;
+	int numCores;
+	uint32_t frequency;
+	char eventNameGen[512];
+	int eventFDs[CTF::et_numEventTypes];
+	int eventFD;
+
+	char *elfNamePath;
+
+	class Disassembler *disassembler;
+
+	const char *getInterruptCauseText(int cause);
+	const char *getExceptionCauseText(int cause);
+	const char *getControlText(int control);
 };
 
 // class Disassembler: class to help in the dissasemblhy of instrucitons

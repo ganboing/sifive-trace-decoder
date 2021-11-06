@@ -28,7 +28,6 @@
 #include <fstream>
 #include <cstring>
 #include <cstdint>
-#include <cassert>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -81,15 +80,25 @@ static void override_print_address(bfd_vma addr, struct disassemble_info *info)
 
   dp = (Disassembler *)info->application_data;
 
-  assert(dp != nullptr);
+  if (dp == nullptr) {
+	  printf("Error: override_print_address(): No disassembler object\n");
+	  return; // don't have a way to signal an error.
+  }
 
   dp->overridePrintAddress(addr,info);
 }
 
 static int asymbol_compare_func(const void *arg1,const void *arg2)
 {
-	assert(arg1 != nullptr);
-	assert(arg2 != nullptr);
+	if (arg1 == nullptr) {
+		printf("Error: asymbol_compare_func(): Null first argument\n");
+		return 0;
+	}
+
+	if (arg2 == nullptr) {
+		printf("Error: asymbol_compare_func(): Null second argument\n");
+		return 0;
+	}
 
 	asymbol *first;
 	asymbol *second;
@@ -106,7 +115,10 @@ static int asymbol_compare_func(const void *arg1,const void *arg2)
 
 __attribute__((unused)) static void dump_syms(asymbol **syms, int num_syms) // @suppress("Unused static function")
 {
-	assert(syms != nullptr);
+	if (syms == nullptr) {
+		printf("Error: dump_syms(): Null syms argument\n");
+		return;
+	}
 
     for (int i = 0; i < num_syms; i++) {
     	printf("%d: 0x%llx '%s'",i,bfd_asymbol_value(syms[i]),syms[i]->name);
@@ -356,7 +368,11 @@ section *section::initSection(section **head, asection *newsp,bool enableInstCac
 
 	code = new (std::nothrow) uint16_t[words];
 
-	assert(code != nullptr);
+	if (code == nullptr) {
+		printf("Error: section::initSection(): Could not create code object\n");
+
+		return nullptr;
+	}
 
     bfd_boolean rc;
     rc = bfd_get_section_contents(abfd,newsp,(void*)code,0,size);
@@ -401,7 +417,10 @@ cachedInstInfo *section::setCachedInfo(TraceDqr::ADDRESS addr,const char *file,i
 
 			int index = (addr - startAddr) >> 1;
 
-			assert(cachedInfo[index] == nullptr);
+			if (cachedInfo[index] != nullptr) {
+				printf("Error: section::setCachedInfo(): cachedInfo[%d] not null\n",index);
+				return nullptr;
+			}
 
 			cachedInstInfo *cci;
 			cci = new cachedInstInfo(file,cutPathIndex,func,linenum,lineTxt,instTxt,inst,instSize,addresslabel,addresslabeloffset,haveoperandaddress,operandaddress,operandlabel,operandlabeloffset);
@@ -441,7 +460,10 @@ std::string Instruction::addressToString(int labelLevel)
 
 void Instruction::addressToText(char *dst,size_t len,int labelLevel)
 {
-	assert(dst != nullptr);
+	if (dst == nullptr) {
+		printf("Error: Instruction::addressToText(): Argument dst is null\n");
+		return;
+	}
 
 	dst[0] = 0;
 
@@ -481,7 +503,10 @@ std::string Instruction::instructionToString(int labelLevel)
 
 void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 {
-	assert(dst != nullptr);
+	if (dst == nullptr) {
+		printf("Error: Instruction::instructionToText(): Argument dst is null\n");
+		return;
+	}
 
 	int n;
 
@@ -755,7 +780,10 @@ fileReader::~fileReader()
 
 fileReader::fileList *fileReader::readFile(const char *file)
 {
-	assert(file != nullptr);
+	if (file == nullptr) {
+		printf("Error: fileReader::readFile(): No file specified\n");
+		return nullptr;
+	}
 
 	std::ifstream  f;
 	const char *original_file_name = file;
@@ -1007,7 +1035,10 @@ fileReader::fileList *fileReader::readFile(const char *file)
 
 fileReader::fileList *fileReader::findFile(const char *file)
 {
-	assert(file != nullptr);
+	if (file == nullptr) {
+		printf("Error: fileReader::findFile(): No file specified\n");
+		return nullptr;
+	}
 
 	// first check if file is same as last one uesed
 
@@ -1067,7 +1098,17 @@ TraceDqr::DQErr fileReader::subSrcPath(const char *cutPath,const char *newRoot)
 
 Symtab::Symtab(bfd *abfd)
 {
-	assert(abfd != nullptr);
+	if (abfd == nullptr) {
+		printf("Error: Symtab::Symtab(): abfd was not specified\n");
+
+		symbol_table = nullptr;
+		vma = 0;
+		index = 0;
+		number_of_symbols = 0;
+		this->abfd = nullptr;
+
+		return;
+	}
 
 	this->abfd = abfd;
 
@@ -1079,11 +1120,20 @@ Symtab::Symtab(bfd *abfd)
 		if (storage_needed > 0 ) {
 			symbol_table = (asymbol**)new (std::nothrow) char[storage_needed];
 
-			assert(symbol_table != nullptr);
+			if (symbol_table == nullptr) {
+				printf("Error: Symtab::Symtab(): Could not create symbol_table object\n");
+
+				symbol_table = nullptr;
+				vma = 0;
+				index = 0;
+				storage_needed = 0;
+				number_of_symbols = 0;
+				this->abfd = nullptr;
+
+				return;
+			}
 
 			number_of_symbols = bfd_canonicalize_symtab(abfd,symbol_table);
-
-//			printf("symtable 2: storage needed: %d, number of symbols: %d, symbol_table: %08x\n",storage_needed, number_of_symbols, symbol_table);
 		}
 		else {
 			symbol_table = nullptr;
@@ -1193,7 +1243,11 @@ bool ElfReader::init = false;
 
 ElfReader::ElfReader(char *elfname)
 {
-  assert(elfname != nullptr);
+  if (elfname == nullptr) {
+	printf("Error: ElfReader::ElfReader(): No elf file name specified\n");
+	status = TraceDqr::DQERR_ERR;
+	return;
+  }
 
   if (init == false) {
 	  // only call bfd_init once - not once per object
@@ -1387,7 +1441,11 @@ TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 
 	data = new (std::nothrow) char[size];
 
-	assert(data != nullptr);
+	if (data == nullptr) {
+		printf("Error: elfReader::parseNLSStrings(): Could not allocate data array\n");
+
+		return TraceDqr::DQERR_ERR;
+	}
 
 	bfd_boolean rc;
 	rc = bfd_get_section_contents(abfd,sp,(void*)data,0,size);
@@ -1533,7 +1591,10 @@ Symtab *ElfReader::getSymtab()
 	if (symtab == nullptr) {
 		symtab = new (std::nothrow) Symtab(abfd);
 
-		assert(symtab != nullptr);
+		if (symtab == nullptr) {
+			printf("Error: ElfReader::getSymtabl(): Could not allocate Symtab object\n");
+			return nullptr;
+		}
 	}
 
 	return symtab;
@@ -1576,7 +1637,14 @@ TsList::~TsList()
 
 ITCPrint::ITCPrint(int itcPrintOpts,int numCores, int buffSize,int channel,TraceDqr::nlStrings *nlsStrings)
 {
-	assert((numCores > 0) && (buffSize > 0));
+	if ((numCores <= 0) || (buffSize <= 0)) {
+		printf("Error: ITCPrint::ITCPrint(): Bad numCores or bufSize argument\n");
+
+		// just make some defaults and fly from there
+
+		numCores = 1;
+		buffSize = 1024;
+	}
 
 	this->numCores = numCores;
 	this->buffSize = buffSize;
@@ -2089,7 +2157,11 @@ bool ITCPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen, TraceDqr::TIMES
 		return false;
 	}
 
-	assert((dst != nullptr) && (dstLen > 0));
+	if ((dst == nullptr) || (dstLen <= 0)) {
+		printf("Error: ITCPrint::getITCPrintMsg(): Bad dst argument or size\n");
+
+		return false;
+	}
 
 	if (numMsgs[core] > 0) {
 		TsList *tsl = consumeTerminatedTsList(core);
@@ -2098,8 +2170,9 @@ bool ITCPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen, TraceDqr::TIMES
 			startTime = tsl->startTime;
 			endTime = tsl->endTime;
 		}
-		else {
-			assert (tsl != nullptr);
+		else if (tsl == nullptr) {
+			printf("Error: ITCPrint::getITCPrintMsg(): tsl is null\n");
+			return false;
 		}
 
 		rc = true;
@@ -2131,10 +2204,14 @@ bool ITCPrint::getITCPrintMsg(uint8_t core,char* dst,int dstLen, TraceDqr::TIMES
 bool ITCPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen, TraceDqr::TIMESTAMP &startTime, TraceDqr::TIMESTAMP &endTime)
 {
 	if (core >= numCores) {
+		printf("Error: ITCPrint::flushITCPringMsg(): Core out of range (%d)\n",core);
 		return false;
 	}
 
-	assert((dst != nullptr) && (dstLen > 0));
+	if ((dst == nullptr) || (dstLen <= 0)) {
+		printf("Error: ITCPrint::flushITCPrintMsg(): Bad dst argument\n");
+		return false;
+	}
 
 	if (numMsgs[core] > 0) {
 		return getITCPrintMsg(core,dst,dstLen,startTime,endTime);
@@ -2143,8 +2220,10 @@ bool ITCPrint::flushITCPrintMsg(uint8_t core, char *dst, int dstLen, TraceDqr::T
 	if (pbo[core] != pbi[core]) {
 		TsList *tsl = consumeOldestTsList(core);
 
-		assert (tsl != nullptr);
-		assert (tsl->terminated == false);
+		if ((tsl == nullptr) || (tsl->terminated != false)) {
+			printf("Error: ITCPrint::flushITCPrintMsg(): bad tsl object\n");
+			return false;
+		}
 
 		startTime = tsl->startTime;
 		endTime = tsl->endTime;
@@ -2177,7 +2256,10 @@ bool ITCPrint::getITCPrintStr(uint8_t core, std::string &s,TraceDqr::TIMESTAMP &
 
 		TsList *tsl = consumeTerminatedTsList(core);
 
-		assert (tsl != nullptr);
+		if (tsl == nullptr) {
+			printf("Error: ITCPrint::getITCPrintStr(): Bad tsl pointer\n");
+			return false;
+		}
 
 		startTime = tsl->startTime;
 		endTime = tsl->endTime;
@@ -2215,8 +2297,10 @@ bool ITCPrint::flushITCPrintStr(uint8_t core, std::string &s, TraceDqr::TIMESTAM
 	if (pbo[core] != pbi[core]) {
 		TsList *tsl = consumeOldestTsList(core);
 
-		assert (tsl != nullptr);
-		assert (tsl->terminated == false);
+		if ((tsl == nullptr) || (tsl->terminated != false)) {
+			printf("Error: ITCPrint::flushITCPrintStr(): Bad tsl pointer\n");
+			return false;
+		}
 
 		startTime = tsl->startTime;
 		endTime = tsl->endTime;
@@ -2752,7 +2836,10 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 	double etime = etimer->etime();
 #endif // DO_TIMES
 
-	assert(dst != nullptr);
+	if ((dst == nullptr) || (dst_len < 0)) {
+		printf("Error: Anaylics::toText(): Bad dst pointer\n");
+		return;
+	}
 
 	dst[0] = 0;
 
@@ -5066,7 +5153,10 @@ std::string NexusMessage::messageToString(int detailLevel)
 
 void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 {
-	assert(dst != nullptr);
+	if ((dst == nullptr) || (dst_len <= 0)) {
+		printf("Error: NexusMessage::messageToText(): Bad dst pointer\n");
+		return;
+	}
 
 	const char *sr;
 	const char *bt;
@@ -5742,19 +5832,45 @@ void NexusMessage::dump()
 		std::cout << "unsupported device id trace message\n";
 		break;
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
-//bks
-		std::cout << "  # Trace Message(" << msgNum << "): Ownership, process=" << ownership.process; // << ", TS=0x" << hex << timestamp << dec; // << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Ownership, process=" << ownership.process << std::endl; // << ", TS=0x" << hex << timestamp << dec; // << endl;
 		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH:
 //		cout << "(" << traceNum << ") ";
 //		cout << "  | Direct Branch | TYPE=DBM, ICNT=" << i_cnt << ", TS=0x" << hex << timestamp << dec; // << endl;
-//bks		cout << "  # Trace Message(" << msgNum << "): Direct Branch, ICNT=" << i_cnt; // << ", TS=0x" << hex << timestamp << dec; // << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Direct Branch, ICNT=" << directBranch.i_cnt << std::endl; // << ", TS=0x" << hex << timestamp << dec; // << endl;
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH:
 //		cout << "(" << traceNum << ") ";
 //		cout << "  | Indirect Branch | TYPE=IBM, BTYPE=" << b_type << ", ICNT=" << i_cnt << ", UADDR=0x" << hex << u_addr << ", TS=0x" << timestamp << dec;// << endl;
-//bks		cout << "  # Trace Message(" << msgNum << "): Indirect Branch, BTYPE=" << b_type << ", ICNT=" << i_cnt << ", UADDR=0x" << hex << u_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Indirect Branch, BTYPE=" << indirectBranch.b_type << ", ICNT=" << indirectBranch.i_cnt << ", UADDR=0x" << std::hex << indirectBranch.u_addr << std::dec << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
+	case TraceDqr::TCODE_RESOURCEFULL:
+		switch (resourceFull.rCode) {
+		case 0:
+			std::cout << "  # Trace Message(" << msgNum << "): Resource Full, rCode=" << resourceFull.rCode << ", ICNT=" << resourceFull.i_cnt << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
+			break;
+		case 1:
+			std::cout << "  # Trace Message(" << msgNum << "): Resource Full, rCode=" << resourceFull.rCode << ", History=0x" << std::hex << resourceFull.history << std::dec << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
+			break;
+		case 8:
+			std::cout << "  # Trace Message(" << msgNum << "): Resource Full, rCode=" << resourceFull.rCode << ", Not taken=" << resourceFull.notTakenCount << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
+			break;
+		case 9:
+			std::cout << "  # Trace Message(" << msgNum << "): Resource Full, rCode=" << resourceFull.rCode << ", Taken=" << resourceFull.takenCount << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
+			break;
+		default:
+			std::cout << "  # Trace Message(" << msgNum << "): Resource Full, Invalid or unsupported rCode for reourceFull TCODE" << std::endl;
+			break;
+		}
+		break;
+	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		std::cout << "  # Trace Message(" << msgNum << "): Indirect Branch History, ICNT=" << indirectHistory.i_cnt << ", BTYPE=" << indirectHistory.b_type << ", UADDR=0x" << std::hex << indirectHistory.u_addr << std::dec << ", history=0x" << std::hex << indirectHistory.history << std::dec << std::endl;
+		break;
+//	case TCODE_INDIRECTBRANCHHISTORY_WS:
+//	case TCODE_CORRELATION:
+//	case TCODE_INCIRCUITTRACE:
+//	case TCODE_INCIRCUITTRACE_WS:
+//		break;
 	case TraceDqr::TCODE_DATA_WRITE:
 		std::cout << "unsupported data write trace message\n";
 		break;
@@ -5765,12 +5881,12 @@ void NexusMessage::dump()
 		std::cout << "unsupported data acquisition trace message\n";
 		break;
 	case TraceDqr::TCODE_ERROR:
-//bks		cout << "  # Trace Message(" << msgNum << "): Error, ETYPE=" << (uint32_t)etype; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Error, ETYPE=" << (uint32_t)error.etype << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
 	case TraceDqr::TCODE_SYNC:
 //		cout << "(" << traceNum << "," << syncNum << ") ";
 //		cout << "  | Sync | TYPE=SYNC, SYNC=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << ", TS=0x" << timestamp << dec;// << endl;
-//bks		cout << "  # Trace Message(" << msgNum << "): Sync, SYNCREASON=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Sync, SYNCREASON=" << sync.sync << ", ICNT=" << sync.i_cnt << ", FADDR=0x" << std::hex << sync.f_addr << std::dec << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
 	case TraceDqr::TCODE_CORRECTION:
 		std::cout << "unsupported correction trace message\n";
@@ -5778,12 +5894,12 @@ void NexusMessage::dump()
 	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 //		cout << "(" << traceNum << "," << syncNum << ") ";
 //		cout << "  | Direct Branch With Sync | TYPE=DBWS, SYNC=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << ", TS=0x" << timestamp << dec;// << endl;
-//bks		cout << "  # Trace Message(" << msgNum << "): Direct Branch With Sync, SYNCTYPE=" << sync << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Direct Branch With Sync, SYNCTYPE=" << directBranchWS.sync << ", ICNT=" << directBranchWS.i_cnt << ", FADDR=0x" << std::hex << directBranchWS.f_addr << std::dec << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 //		cout << "(" << traceNum << "," << syncNum << ") ";
 //		cout << "  | Indirect Branch With Sync | TYPE=IBWS, SYNC=" << sync << ", BTYPE=" << b_type << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << ", TS=0x" << timestamp << dec;// << endl;
-//bks		cout << "  # Trace Message(" << msgNum << "): Indirect Branch With sync, SYNCTYPE=" << sync << ", BTYPE=" << b_type << ", ICNT=" << i_cnt << ", FADDR=0x" << hex << f_addr << dec; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Indirect Branch With sync, SYNCTYPE=" << indirectBranchWS.sync << ", BTYPE=" << indirectBranchWS.b_type << ", ICNT=" << indirectBranchWS.i_cnt << ", FADDR=0x" << std::hex << indirectBranchWS.f_addr << std::dec << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
 	case TraceDqr::TCODE_DATA_WRITE_WS:
 		std::cout << "unsupported data write with sync trace message\n";
@@ -5795,13 +5911,109 @@ void NexusMessage::dump()
 		std::cout << "unsupported watchpoint trace message\n";
 		break;
 	case TraceDqr::TCODE_AUXACCESS_WRITE:
-//bks		cout << "  # Trace Message(" << msgNum << "): Auxillary Access Write, address=" << hex << auxAddr << dec << ", data=" << hex << data << dec; // << ", TS=0x" << hex << timestamp << dec; // << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Auxillary Access Write, address=" << std::hex << auxAccessWrite.addr << std::dec << ", data=" << std::hex << auxAccessWrite.data << std::dec << std::endl; // << ", TS=0x" << hex << timestamp << dec; // << endl;
 		break;
 	case TraceDqr::TCODE_CORRELATION:
-//bks		cout << "  # Trace Message(" << msgNum << "): Correlation, EVCODE=" << (uint32_t)evcode << ", CDF=" << (int)cdf << ", ICNT=" << i_cnt << "\n"; // << ", TS=0x" << timestamp << dec;// << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Correlation, EVCODE=" << (uint32_t)correlation.evcode << ", CDF=" << (int)correlation.cdf << ", ICNT=" << correlation.i_cnt << "\n"; // << ", TS=0x" << timestamp << dec;// << endl;
+		break;
+	case TraceDqr::TCODE_INCIRCUITTRACE:
+		switch (ict.cksrc) {
+	    case TraceDqr::ICT_EXT_TRIG:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace External Trigger, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf  << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec;
+			if (ict.ckdf > 0) {
+				std::cout << ", ID=" << ict.ckdata[1];
+			}
+			std::cout << std::endl;
+			break;
+	    case TraceDqr::ICT_CONTROL:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Control, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf;
+			if (ict.ckdf > 0) {
+				std::cout << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec << ", Control=" << ict.ckdata[1] << std::endl;
+			}
+			else {
+				std::cout << ", Control=" << ict.ckdata[0] << std::endl;
+			}
+	    	break;
+	    case TraceDqr::ICT_INFERABLECALL:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Call/Return, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec;
+			if (ict.ckdf > 0) {
+				std::cout << ", PCDest=0x" << std::hex << ict.ckdata[1] << std::dec;
+			}
+			std::cout << std::endl;
+			break;
+	    case TraceDqr::ICT_EXCEPTION:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Exception, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec << ", Cause=" << ict.ckdata[1] << std::endl;
+			break;
+	    case TraceDqr::ICT_INTERRUPT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Interrupt, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec << ", Cause=" << ict.ckdata[1] << std::endl;
+			break;
+	    case TraceDqr::ICT_CONTEXT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Context, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec << ", Context=0x" << std::hex << ict.ckdata[1] << std::dec << std::endl;
+			break;
+	    case TraceDqr::ICT_WATCHPOINT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace Watchpoint, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex <<ict.ckdata[0] << std::dec;
+			if (ict.ckdf > 0) {
+				std::cout << ", ID=" << ict.ckdata[1];
+			}
+			std::cout << std::endl;
+	    	break;
+	    case TraceDqr::ICT_PC_SAMPLE:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace PC Sample, cksrc=" << ict.cksrc << ", ckdf=" << (int)ict.ckdf << ", PC=0x" << std::hex << ict.ckdata[0] << std::dec << std::endl;
+			break;
+	    case TraceDqr::ICT_NONE:
+			break;
+		}
+		break;
+	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+		switch (ictWS.cksrc) {
+	    case TraceDqr::ICT_EXT_TRIG:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS External Trigger, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf  << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec;
+			if (ictWS.ckdf > 0) {
+				std::cout << ", ID=" << ictWS.ckdata[1];
+			}
+			std::cout << std::endl;
+			break;
+	    case TraceDqr::ICT_CONTROL:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Control, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf;
+			if (ictWS.ckdf > 0) {
+				std::cout << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec << ", Control=" << ictWS.ckdata[1] << std::endl;
+			}
+			else {
+				std::cout << ", Control=" << ictWS.ckdata[0] << std::endl;
+			}
+	    	break;
+	    case TraceDqr::ICT_INFERABLECALL:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Call/Return, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec;
+			if (ictWS.ckdf > 0) {
+				std::cout << ", PCDest=0x" << std::hex << ictWS.ckdata[1] << std::dec;
+			}
+			std::cout << std::endl;
+			break;
+	    case TraceDqr::ICT_EXCEPTION:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Exception, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec << ", Cause=" << ictWS.ckdata[1] << std::endl;
+			break;
+	    case TraceDqr::ICT_INTERRUPT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Interrupt, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec << ", Cause=" << ictWS.ckdata[1] << std::endl;
+			break;
+	    case TraceDqr::ICT_CONTEXT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Context, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec << ", Context=0x" << std::hex << ictWS.ckdata[1] << std::dec << std::endl;
+			break;
+	    case TraceDqr::ICT_WATCHPOINT:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS Watchpoint, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex <<ictWS.ckdata[0] << std::dec;
+			if (ictWS.ckdf > 0) {
+				std::cout << ", ID=" << ictWS.ckdata[1];
+			}
+			std::cout << std::endl;
+	    	break;
+	    case TraceDqr::ICT_PC_SAMPLE:
+			std::cout << "  # Trace Message(" << msgNum << "): In Circuit Trace WS PC Sample, cksrc=" << ictWS.cksrc << ", ckdf=" << (int)ictWS.ckdf << ", PC=0x" << std::hex << ictWS.ckdata[0] << std::dec << std::endl;
+			break;
+	    case TraceDqr::ICT_NONE:
+			break;
+		}
 		break;
 	default:
-		std::cout << "Error: NexusMessage::dump(): Unknown TCODE " << std::hex << tcode << std::dec << "msgnum: " << msgNum << std::endl;
+		std::cout << "Error: NexusMessage::dump(): Unknown TCODE " << tcode << " (0x" << std::hex << tcode << std::dec << "), msgnum: " << msgNum << std::endl;
 	}
 }
 
@@ -6141,7 +6353,11 @@ void Count::dumpCounts(int core)
 
 SliceFileParser::SliceFileParser(char *filename,int srcBits)
 {
-	assert(filename != nullptr);
+	if (filename == nullptr) {
+		printf("Error: SliceFileParser::SliceFaileParser(): No filename specified\n");
+		status = TraceDqr::DQERR_OK;
+		return;
+	}
 
 	srcbits = srcBits;
 
@@ -6307,6 +6523,7 @@ SliceFileParser::~SliceFileParser()
 	if (SWTsock >= 0) {
 #ifdef WINDOWS
 		closesocket(SWTsock);
+		WSACleanup();
 #else  // WINDOWS
 		close(SWTsock);
 #endif // WINDOWS
@@ -7893,8 +8110,12 @@ TraceDqr::DQErr SliceFileParser::parseDataAcquisition(NexusMessage &nm,Analytics
 
 TraceDqr::DQErr SliceFileParser::parseFixedField(int width, uint64_t *val)
 {
-	assert(width != 0);
-	assert(val != nullptr);
+	if ((width <= 0) || (val == nullptr)) {
+		printf("Error: SliceFileParser::parseFixedField(): Bad width or val argument\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
 
 	uint64_t tmp_val = 0;
 
@@ -7970,7 +8191,11 @@ TraceDqr::DQErr SliceFileParser::parseFixedField(int width, uint64_t *val)
 
 TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 {
-	assert(val != nullptr);
+	if (val == nullptr) {
+		printf("SliceFileParser::parseVarField(): Bad val argument\n");
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
 
 	int i;
 	int b;
@@ -8033,7 +8258,7 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 
 TraceDqr::DQErr SliceFileParser::bufferSWT()
 {
-	int br;
+	int br = 0;
 	int bytesToRead;
 
 	// compute room in buffer for read
@@ -8555,7 +8780,11 @@ ObjFile::ObjFile(char *ef_name)
 
 	elfReader = new (std::nothrow) ElfReader(ef_name);
 
-	assert(elfReader != nullptr);
+	if (elfReader == nullptr) {
+		printf("Error: ObjFile::Objfile(): Could not create elfRedaer object\n");
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
 
 	if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
 		delete elfReader;
@@ -8571,7 +8800,11 @@ ObjFile::ObjFile(char *ef_name)
 
 	disassembler = new (std::nothrow) Disassembler(abfd,true);
 
-	assert(disassembler != nullptr);
+	if (disassembler == nullptr) {
+		printf("ObjFile::ObjFile(): Coudl not create disassembler object\n");
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
 
 	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
 		if (elfReader != nullptr) {
@@ -8678,7 +8911,11 @@ TraceDqr::DQErr ObjFile::sourceInfo(TraceDqr::ADDRESS addr,Instruction &instInfo
 {
 	TraceDqr:: DQErr s;
 
-	assert(disassembler != nullptr);
+	if (disassembler == nullptr) {
+		printf("Error: ObjFile::sourceInfo(): Disassembler object null\n");
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
 
 	disassembler->Disassemble(addr);
 
@@ -8723,7 +8960,12 @@ TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
 
 	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
 
-	assert(disassembler != nullptr);
+	if (disassembler == nullptr) {
+		printf("Error: ObjFile::setLableMode(): Could n ot create Disassembler object\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
 
 	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
 		if (elfReader != nullptr) {
@@ -8762,6 +9004,7 @@ TraceDqr::DQErr ObjFile::getSymbolByName(char *symName,TraceDqr::ADDRESS &addr)
 TraceDqr::DQErr ObjFile::parseNLSStrings(TraceDqr::nlStrings (&nlsStrings)[32])
 {
 	if (elfReader == nullptr) {
+		status = TraceDqr::DQERR_ERR;
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -8773,6 +9016,7 @@ TraceDqr::DQErr ObjFile::dumpSyms()
 	if (elfReader == nullptr) {
 		printf("elfReader is null\n");
 
+		status = TraceDqr::DQERR_ERR;
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -8781,8 +9025,12 @@ TraceDqr::DQErr ObjFile::dumpSyms()
 
 Disassembler::Disassembler(bfd *abfd,bool labelsAreFunctions)
 {
-	assert(abfd != nullptr);
+	if (abfd == nullptr) {
+		printf("Error: Disassembler::Disassembler(): abfd argument is null\n");
 
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
 	pType = TraceDqr::PATH_TO_UNIX;
 
 	this->abfd = abfd;
@@ -8803,14 +9051,24 @@ Disassembler::Disassembler(bfd *abfd,bool labelsAreFunctions)
     if (storage_needed > 0) {
     	symbol_table = (asymbol **)new (std::nothrow) char[storage_needed];
 
-    	assert(symbol_table != nullptr);
+    	if (symbol_table == nullptr) {
+    		printf("Error: Disassembler::Disassembler(): Could not creat symbol table object\n");
+
+    		status = TraceDqr::DQERR_ERR;
+    		return;
+    	}
 
     	number_of_syms = bfd_canonicalize_symtab(abfd,symbol_table);
 
     	if (number_of_syms > 0) {
     		sorted_syms = new (std::nothrow) asymbol*[number_of_syms];
 
-    		assert(sorted_syms != nullptr);
+        	if (sorted_syms == nullptr) {
+        		printf("Error: Disassembler::Disassembler(): Could not creat sorted symbols object\n");
+
+        		status = TraceDqr::DQERR_ERR;
+        		return;
+        	}
 
 //        	make sure all symbols with no type info in code sections have function type added!
 
@@ -8843,7 +9101,13 @@ Disassembler::Disassembler(bfd *abfd,bool labelsAreFunctions)
 
     		func_info = new (std::nothrow) func_info_t[number_of_syms];
 
-    		assert(func_info != nullptr);
+        	if (func_info == nullptr) {
+        		printf("Error: Disassembler::Disassembler(): Could not creat function info object\n");
+
+        		status = TraceDqr::DQERR_ERR;
+        		return;
+        	}
+
 
     		// compute sizes of functions and data items for lookup by address
 
@@ -8912,7 +9176,12 @@ Disassembler::Disassembler(bfd *abfd,bool labelsAreFunctions)
 
    	info = new (std::nothrow) disassemble_info;
 
-   	assert(info != nullptr);
+	if (info == nullptr) {
+		printf("Error: Disassembler::Disassembler(): Could not creat disassembler info object\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
 
    	disassemble_func = disassembler(bfd_get_arch(abfd), bfd_big_endian(abfd),bfd_get_mach(abfd), abfd);
    	if (disassemble_func == nullptr) {
@@ -9040,9 +9309,15 @@ TraceDqr::DQErr Disassembler::subSrcPath(const char *cutPath,const char *newRoot
 
 	return TraceDqr::DQERR_ERR;
 }
+
 int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size)
 {
-	assert(ins != nullptr);
+	if (ins == nullptr) {
+		printf("Error: Disassembler::lookupInstructionByAddress(): Null ins argument\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return 0;
+	}
 
 	uint32_t inst;
 	int size;
@@ -9089,8 +9364,19 @@ int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_
 
 int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index,int *offset)
 {
-	assert(index != nullptr);
-	assert(offset != nullptr);
+	if (index == nullptr) {
+		printf("Error: Disassembler::lookup_symbol_by_address(): Null index argument\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return 0;
+	}
+
+	if (offset == nullptr) {
+		printf("Error: Disassembler::lookup_symbol_by_address(): Null offset argument\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return 0;
+	}
 
 	// find the function closest to the address. Address should either be start of function, or in body
 	// of function.
@@ -9172,7 +9458,12 @@ int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index
 
 void Disassembler::overridePrintAddress(bfd_vma addr, struct disassemble_info *info)
 {
-	assert(info != nullptr);
+	if (info == nullptr) {
+		printf("Error: Disassembler::overridePrintAddress(): Null info argument\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
 
 	//	lookup symbol at addr.
 
@@ -10261,7 +10552,7 @@ int Disassembler::decodeInstruction(uint32_t instruction,int archSize,int &inst_
 // make all path separators either '/' or '\'; also remove '/./' and /../. Remove weird double path
 // showing up on linux (libbfd issue)
 
-void static sanePath(TraceDqr::pathType pt,const char *src,char *dst)
+void sanePath(TraceDqr::pathType pt,const char *src,char *dst)
 {
 	char drive = 0;
 	int r = 0;
@@ -10420,7 +10711,12 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *
 	struct fileReader::fileList *fl;
 
 	fl = fileReader->findFile(sane);
-	assert(fl != nullptr);
+	if (fl == nullptr) {
+		printf("Error: Disassembler::getSrcLines(): fileReader failed\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return 0;
+	}
 
 	*filename = fl->name;
 	*cutPathIndex = fl->cutPathIndex;
@@ -10556,7 +10852,12 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *
 
 int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 {
-	assert(disassemble_func != nullptr);
+	if (disassemble_func == nullptr) {
+		printf("Error: Disassembler::Disassemble(): disassemble_func is null\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return 1;
+	}
 
 	bfd_vma vma;
 	vma = (bfd_vma)addr;
@@ -10693,8 +10994,8 @@ Simulator::Simulator(char *f_name,int arch_size)
 	nextLine = 0;
 	currentCore = 0;
 	flushing = false;
-	cutPath      = nullptr;
-	newRoot      = nullptr;
+	cutPath = nullptr;
+	newRoot = nullptr;
 
 	elfReader = nullptr;
 	disassembler = nullptr;
@@ -10775,8 +11076,8 @@ Simulator::Simulator(char *f_name,char *e_name)
 	flushing = false;
 	elfReader = nullptr;
 	disassembler = nullptr;
-	cutPath      = nullptr;
-	newRoot      = nullptr;
+	cutPath = nullptr;
+	newRoot = nullptr;
 
 	if (f_name == nullptr) {
 		status = TraceDqr::DQERR_ERR;
@@ -10791,7 +11092,12 @@ Simulator::Simulator(char *f_name,char *e_name)
 
     elfReader = new (std::nothrow) ElfReader(e_name);
 
-    assert(elfReader != nullptr);
+	if (elfReader == nullptr) {
+		printf("Error: Simulator::Simulator(): Could not create ElfReader object\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
 
     if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
     	delete elfReader;
@@ -10807,7 +11113,12 @@ Simulator::Simulator(char *f_name,char *e_name)
 
 	disassembler = new (std::nothrow) Disassembler(abfd,true);
 
-	assert(disassembler != nullptr);
+	if (disassembler == nullptr) {
+		printf("Error: Simulator::Simulator(): Could not create Disassembler object\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
 
 	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
 		if (elfReader != nullptr) {
@@ -10890,7 +11201,12 @@ TraceDqr::DQErr Simulator::setLabelMode(bool labelsAreFuncs)
 
 	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
 
-	assert(disassembler != nullptr);
+	if (disassembler == nullptr) {
+		printf("Error: Simulator::setLabelMode(): Could not create Disassembler object\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return status;
+	}
 
 	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
 		if (elfReader != nullptr) {
