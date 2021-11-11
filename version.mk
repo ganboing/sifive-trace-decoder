@@ -1,2 +1,2 @@
 # This is used by the freedom-trace-decoder repo amd by the source code.
-TRACE_DECODER_VERSION := 0.13.0
+TRACE_DECODER_VERSION := 0.14.0
