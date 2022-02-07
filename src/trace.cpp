@@ -1478,6 +1478,932 @@ static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,cha
 //	printf("absPath: %s\n",absPath);
 }
 
+PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t channel,uint32_t marker,uint32_t funcMarker,uint32_t freq)
+{
+	status = TraceDqr::DQERR_OK;
+
+	perfChannel = channel;
+	markerValue = marker;
+	funcMarkerValue = funcMarker;
+
+	for (int i = 0; i < (int)(sizeof state / sizeof state[0]); i++) {
+		state[i] = perfStateSync;
+	}
+
+	for (int i = 0; i < (int)(sizeof cntrMaskIndex / sizeof cntrMaskIndex[0]); i++) {
+		cntrMaskIndex[i] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof cntrMask / sizeof cntrMask[0]); i++) {
+		cntrMask[i] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof cntrValPending / sizeof cntrValPending[0]); i++) {
+		cntrValPending[i] = false;
+	}
+
+	for (int i = 0; i < (int)(sizeof perfFDs / sizeof perfFDs[0]); i++) {
+		perfFDs[i] = -1;
+	}
+
+	this->disassembler = disassembler;
+	frequency = freq;
+
+	char elfBaseName[256];
+	int perfNameLen;
+	char nameBuff[512];
+
+	getPathsNames(elf,elfBaseName,nullptr,nullptr);
+
+	getPathsNames(rtd,nullptr,nullptr,perfNameGen);
+
+	sprintf(nameBuff,"%s%s.perf",perfNameGen,elfBaseName);
+
+#ifdef WINDOWS
+	perfFD = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+	perfFD = open(nameBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+	if (perfFD < 0) {
+		printf("Error: PerfConverter::PerfConverter(): Couldn't open file %s for writing\n",nameBuff);
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
+	// save the elf name and path
+
+	int l = strlen(elf) + sizeof "# ELFPATH=" + 1;
+
+	elfNamePath = new char[l];
+
+	sprintf(elfNamePath,"# ELFPATH=%s\n",elf);
+
+	write(perfFD,elfNamePath,strlen(elfNamePath));
+
+	strcat(perfNameGen,"perf");
+
+	// make the event folder
+
+	int rc;
+
+#ifdef WINDOWS
+	rc = mkdir(perfNameGen);
+	char pathSep = '\\';
+#else // WINDOWS
+	rc = mkdir(perfNameGen,0775);
+	char pathSep = '/';
+#endif // WINDOWS
+
+	if ((rc < 0) && (errno != EEXIST)){
+		printf("Error: PerfConverter::PerfConverter(): Couldn't not make directory %s, errono=%d\n",perfNameGen,errno);
+		status = TraceDqr::DQERR_ERR;
+
+		return;
+	}
+
+	// now add the elf file base name
+
+	perfNameLen = strlen(perfNameGen);
+	perfNameGen[perfNameLen] = pathSep;
+	perfNameLen += 1;
+
+	strcpy(&perfNameGen[perfNameLen],elfBaseName);
+	strcat(&perfNameGen[perfNameLen],".%s");
+
+	status = TraceDqr::DQERR_OK;
+}
+
+PerfConverter::~PerfConverter()
+{
+	// do not delete disassembler object - it is also a member of the Trace object and will be handled there
+
+	disassembler = nullptr;
+
+	for (int i = 0; i < (int)(sizeof perfFDs / sizeof perfFDs[0]); i++) {
+		if (perfFDs[i] >= 0) {
+			close(perfFDs[i]);
+			perfFDs[i] = -1;
+		}
+	}
+
+	if (perfFD >= 0) {
+		close(perfFD);
+		perfFD = -1;
+	}
+
+	if (elfNamePath != nullptr) {
+		delete [] elfNamePath;
+		elfNamePath = nullptr;
+	}
+}
+
+TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc)
+{
+	char msgBuff[512];
+	int n;
+
+	if (perfFDs[pt_addressIndex] < 0) {
+		sprintf(msgBuff,perfNameGen,"address");
+
+#ifdef WINDOWS
+		perfFDs[pt_addressIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		perfFDs[pt_addressIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (perfFDs[pt_addressIndex] < 0) {
+			printf("Error: PerfConverter::emitAddr(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		write(perfFDs[pt_addressIndex],elfNamePath,strlen(elfNamePath));
+	}
+
+	if ((perfFDs[pt_addressIndex] >= 0) || (perfFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n" - 1;
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Address]",core,ts,pc);
+
+		if (perfFD >= 0) {
+			write(perfFD,msgBuff,n);
+			write(perfFD,fileInfoBuff,f);
+		}
+
+		if (perfFDs[pt_addressIndex] >= 0) {
+			write(perfFDs[pt_addressIndex],msgBuff,n);
+			write(perfFDs[pt_addressIndex],fileInfoBuff,f);
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr PerfConverter::emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS csAddr)
+{
+	char msgBuff[512];
+	int n;
+
+	if (perfFDs[pt_fnIndex] < 0) {
+		sprintf(msgBuff,perfNameGen,"callret");
+
+#ifdef WINDOWS
+		perfFDs[pt_fnIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		perfFDs[pt_fnIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (perfFDs[pt_fnIndex] < 0) {
+			printf("Error: PerfConverter::emitPerfFnEntry(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		write(perfFDs[pt_fnIndex],elfNamePath,strlen(elfNamePath));
+	}
+
+	if ((perfFDs[pt_fnIndex] >= 0) || (perfFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n" - 1;
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(fnAddr,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Func Enter at 0x%08llx] [Called From 0x%08llx]",core,ts,fnAddr,csAddr);
+
+		if (perfFD >= 0) {
+			write(perfFD,msgBuff,n);
+			write(perfFD,fileInfoBuff,f);
+		}
+
+		if (perfFDs[pt_fnIndex] >= 0) {
+			write(perfFDs[pt_fnIndex],msgBuff,n);
+			write(perfFDs[pt_fnIndex],fileInfoBuff,f);
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS csAddr)
+{
+	char msgBuff[512];
+	int n;
+
+	if (perfFDs[pt_fnIndex] < 0) {
+		sprintf(msgBuff,perfNameGen,"callret");
+
+#ifdef WINDOWS
+		perfFDs[pt_fnIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		perfFDs[pt_fnIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (perfFDs[pt_fnIndex] < 0) {
+			printf("Error: PerfConverter::emitPerfFnExit(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		write(perfFDs[pt_fnIndex],elfNamePath,strlen(elfNamePath));
+	}
+
+	if ((perfFDs[pt_fnIndex] >= 0) || (perfFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n" - 1;
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(fnAddr,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Func Exit] [Func at 0x%08llx] [Returning to 0x%08llx]",core,ts,fnAddr,csAddr);
+
+		if (perfFD >= 0) {
+			write(perfFD,msgBuff,n);
+			write(perfFD,fileInfoBuff,f);
+		}
+
+		if (perfFDs[pt_fnIndex] >= 0) {
+			write(perfFDs[pt_fnIndex],msgBuff,n);
+			write(perfFDs[pt_fnIndex],fileInfoBuff,f);
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint64_t cntrVal)
+{
+	char msgBuff[512];
+	int n;
+
+	if (perfFDs[cntrIndex] < 0) {
+		char tmpBuff[64];
+		sprintf(tmpBuff,"perfcounter%d",cntrIndex);
+		sprintf(msgBuff,perfNameGen,tmpBuff);
+
+#ifdef WINDOWS
+		perfFDs[cntrIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		perfFDs[cntrIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (perfFDs[cntrIndex] < 0) {
+			printf("Error: PerfConverter::emitPerfCntr(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		write(perfFDs[cntrIndex],elfNamePath,strlen(elfNamePath));
+	}
+
+	if ((perfFDs[cntrIndex] >= 0) || (perfFD >= 0)) {
+		char fileInfoBuff[512];
+		int f;
+
+		strcpy(fileInfoBuff,"\n");
+		f = sizeof "\n" - 1;
+
+		if (disassembler != nullptr) {
+			int   rc;
+			const char *filename;
+			int   cutPathIndex;
+			const char *functionname;
+			unsigned int   linenumber;
+			const char *line;
+
+			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc == 1) {
+				// have file/line info
+
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			}
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Perf Cntr] [Index=%d] [Value=%lld] ",core,ts,pc,cntrIndex,cntrVal);
+
+		if (perfFD >= 0) {
+			write(perfFD,msgBuff,n);
+			write(perfFD,fileInfoBuff,f);
+		}
+
+		if (perfFDs[cntrIndex] >= 0) {
+			write(perfFDs[cntrIndex],msgBuff,n);
+			write(perfFDs[cntrIndex],fileInfoBuff,f);
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr PerfConverter::emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,uint32_t cntrMask)
+{
+	// only write the mask the the combined file
+
+	if (perfFD >= 0) {
+		char msgBuff[512];
+		int n;
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Perf Cntr Mask] [Mask=0x%08x]\n",core,ts,cntrMask);
+
+		write(perfFD,msgBuff,n);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint64_t cntrDef)
+{
+	char msgBuff[512];
+	int n;
+
+	if (perfFDs[cntrIndex] < 0) {
+		char tmpBuff[64];
+		sprintf(tmpBuff,"perfchannel%d",cntrIndex);
+		sprintf(msgBuff,perfNameGen,tmpBuff);
+
+#ifdef WINDOWS
+		perfFDs[cntrIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,S_IRUSR | S_IWUSR);
+#else // WINDOWS
+		perfFDs[cntrIndex] = open(msgBuff,O_WRONLY | O_CREAT | O_TRUNC,S_IRUSR | S_IWUSR);
+#endif // WINDOWS
+
+		if (perfFDs[cntrIndex] < 0) {
+			printf("Error: PerfConverter::emitPerfCntrDef(): Couldn't open file %s for writing\n",msgBuff);
+			status = TraceDqr::DQERR_ERR;
+
+			return TraceDqr::DQERR_OK;
+		}
+
+		write(perfFDs[cntrIndex],elfNamePath,strlen(elfNamePath));
+	}
+
+	if ((perfFDs[cntrIndex] >= 0) || (perfFD >= 0)) {
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Perf Cntr Def] [Index=%d] [Def=0x%08llx]\n",core,ts,cntrIndex,cntrDef);
+
+		if (perfFD >= 0) {
+			write(perfFD,msgBuff,n);
+		}
+
+		if (perfFDs[cntrIndex] >= 0) {
+			write(perfFDs[cntrIndex],msgBuff,n);
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,uint32_t addr,uint32_t data,bool &consumed)
+{
+	// figure out if this itc channel is of interest
+
+	// all cores use the same channel number (in their own reg space)
+
+	consumed = false;
+
+	if ((addr < (uint32_t)perfChannel*4) || (addr >= (((uint32_t)perfChannel+1)*4))) {
+		// not writing to this perf channel
+
+		return TraceDqr::DQERR_OK;
+	}
+
+//	printf("--> processITCPerf(): data: 0x%08x address: 0x%08x state:%d core:%d\n",data,addr,state[coreId],coreId);
+
+	while (!consumed) {
+		switch (state[coreId]) {
+		case perfStateSync:
+//			printf("state sync\n");
+			if (data == markerValue) {
+				state[coreId] = perfStateStart;
+			}
+			else if (data == funcMarkerValue) {
+				state[coreId] = perfStateFuncStart;
+			}
+			else {
+				consumed = true;
+			}
+			break;
+
+		// states for timer and manual perf data parsing
+
+		case perfStateStart:
+//			printf("state start\n");
+			if (data == markerValue) {
+				state[coreId] = perfStateGetMarkerMask;
+				consumed = true;
+			}
+			else if (data == funcMarkerValue) {
+				state[coreId] = perfStateSync;
+			}
+			else {
+				// should be an instruction pointer
+
+				if (data & 1) {
+					savedLow32[coreId] = data ^ 1;
+					state[coreId] = perfStateGetAddrH;
+				}
+				else {
+					lastAddress[coreId] = data;
+
+					emitPerfAddr(coreId,ts,lastAddress[coreId]);
+
+					if (cntrMask[coreId] != 0) {
+						state[coreId] = perfStateGetCntr;
+						cntrMaskIndex[coreId] = 0;
+
+						// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+						while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+							cntrMaskIndex[coreId] += 1;
+						}
+					}
+					else {
+						state[coreId] = perfStateStart; // already in this state, but won't hurt
+					}
+				}
+				consumed = true;
+			}
+			break;
+		case perfStateGetAddrH:
+			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
+
+			emitPerfAddr(coreId,ts,lastAddress[coreId]);
+
+			if (cntrMask[coreId] == 0) {
+				state[coreId] = perfStateStart;
+			}
+			else {
+				state[coreId] = perfStateGetCntr;
+
+				cntrMaskIndex[coreId] = 0;
+
+				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+			}
+
+			consumed = true;
+			break;
+		case perfStateGetCntr:
+			if (addr & 0x3) {
+				// havea partial write - extention of previous write
+
+				if (cntrValPending[coreId] == false) {
+					state[coreId] = perfStateError;
+					return TraceDqr::DQERR_ERR;
+				}
+
+				emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+
+				cntrValPending[coreId] = false;
+
+				cntrMaskIndex[coreId] += 1;
+
+				while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+
+				if (cntrMaskIndex[coreId] >= 32) {
+					// out of counter defs, go to start state
+
+					state[coreId] = perfStateStart;
+				}
+
+				consumed = true;
+			}
+			else {
+				// have a full write
+
+				if (cntrValPending[coreId]) {
+					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+
+					cntrMaskIndex[coreId] += 1;
+
+					while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+						cntrMaskIndex[coreId] += 1;
+					}
+
+					if (cntrMaskIndex[coreId] >= 32) {
+						// out of counter defs, go to start state
+
+						cntrValPending[coreId] = false;
+
+						state[coreId] = perfStateStart;
+
+						// don't return, just loop again and reprocess this value!! Leave consumed == false to make it happen
+					}
+					else {
+						savedLow32[coreId] = data;
+						cntrValPending[coreId] = true;
+
+						consumed = true;
+					}
+				}
+				else {
+					savedLow32[coreId] = data;
+					cntrValPending[coreId] = true;
+
+					consumed = true;
+				}
+			}
+			break;
+		case perfStateGetMarkerMask:
+			cntrMask[coreId] = data;
+			cntrMaskIndex[coreId] = 3; // skip over cntr 0 - 2; they are fixed function and not programmable
+
+			if (cntrMask[coreId] < (1 << 3)) {
+				// no counter defs - goto start
+				state[coreId] = perfStateStart;
+			}
+			else {
+				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+
+				state[coreId] = perfStateGetCounterDefs;
+			}
+
+			emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
+
+			consumed = true;
+			break;
+		case perfStateGetCounterDefs:
+			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
+
+			savedLow32[coreId] = data;
+
+			state[coreId] = perfStateGetCounterDefsH;
+
+			consumed = true;
+			break;
+		case perfStateGetCounterDefsH:
+			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
+
+			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+
+			cntrMaskIndex[coreId] += 1;
+
+			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+				cntrMaskIndex[coreId] += 1;
+			}
+
+			if (cntrMaskIndex[coreId] >= 32) {
+				// out of counter defs, go to start state
+
+				state[coreId] = perfStateStart;
+			}
+
+			consumed = true;
+			break;
+
+		// states for function entry/exit parsing
+
+		case perfStateFuncStart:
+//			printf("state func start: 0x%08x\n",data);
+
+			if (data == funcMarkerValue) {
+				state[coreId] = perfStateFuncGetMarkerMask;
+				consumed = true;
+			}
+			else if (data == markerValue) {
+				state[coreId] = perfStateSync;
+			}
+			else if ((addr & 0x3) == 3) {
+				if (data == 'C') {
+					state[coreId] = perfStateFuncCallStart;
+				}
+				else {
+					state[coreId] = perfStateError;
+				}
+				consumed = true;
+			}
+			else {
+				state[coreId] = perfStateFuncReturnStart;
+			}
+			break;
+		case perfStateFuncCallStart:
+//			printf("state perfStatFuncCallstart: %08x\n",data);
+			if (data & 1) {
+				savedLow32[coreId] = data ^ 1;
+				state[coreId] = perfStateFuncCallGetfnAddrH;
+			}
+			else {
+				lastAddress[coreId] = data;
+				state[coreId] = perfStateFuncGetCallSite;
+			}
+			consumed = true;
+			break;
+		case perfStateFuncCallGetfnAddrH:
+//			printf("state perfStateFuncCallGetfnAddrH: 0x%08x\n",data);
+			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
+			state[coreId] = perfStateFuncGetCallSite;
+			consumed = true;
+			break;
+		case perfStateFuncGetCallSite:
+//			printf("state perfStateFuncGetCallSite: 0x%08x\n",data);
+			if (data & 1) {
+				savedLow32[coreId] = data ^ 1;
+				state[coreId] = perfStateFuncGetCallSiteH;
+			}
+			else {
+				emitPerfFnEntry(coreId,ts,lastAddress[coreId],(uint64_t)data);
+
+				if (cntrMask[coreId] != 0) {
+					state[coreId] = perfStateFuncGetCntr;
+					cntrMaskIndex[coreId] = 0;
+
+					// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+						cntrMaskIndex[coreId] += 1;
+					}
+				}
+				else {
+					state[coreId] = perfStateFuncStart;
+				}
+			}
+			consumed = true;
+			break;
+		case perfStateFuncGetCallSiteH:
+//			printf("state perfStateFuncGetCallSiteH: 0x%08x\n",data);
+			emitPerfFnEntry(coreId,ts,lastAddress[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+
+			if (cntrMask[coreId] != 0) {
+				state[coreId] = perfStateFuncGetCntr;
+				cntrMaskIndex[coreId] = 0;
+
+				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+			}
+			else {
+				state[coreId] = perfStateFuncStart;
+			}
+			consumed = true;
+			break;
+		case perfStateFuncReturnStart:
+//			printf("state perfStateFuncReturnStart: 0x%08x\n",data);
+			if (data & 1) {
+				savedLow32[coreId] = data ^ 1;
+				state[coreId] = perfStateFuncReturnStartH;
+			}
+			else {
+				lastAddress[coreId] = data;
+				state[coreId] = perfStateFuncReturnGetCallSite;
+			}
+			consumed = true;
+			break;
+		case perfStateFuncReturnStartH:
+//			printf("state perfStateFuncReturnStartH: 0x%08x\n",data);
+
+			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
+			state[coreId] = perfStateFuncReturnGetCallSite;
+			consumed = true;
+			break;
+		case perfStateFuncReturnGetCallSite:
+//			printf("state perfStateFuncReturnGetCallSite: 0x%08x\n",data);
+
+			if (data & 1) {
+				savedLow32[coreId] = data ^ 1;
+				state[coreId] = perfStateFuncReturnGetCallSiteH;
+			}
+			else {
+				emitPerfFnExit(coreId,ts,lastAddress[coreId],(uint64_t)data);
+
+				if (cntrMask[coreId] != 0) {
+					state[coreId] = perfStateFuncGetCntr;
+					cntrMaskIndex[coreId] = 0;
+
+					// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+						cntrMaskIndex[coreId] += 1;
+					}
+				}
+				else {
+					state[coreId] = perfStateFuncStart;
+				}
+			}
+			consumed = true;
+			break;
+		case perfStateFuncReturnGetCallSiteH:
+//			printf("state perfStateFuncReturnGetCallSiteH: 0x%08x\n",data);
+
+			emitPerfFnExit(coreId,ts,lastAddress[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+
+			if (cntrMask[coreId] != 0) {
+				state[coreId] = perfStateFuncGetCntr;
+				cntrMaskIndex[coreId] = 0;
+
+				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+			}
+			else {
+				state[coreId] = perfStateFuncStart;
+			}
+			consumed = true;
+			break;
+		case perfStateFuncGetCntr:
+//			printf("state perfStateFuncGetCntr: 0x%08x\n",data);
+
+			if ((addr & 0x03) == 3) {
+				if (cntrValPending[coreId]) {
+					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+					cntrValPending[coreId] = false;
+				}
+
+				state[coreId] = perfStateFuncStart;
+			}
+			else if (addr & 0x3) {
+				// havea partial write - extention of previous write
+
+				if (cntrValPending[coreId] == false) {
+					state[coreId] = perfStateError;
+					return TraceDqr::DQERR_ERR;
+				}
+
+				emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+
+				cntrValPending[coreId] = false;
+
+				cntrMaskIndex[coreId] += 1;
+
+				while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+
+				if (cntrMaskIndex[coreId] >= 32) {
+					// out of counter defs, go to start state
+
+					state[coreId] = perfStateFuncStart;
+				}
+
+				consumed = true;
+			}
+			else {
+				// have a full write
+
+				if (cntrValPending[coreId]) { // flush pending, add new to pending
+					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+
+					cntrValPending[coreId] = false;
+
+					cntrMaskIndex[coreId] += 1;
+
+					while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+						cntrMaskIndex[coreId] += 1;
+					}
+
+					if (cntrMaskIndex[coreId] >= 32) {
+						// out of counter defs, go to start state
+
+						state[coreId] = perfStateFuncStart;
+
+						// don't return, just loop again and reprocess this value!! Leave consumed == false to make it happen
+					}
+					else {
+						savedLow32[coreId] = data;
+						cntrValPending[coreId] = true;
+
+						consumed = true;
+					}
+				}
+				else {
+					savedLow32[coreId] = data;
+					cntrValPending[coreId] = true;
+
+					consumed = true;
+				}
+			}
+			break;
+		case perfStateFuncGetMarkerMask:
+//			printf("state perfStateFuncGetMarkerMask: 0x%08x\n",data);
+
+			cntrMask[coreId] = data;
+			cntrMaskIndex[coreId] = 3;  // skip over cntr 0 - 2; they are fixed function and not programmable
+
+			if (cntrMask[coreId] < (1 << 3)) {
+				// no counter defs - goto start
+				state[coreId] = perfStateFuncStart;
+			}
+			else {
+				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+					cntrMaskIndex[coreId] += 1;
+				}
+
+				state[coreId] = perfStateFuncGetCounterDefs;
+			}
+
+			emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
+
+			consumed = true;
+			break;
+		case perfStateFuncGetCounterDefs:
+//			printf("state perfStateFuncGetCounterDefs: 0x%08x\n",data);
+
+			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
+
+			savedLow32[coreId] = data;
+			state[coreId] = perfStateFuncGetCounterDefsH;
+			consumed = true;
+			break;
+		case perfStateFuncGetCounterDefsH:
+//			printf("state perfStateFuncGetCounterDefsH: 0x%08x\n",data);
+
+			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
+
+			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+
+			cntrMaskIndex[coreId] += 1;
+
+			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+				cntrMaskIndex[coreId] += 1;
+			}
+
+			if (cntrMaskIndex[coreId] >= 32) {
+				// out of counter defs, go to start state
+
+				state[coreId] = perfStateFuncStart;
+			}
+
+			consumed = true;
+			break;
+
+		case perfStateError:
+//			printf("state perfStateError: 0x%08x\n",data);
+
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 EventConverter::EventConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t freq)
 {
 	for (int i = 0; i < (int)(sizeof eventFDs / sizeof eventFDs[0]); i++) {
@@ -1608,7 +2534,7 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -1676,7 +2602,7 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -1804,7 +2730,7 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -1884,7 +2810,7 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -1947,7 +2873,7 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -2030,7 +2956,7 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -2093,7 +3019,7 @@ TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -2176,7 +3102,7 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 		int f;
 
 		strcpy(fileInfoBuff,"\n");
-		f = sizeof "\n";
+		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
 			int   rc;
@@ -2899,6 +3825,11 @@ TraceSettings::TraceSettings()
 	itcPrintOpts = TraceDqr::ITC_OPT_NLS;
 	itcPrintBufferSize = 4096;
 	itcPrintChannel = 0;
+	itcPerfEnable = false;
+	itcPerfMask = 0;
+	itcPerfChannel = 6;
+	itcPerfMarkerValue = (uint32_t)(('p' << 24) | ('e' << 16) | ('r' << 8) | ('f' << 0));
+	itcPerfFuncMarkerValue = (uint32_t)(('f' << 24) | ('u' << 16) | ('n' << 8) | ('c' << 0));
 	cutPath = nullptr;
 	srcRoot = nullptr;
 	pathType = TraceDqr::PATH_TO_UNIX;
@@ -3008,6 +3939,41 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
+			else if (strcasecmp("trace.config.int.itc.perf",name) == 0) {
+				rc = propertyToITCPerfEnable(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set ITC perf enable flag in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("trace.config.int.itc.perf.channel",name) == 0) {
+				rc = propertyToITCPerfChannel(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set ITC perf channel in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("trace.config.int.itc.perf.marker",name) == 0) {
+				rc = propertyToITCPerfMarkerValue(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set ITC perf marker value in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("trace.config.int.itc.perf.functionmarker",name) == 0) {
+				rc = propertyToITCPerfFuncMarkerValue(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set ITC perf funciton marker value in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("trace.config.int.itc.perf.mask",name) == 0) {
+				rc = propertyToITCPerfMask(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set ITC perf mask in settings\n");
+					return rc;
+				}
+			}
 			else if (strcasecmp("source.root",name) == 0) {
 				rc = propertyToSrcRoot(value);
 				if (rc != TraceDqr::DQERR_OK) {
@@ -3108,6 +4074,15 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 			}
 		}
 	} while (rc == TraceDqr::DQERR_OK);
+
+	// make sure perf and print channel are not the same!!
+
+	if (itcPerfEnable && (itcPrintOpts & TraceDqr::ITC_OPT_PRINT)) {
+		if (itcPrintChannel == itcPerfChannel) {
+			printf("Error: TraceSettings::addSettings(): itcPrintChannel and itcPerfChannel cannot be the same\n");
+			return TraceDqr::DQERR_ERR;
+		}
+	}
 
 	if (rc != TraceDqr::DQERR_EOF) {
 		printf("Error: TraceSettings::addSettings(): problem parsing properties file: %d\n",rc);
@@ -3255,6 +4230,87 @@ TraceDqr::DQErr TraceSettings::propertyToITCPrintBufferSize(char *value)
 		char *endp;
 
 		itcPrintBufferSize = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToITCPerfEnable(char *value)
+{
+	TraceDqr::DQErr rc;
+	bool opts;
+
+	rc = propertyToBool(value,opts);
+
+	if (rc != TraceDqr::DQERR_OK) {
+		return rc;
+	}
+
+	if (opts) {
+		itcPerfEnable = true;
+	}
+	else {
+		itcPerfEnable = false;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToITCPerfChannel(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		itcPerfChannel = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToITCPerfMarkerValue(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		itcPerfMarkerValue = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToITCPerfFuncMarkerValue(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		itcPerfFuncMarkerValue = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToITCPerfMask(char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		itcPerfMask = strtol(value,&endp,0);
 
 		if (endp == value) {
 			return TraceDqr::DQERR_ERR;
@@ -3734,7 +4790,11 @@ TraceDqr::DQErr propertiesParser::getNextProperty(char **name,char **value)
 		if (nameStart == nameEnd) {
 			nextLine += 1;
 		}
-	} while (nameStart == nameEnd);
+	} while ((nameStart == nameEnd) && (nextLine < numLines));
+
+	if (nextLine >= numLines) {
+		return TraceDqr::DQERR_EOF;
+	}
 
 	// check if we got a name, or an '='
 
@@ -3896,6 +4956,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	ctf          = nullptr;
 	eventConverter = nullptr;
 	eventFilterMask = 0;
+	perfConverter = nullptr;
 
 	syncCount = 0;
 	caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -4169,6 +5230,34 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		}
 	}
 
+	if (settings.itcPerfEnable != false) {
+
+		// verify itc print (if enabled) and perf are not using the same channel
+
+		if ((settings.itcPrintChannel == settings.itcPerfChannel) && (settings.itcPrintOpts != TraceDqr::ITC_OPT_NONE) && (settings.itcPrintOpts != TraceDqr::ITC_OPT_NLS)) {
+			printf("ITC Print Channel and ITC PerfChannel cannot be the same (%d)\n",settings.itcPrintChannel);
+
+			status = TraceDqr::DQERR_ERR;
+			return status;
+		}
+
+		// Do the code below only after setting efName above
+
+		int perfChannel;
+		uint32_t markerValue;
+		uint32_t funcMarkerValue;
+
+		perfChannel = settings.itcPerfChannel;
+		markerValue = settings.itcPerfMarkerValue;
+		funcMarkerValue = settings.itcPerfFuncMarkerValue;
+
+		rc = enablePerfConverter(perfChannel,markerValue,funcMarkerValue);
+		if (rc != TraceDqr::DQERR_OK) {
+			status = rc;
+			return status;
+		}
+	}
+
 	if ((settings.cutPath != nullptr) || (settings.srcRoot != nullptr)) {
 		rc = subSrcPath(settings.cutPath,settings.srcRoot);
 		if (rc != TraceDqr::DQERR_OK) {
@@ -4265,6 +5354,11 @@ void Trace::cleanUp()
 	if (eventConverter != nullptr) {
 		delete eventConverter;
 		eventConverter = nullptr;
+	}
+
+	if (perfConverter != nullptr) {
+		delete perfConverter;
+		perfConverter = nullptr;
 	}
 }
 
@@ -4395,6 +5489,27 @@ TraceDqr::DQErr Trace::enableCTFConverter(int64_t startTime,char *hostName)
 	ctf = new CTFConverter(efName,rtdName,1 << srcbits,getArchSize(),freq,startTime,hostName);
 
 	status = ctf->getStatus();
+	if (status != TraceDqr::DQERR_OK) {
+		return status;
+	}
+
+	return status;
+}
+
+TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel,uint32_t markerValue,uint32_t funcMarkerValue)
+{
+	if (perfConverter != nullptr) {
+		delete perfConverter;
+		perfConverter = nullptr;
+	}
+
+	if (efName == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	perfConverter = new PerfConverter(efName,rtdName,disassembler,1 << srcbits,perfChannel,markerValue,funcMarkerValue,freq);
+
+	status = perfConverter->getStatus();
 	if (status != TraceDqr::DQERR_OK) {
 		return status;
 	}
@@ -5535,8 +6650,10 @@ TraceDqr::DQErr Trace::nextCAAddr(TraceDqr::ADDRESS &addr,TraceDqr::ADDRESS &sav
 // adjust pc, faddr, timestamp based on faddr, uaddr, timestamp, and message type.
 // Do not adjust counts! They are handled elsewhere
 
-TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts)
+TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts,bool &consumed)
 {
+	consumed = false;
+
 	switch (nm.tcode) {
 	case TraceDqr::TCODE_ERROR:
 		if (nm.haveTimestamp) {
@@ -5548,9 +6665,21 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		faddr = 0;
 		pc = 0;
 		break;
+	case TraceDqr::TCODE_DATA_ACQUISITION:
+		if (nm.haveTimestamp) {
+			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
+		}
+
+		if (perfConverter != nullptr) { // or should this be a general itc process thing?? could we process all itc messages here?
+			TraceDqr::DQErr rc;
+			rc = perfConverter->processITCPerf(nm.coreId,ts,nm.dataAcquisition.idTag,nm.dataAcquisition.data,consumed);
+			if (rc != TraceDqr::DQERR_OK) {
+				return rc;
+			}
+		}
+		break;
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
 	case TraceDqr::TCODE_DIRECT_BRANCH:
-	case TraceDqr::TCODE_DATA_ACQUISITION:
 	case TraceDqr::TCODE_AUXACCESS_WRITE:
 	case TraceDqr::TCODE_RESOURCEFULL:
 	case TraceDqr::TCODE_CORRELATION:
@@ -6168,6 +7297,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 	uint8_t loadInProcess;
 	uint8_t storeInProcess;
 
+	bool consumed = false;
+
 	Instruction  **savedInstPtr = nullptr;
 	NexusMessage **savedMsgPtr = nullptr;
 	Source       **savedSrcPtr = nullptr;
@@ -6312,7 +7443,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 		switch (state[currentCore]) {
 		case TRACE_STATE_SYNCCATE:	// Looking for a CA trace sync
-//			printf("TRACE_STATE_SYNCCATE\n");
+			// printf("TRACE_STATE_SYNCCATE\n");
 
 			if (caTrace == nullptr) {
 				// have an error! Should never have TRACE_STATE_SYNC without a caTrace ptr
@@ -6330,7 +7461,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			switch (nm.tcode) {
 			case TraceDqr::TCODE_ERROR:
 				// reset time. Messages have been missed. Address may not still be 0 if we have seen a sync
-                                // message without an exit debug or start trace sync reason, so reset address
+                // message without an exit debug or start trace sync reason, so reset address
 
 				lastTime[currentCore] = 0;
 				currentAddress[currentCore] = 0;
@@ -6344,7 +7475,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.currentAddress = currentAddress[currentCore];
 					messageInfo.time = lastTime[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -6379,7 +7510,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 		                // we may have a valid address and time already if we saw a sync without an exit debug				        // or start trace sync reason. So call processTraceMessage()
 
 				if (lastFaddr[currentCore] != 0) {
-					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 					if (rc != TraceDqr::DQERR_OK) {
 						printf("Error: NextInstruction(): state TRACE_STATE_SYNCCATE: processTraceMessage()\n");
 
@@ -6399,7 +7530,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.currentAddress = currentAddress[currentCore];
 					messageInfo.time = lastTime[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -6439,7 +7570,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					// a correlation message
 					// probably should never get here when doing a CA trace.
 
-					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 					if (rc != TraceDqr::DQERR_OK) {
 						printf("Error: NextInstruction(): state TRACE_STATE_SYNCCATE: processTraceMessage()\n");
 
@@ -6457,7 +7588,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 						messageInfo.currentAddress = nm.getF_Addr() << 1;
 
-						if (messageInfo.processITCPrintData(itcPrint) == false) {
+						if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 							*msgInfo = &messageInfo;
 						}
 					}
@@ -6492,7 +7623,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				case TraceDqr::ICT_CONTEXT:
 				case TraceDqr::ICT_WATCHPOINT:
 				case TraceDqr::ICT_PC_SAMPLE:
-					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+					rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 					if (rc != TraceDqr::DQERR_OK) {
 						printf("Error: NextInstruction(): state TRACE_STATE_SYNCCATE: processTraceMessage()\n");
 
@@ -6510,7 +7641,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 						messageInfo.currentAddress = nm.getF_Addr() << 1;
 
-						if (messageInfo.processITCPrintData(itcPrint) == false) {
+						if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 							*msgInfo = &messageInfo;
 						}
 					}
@@ -6539,7 +7670,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
                 	}
 
                 	if (returnFlag) {
-                		rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+                		rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 						if (rc != TraceDqr::DQERR_OK) {
 							printf("Error: NextInstruction(): state TRACE_STATE_SYNCCATE: processTraceMessage()\n");
 
@@ -6557,7 +7688,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 							messageInfo.currentAddress = nm.getF_Addr() << 1;
 
-							if (messageInfo.processITCPrintData(itcPrint) == false) {
+							if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 								*msgInfo = &messageInfo;
 							}
 						}
@@ -6661,8 +7792,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 		case TRACE_STATE_GETFIRSTSYNCMSG:
 			// start here for normal traces
 
-//			printf("TRACE_STATE_GETFIRSTSYNCMSG\n");
-
 			// read trace messages until a sync is found. Should be the first message normally
 			// unless the wrapped buffer
 
@@ -6674,7 +7803,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
-				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
 
@@ -6697,7 +7826,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				// this may set the timestamp, and and may set the address
 				// all set the address except control(0,0) which is used just to set the timestamp at most
 
-				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
 
@@ -6751,11 +7880,21 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					state[currentCore] = TRACE_STATE_GETMSGWITHCOUNT;
 				}
 				break;
+			case TraceDqr::TCODE_DATA_ACQUISITION:
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 			case TraceDqr::TCODE_DIRECT_BRANCH:
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
-			case TraceDqr::TCODE_DATA_ACQUISITION:
 			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
 			case TraceDqr::TCODE_RESOURCEFULL:
 			case TraceDqr::TCODE_CORRELATION:
@@ -6799,7 +7938,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				messageInfo.time = lastTime[currentCore];
 
-				if (messageInfo.processITCPrintData(itcPrint) == false) {
+				if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 					*msgInfo = &messageInfo;
 				}
 			}
@@ -6850,7 +7989,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 				// these message have no counts so they will be retired immediately
 
-				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: NextInstruction(): state TRACE_STATE_GETMSGWITHCOUNT: processTraceMessage()\n");
 
@@ -6905,7 +8044,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = addr;
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -6940,9 +8079,34 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				readNewTraceMessage = true;
 
 				return status;
+			case TraceDqr::TCODE_DATA_ACQUISITION:
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_GETMSGWITHCOUNT: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+
+				// for now, return message;
+
+				if (msgInfo != nullptr) {
+					messageInfo = nm;
+					messageInfo.time = lastTime[currentCore];
+					messageInfo.currentAddress = currentAddress[currentCore];
+
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
+						*msgInfo = &messageInfo;
+					}
+				}
+
+				readNewTraceMessage = true;
+
+				return status;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
-			case TraceDqr::TCODE_DATA_ACQUISITION:
 				// these message have no address or count info, so we still need to get
 				// another message.
 
@@ -6959,7 +8123,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -6999,7 +8163,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
 			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 			case TraceDqr::TCODE_RESOURCEFULL:
-				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: NextInstruction(): state TRACE_STATE_RETIREMESSAGE: processTraceMessage()\n");
 
@@ -7015,7 +8179,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -7096,7 +8260,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					messageInfo.currentAddress = lastFaddr[currentCore] + nm.correlation.i_cnt*2;
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -7166,7 +8330,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 				// these message have no counts so they will be retired immeadiately
 
-				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore]);
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: NextInstruction(): state TRACE_STATE_GETMSGWITHCOUNT: processTraceMessage()\n");
 
@@ -7221,7 +8385,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = addr;
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -7242,7 +8406,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}
@@ -7252,6 +8416,31 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				return status;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
 			case TraceDqr::TCODE_DATA_ACQUISITION:
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_GETNXTMSG: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+
+				// for now, return message;
+
+				if (msgInfo != nullptr) {
+					messageInfo = nm;
+					messageInfo.time = lastTime[currentCore];
+					messageInfo.currentAddress = currentAddress[currentCore];
+
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
+						*msgInfo = &messageInfo;
+					}
+				}
+
+				readNewTraceMessage = true;
+
+				return status;
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 				// retire these instantly by returning them through msgInfo
 
@@ -7264,7 +8453,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
+					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
 						*msgInfo = &messageInfo;
 					}
 				}

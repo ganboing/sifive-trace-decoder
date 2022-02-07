@@ -335,6 +335,11 @@ public:
 	TraceDqr::DQErr propertyToITCPrintOpts(char *value);
 	TraceDqr::DQErr propertyToITCPrintBufferSize(char *value);
 	TraceDqr::DQErr propertyToITCPrintChannel(char *value);
+	TraceDqr::DQErr propertyToITCPerfEnable(char *value);
+	TraceDqr::DQErr propertyToITCPerfChannel(char *value);
+	TraceDqr::DQErr propertyToITCPerfMarkerValue(char *value);
+	TraceDqr::DQErr propertyToITCPerfFuncMarkerValue(char *value);
+	TraceDqr::DQErr propertyToITCPerfMask(char *value);
 	TraceDqr::DQErr propertyToSrcRoot(char *value);
 	TraceDqr::DQErr propertyToSrcCutPath(char *value);
 	TraceDqr::DQErr propertyToCAName(char *value);
@@ -371,6 +376,12 @@ public:
 	bool eventConversionEnable;
 	char *hostName;
 	bool filterControlEvents;
+
+	bool itcPerfEnable;
+	int itcPerfChannel;
+	uint32_t itcPerfMarkerValue;
+	uint32_t itcPerfFuncMarkerValue;
+	uint32_t itcPerfMask;
 
 private:
 	TraceDqr::DQErr propertyToBool(char *src,bool &value);
@@ -466,7 +477,116 @@ private:
 	bool headerFlag[DQR_MAXCORES];
 };
 
-// class EventConverter: class to convert nexus messages to Evebt files
+// class PerfConverter: class to convert nexus data acquistion messages into perf files
+
+class PerfConverter {
+public:
+	PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t channel,uint32_t marker,uint32_t funcMarker,uint32_t freq);
+	~PerfConverter();
+
+	TraceDqr::DQErr processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,uint32_t addr,uint32_t data,bool &consumed);
+
+	TraceDqr::DQErr getStatus() { return status; }
+
+private:
+	enum perfConverterState {
+		perfStateSync,
+		perfStateStart,
+		perfStateGetMarkerMask,
+		perfStateGetAddrH,
+		perfStateGetCntr,
+		perfStateGetCounterDefs,
+		perfStateGetCounterDefsH,
+		perfStateFuncStart,
+		perfStateFuncGetMarkerMask,
+		perfStateFuncCallStart,
+		perfStateFuncReturnStart,
+		perfStateFuncReturnStartH,
+		perfStateFuncReturnGetCallSite,
+		perfStateFuncReturnGetCallSiteH,
+		perfStateFuncCallGetfnAddrH,
+		perfStateFuncGetCallSite,
+		perfStateFuncGetCallSiteH,
+		perfStateFuncGetCntr,
+		perfStateFuncGetCounterDefs,
+		perfStateFuncGetCounterDefsH,
+		perfStateError,
+	};
+
+	enum pt_numPerfTypes {
+
+	};
+	enum perfClass_t {
+		pt_0Index,
+		pt_1Index,
+		pt_2Index,
+		pt_3Index,
+		pt_4Index,
+		pt_5Index,
+		pt_6Index,
+		pt_7Index,
+		pt_8Index,
+		pt_9Index,
+		pt_10Index,
+		pt_11Index,
+		pt_12Index,
+		pt_13Index,
+		pt_14Index,
+		pt_15Index,
+		pt_16Index,
+		pt_17Index,
+		pt_18Index,
+		pt_19Index,
+		pt_20Index,
+		pt_21Index,
+		pt_22Index,
+		pt_23Index,
+		pt_24Index,
+		pt_25Index,
+		pt_26Index,
+		pt_27Index,
+		pt_28Index,
+		pt_29Index,
+		pt_30Index,
+		pt_31Index,
+		pt_addressIndex,
+		pt_fnIndex,
+		pt_numPerfTypes
+	};
+
+	TraceDqr::DQErr status;
+
+	uint32_t frequency;
+
+	int perfFDs[pt_numPerfTypes];
+	int perfFD;
+
+	char *elfNamePath;
+
+	char perfNameGen[512];
+
+	class Disassembler *disassembler;
+
+	uint32_t perfChannel;
+	perfConverterState state[DQR_MAXCORES];
+
+	uint32_t markerValue;
+	uint32_t funcMarkerValue;
+	uint32_t cntrMaskIndex[DQR_MAXCORES];
+	uint32_t cntrMask[DQR_MAXCORES];
+	bool     cntrValPending[DQR_MAXCORES];
+	uint32_t savedLow32[DQR_MAXCORES];
+	TraceDqr::ADDRESS lastAddress[DQR_MAXCORES];
+
+	TraceDqr::DQErr emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc);
+	TraceDqr::DQErr emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS callSite);
+	TraceDqr::DQErr emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS fnAddr,TraceDqr::ADDRESS callSite);
+	TraceDqr::DQErr emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc,int cntrIndex,uint64_t cntrVal);
+	TraceDqr::DQErr emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,uint32_t cntrMask);
+	TraceDqr::DQErr emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint64_t cntrDef);
+};
+
+// class EventConverter: class to convert nexus messages to Event files
 
 class EventConverter {
 public:
