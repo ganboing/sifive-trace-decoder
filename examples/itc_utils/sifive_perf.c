@@ -258,18 +258,16 @@ __attribute__((no_instrument_function)) int perfWriteCntrs()
             // write the first 32 bits
             *stimulus = (uint32_t)perfCntrVal;
 
-            // only write one extra byte if needed if it has non-zero data
-
+            // write two extra bytes if needed if val is bigger than 32 bits
 			uint32_t perfCntrValH = (uint32_t)(perfCntrVal >> 32);
 
             if (perfCntrValH != 0) {
                 // block until room in FIFO
                 while (*stimulus == 0) { /* empty */ }
 
-                // write extra 8 bits
-            	uint8_t *stim8 = (uint8_t *)stimulus;
+                // write extra 16 bits
 
-                stim8[3] = (uint8_t)perfCntrValH;
+                ((uint16_t*)stimulus)[1] = (uint16_t)perfCntrValH;
             }
         }
 
@@ -532,10 +530,8 @@ __attribute__((no_instrument_function)) static void perfTimerHandler(int id,void
 	                // block until room in FIFO
 	                while (*stimulus == 0) { /* empty */ }
 
-	                // write extra 8 bits
-	            	uint8_t *stim8 = (uint8_t *)stimulus;
-
-	                stim8[3] = (uint8_t)perfCntrValH;
+	                // write extra 16 bits
+	                ((uint16_t*)stimulus)[1] = (uint16_t)perfCntrValH;
 	            }
 	        }
 
