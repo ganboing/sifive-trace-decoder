@@ -548,9 +548,9 @@ __attribute__((no_instrument_function)) static void perfTimerHandler(int id,void
 
 __attribute__((no_instrument_function)) void __cyg_profile_func_enter(void *this_fn,void *call_site)
 {
-	if (funcTracingEnabled == 0) {
-		return;
-	}
+    if (funcTracingEnabled == 0) {
+        return;
+    }
 
     // use hartID as CPU index
 
@@ -582,58 +582,57 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_enter(void *this
 
     ((uint8_t*)stimulus)[3] = 'C';
 
-    uint64_t fn;
-    uint64_t cs;
+    uint32_t fnL;
+    uint32_t fnH;
+    uint32_t csL;
+    uint32_t csH;
 
-    if (sizeof(void*) > 8) {
-    	fn = (uint64_t)this_fn;
-    	cs = (uint64_t)call_site;
-    }
-    else {
-    	fn = *(uint32_t*)&this_fn;
-    	cs = *(uint32_t*)&call_site;
-    }
+    fnL = (uint32_t)(unsigned long)this_fn;
+    fnH = (uint32_t)((unsigned long)this_fn >> 32);
 
-	if ((fn >> 32) != 0) {
+    csL = (int32_t)(unsigned long)call_site;
+    csH = (int32_t)((unsigned long)call_site >> 32);
+
+    if (fnH != 0) {
         // block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write the first 32 bits, set bit 0 to indicate 64 bit address
-        *stimulus = (uint32_t)fn | 1;
+        *stimulus = fnL | 1;
 
     	// block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write the second 32 bits
-        *stimulus = (uint32_t)(fn >> 32);
+        *stimulus = fnH;
     }
     else {
         // block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write 32 bit pc
-        *stimulus = (uint32_t)fn;
+        *stimulus = fnL;
     }
 
-	if ((cs >> 32) != 0) {
+    if (csH != 0) {
         // block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write the first 32 bits, set bit 0 to indicate 64 bit address
-        *stimulus = (uint32_t)cs | 1;
+        *stimulus = csL | 1;
 
     	// block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write the second 32 bits
-        *stimulus = (uint32_t)(cs >> 32);
+        *stimulus = csH;
     }
     else {
         // block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write 32 bit pc
-        *stimulus = (uint32_t)cs;
+        *stimulus = csL;
     }
 
     int perfCntrIndex = 0;
@@ -657,16 +656,15 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_enter(void *this
 
             // only write one extra byte if needed if it has non-zero data
 
-			uint32_t perfCntrValH = (uint32_t)(perfCntrVal >> 32);
+            uint32_t perfCntrValH = (uint32_t)(perfCntrVal >> 32);
 
             if (perfCntrValH != 0) {
                 // block until room in FIFO
                 while (*stimulus == 0) { /* empty */ }
 
-                // write extra 8 bits
-            	uint8_t *stim8 = (uint8_t *)stimulus;
+                // write extra 16 bits
 
-                stim8[3] = (uint8_t)perfCntrValH;
+		((uint16_t*)stimulus)[1] = (uint16_t)perfCntrValH;
             }
         }
 
@@ -704,58 +702,57 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_exit(void *this_
 
     // need to write some kind of marker so we know this is a func entry
 
-    uint64_t fn;
-    uint64_t cs;
+    uint32_t fnL;
+    uint32_t fnH;
+    uint32_t csL;
+    uint32_t csH;
 
-    if (sizeof(void*) > 8) {
-    	fn = (uint64_t)this_fn;
-    	cs = (uint64_t)call_site;
-    }
-    else {
-    	fn = *(uint32_t*)&this_fn;
-    	cs = *(uint32_t*)&call_site;
-    }
+    fnL = (uint32_t)(unsigned long)this_fn;
+    fnH = (uint32_t)((unsigned long)this_fn >> 32);
 
-	if ((fn >> 32) != 0) {
+    csL = (int32_t)(unsigned long)call_site;
+    csH = (int32_t)((unsigned long)call_site >> 32);
+
+    if (fnH != 0) {
         // block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write the first 32 bits, set bit 0 to indicate 64 bit address
-        *stimulus = (uint32_t)fn | 1;
+        *stimulus = fnL | 1;
 
     	// block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write the second 32 bits
-        *stimulus = (uint32_t)(fn >> 32);
+        *stimulus = fnH;
     }
     else {
         // block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write 32 bit pc
-        *stimulus = (uint32_t)fn;
+        *stimulus = fnL;
     }
 
-	if ((cs >> 32) != 0) {
+    if (csH != 0) {
         // block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write the first 32 bits, set bit 0 to indicate 64 bit address
-        *stimulus = (uint32_t)cs | 1;
+        *stimulus = csL | 1;
 
     	// block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write the second 32 bits
-        *stimulus = (uint32_t)(cs >> 32);
+        *stimulus = csH;
     }
     else {
         // block until room in FIFO
         while (*stimulus == 0) { /* empty */ }
 
         // write 32 bit pc
-        *stimulus = (uint32_t)cs;
+        *stimulus = csL;
     }
 
     int perfCntrIndex = 0;
@@ -779,16 +776,15 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_exit(void *this_
 
             // only write one extra byte if needed if it has non-zero data
 
-			uint32_t perfCntrValH = (uint32_t)(perfCntrVal >> 32);
+            uint32_t perfCntrValH = (uint32_t)(perfCntrVal >> 32);
 
             if (perfCntrValH != 0) {
                 // block until room in FIFO
                 while (*stimulus == 0) { /* empty */ }
 
                 // write extra 8 bits
-            	uint8_t *stim8 = (uint8_t *)stimulus;
 
-                stim8[3] = (uint8_t)perfCntrValH;
+                ((uint16_t*)stimulus)[1] = (uint16_t)perfCntrValH;
             }
         }
 
@@ -796,7 +792,7 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_exit(void *this_
         perfCntrMask >>= 1;
     }
 
-	return;
+    return;
 }
 
 __attribute__((no_instrument_function)) static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntrMask)
