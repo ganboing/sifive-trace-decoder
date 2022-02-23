@@ -546,7 +546,7 @@ Register Manipulation
 #define getTfSink()                     (_getGeneric(fmm->tf_control_register, 0xF0000000, 0x1C))
 
 // The tf impl register
-#define getTfImpl()                     (fmm->tf_control_register)
+#define getTfImpl()                     (fmm->tf_impl_register)
 
 #define getTfVersion()                  (_getGeneric(getTfImpl(), 0xF, 0x0))
 
