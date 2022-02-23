@@ -228,7 +228,15 @@ struct TfTraceRegMemMap{
     uint32_t tf_sink_wp_register;                   //  (0x1c)
     uint32_t tf_sink_rp_register;                   //  (0x20)
     uint32_t tf_sink_data_register;                 //  (0x24)
-    uint32_t reserved_28_DFF[885];                  //  (0x28-0xDFF)
+
+    uint32_t reserved_28_40[6];						//  (28-0x3f)
+
+    uint32_t ts_control_register;					//  (0x40)
+    uint32_t ts_lower_register;						//  (0x44)
+    uint32_t ts_upper_register;						//  (0x48)
+
+    uint32_t reserved_c4_dff[877];					//  (0x4c-0xdff)
+
     uint32_t atb_control_register;                  //  (0xE00)
     uint32_t reserved_E04_Eff[63];                  //  (0xE04-0xEFF)
     uint32_t pib_control_register;                  //  (0xF00)

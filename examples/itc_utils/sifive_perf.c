@@ -51,6 +51,10 @@ extern struct TfTraceRegMemMap volatile * const fmm;
 
 static uint32_t *perfStimulusCPUPairing[PERF_MAX_CORES];
 
+// Pointer to master timestamp lower and upper registers
+
+static uint32_t volatile *masterTs;
+
 // Map core id to perf counters being recorded for that core
 
 static uint32_t perfCounterCPUPairing[PERF_MAX_CORES];
@@ -97,6 +101,25 @@ __attribute__((no_instrument_function)) int perfTraceOff()
 	manualTracingEnabled = 0;
 
 	return 0;
+}
+
+__attribute__((no_instrument_function)) static uint64_t perfReadTsCounter(int core)
+{
+	unsigned int tsL;
+	unsigned int tsH;
+	unsigned int tsH2;
+
+	if (masterTs == NULL) {
+		return 0UL;
+	}
+
+	do {
+		tsH = masterTs[1];
+		tsL = masterTs[0];
+		tsH2 = masterTs[1];
+	} while (tsH != tsH2);
+
+	return (((uint64_t)tsH) << 32) + (uint64_t)tsL;
 }
 
 __attribute__((no_instrument_function)) static void perfEmitMarker(int core,uint32_t perfCntrMask)
@@ -176,6 +199,56 @@ __attribute__((no_instrument_function)) static int perfSetChannel(int core,uint3
 	return 0;
 }
 
+__attribute__((no_instrument_function)) /*static*/ void perfEmitCntrs(int core,uint32_t perfCntrMask)
+{
+    struct metal_cpu *cpu;
+
+    cpu = cachedCPU[core];
+    if (cpu == NULL) {
+    	return;
+    }
+
+    volatile uint32_t *stimulus = perfStimulusCPUPairing[core];
+    int perfCntrIndex = 0;
+
+    while (perfCntrMask != 0) {
+        if (perfCntrMask & 1) {
+            unsigned long long perfCntrVal;
+
+            if (perfCntrIndex == 1) {
+            	perfCntrVal = perfReadTsCounter(core);
+
+//            	perfCntrVal = metal_cpu_get_mtime(cpu);
+            }
+            else {
+            	perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
+            }
+
+            // block until room in FIFO
+            while (*stimulus == 0) { /* empty */ }
+
+            // write the first 32 bits
+            *stimulus = (uint32_t)perfCntrVal;
+
+            // only write one extra byte if needed if it has non-zero data
+
+            uint32_t perfCntrValH = (uint32_t)(perfCntrVal >> 32);
+
+            if (perfCntrValH != 0) {
+                // block until room in FIFO
+                while (*stimulus == 0) { /* empty */ }
+
+                // write extra 8 bits
+
+                ((uint16_t*)stimulus)[1] = (uint16_t)perfCntrValH;
+            }
+        }
+
+        perfCntrIndex += 1;
+        perfCntrMask >>= 1;
+    }
+}
+
 // maybe change the return values to just 0, 1? maybe return the number of writes, or words written, or bytes written??
 
 __attribute__((no_instrument_function)) int perfWriteCntrs()
@@ -239,41 +312,7 @@ __attribute__((no_instrument_function)) int perfWriteCntrs()
         *stimulus = pc;
     }
 
-    int perfCntrIndex = 0;
-
-    while (perfCntrMask != 0) {
-        if (perfCntrMask & 1) {
-            unsigned long long perfCntrVal;
-
-            if (perfCntrIndex == 1) {
-            	perfCntrVal = metal_cpu_get_mtime(cpu);
-            }
-            else {
-            	perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
-            }
-
-            // block until room in FIFO
-            while (*stimulus == 0) { /* empty */ }
-
-            // write the first 32 bits
-            *stimulus = (uint32_t)perfCntrVal;
-
-            // write two extra bytes if needed if val is bigger than 32 bits
-			uint32_t perfCntrValH = (uint32_t)(perfCntrVal >> 32);
-
-            if (perfCntrValH != 0) {
-                // block until room in FIFO
-                while (*stimulus == 0) { /* empty */ }
-
-                // write extra 16 bits
-
-                ((uint16_t*)stimulus)[1] = (uint16_t)perfCntrValH;
-            }
-        }
-
-        perfCntrIndex += 1;
-        perfCntrMask >>= 1;
-    }
+    perfEmitCntrs(hartID,perfCntrMask);
 
 	return 0;
 }
@@ -411,6 +450,8 @@ __attribute__((no_instrument_function)) static int perfCounterInit(int core,perf
             setTfSinkWp(0);
             setTfSinkRp(0);
         }
+
+        masterTs = &fmm->ts_lower_register;
     }
     else {
         if (getTeImplHasSBASink(core)) {
@@ -422,6 +463,10 @@ __attribute__((no_instrument_function)) static int perfCounterInit(int core,perf
         if (getTeImplHasSRAMSink(core)) {
             setTeSinkWp(core,0);
             setTeSinkRp(core,0);
+        }
+
+        if (masterTs == NULL) {
+        	masterTs = &tmm[core]->ts_lower_register;
         }
     }
 
@@ -503,52 +548,29 @@ __attribute__((no_instrument_function)) static void perfTimerHandler(int id,void
 	        *stimulus = (uint32_t)pc;
 	    }
 
-	    int perfCntrIndex = 0;
-
-	    while (perfCntrMask != 0) {
-	        if (perfCntrMask & 1) {
-	            unsigned long long perfCntrVal;
-
-	            if (perfCntrIndex == 1) {
-	            	perfCntrVal = metal_cpu_get_mtime(cpu);
-	            }
-	            else {
-	            	perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
-	            }
-
-	            // block until room in FIFO
-	            while (*stimulus == 0) { /* empty */ }
-
-	            // write the first 32 bits
-	            *stimulus = (uint32_t)perfCntrVal;
-
-	            // only write one extra byte if needed if it has non-zero data
-
-				uint32_t perfCntrValH = (uint32_t)(perfCntrVal >> 32);
-
-	            if (perfCntrValH != 0) {
-	                // block until room in FIFO
-	                while (*stimulus == 0) { /* empty */ }
-
-	                // write extra 16 bits
-	                ((uint16_t*)stimulus)[1] = (uint16_t)perfCntrValH;
-	            }
-	        }
-
-	        perfCntrIndex += 1;
-	        perfCntrMask >>= 1;
-	    }
+	    perfEmitCntrs(hartID,perfCntrMask);
 	}
-    // set time for next interrupt
+
+	// set time for next interrupt
 
     next_mcount += interval;
 
     metal_cpu_set_mtimecmp(cpu, next_mcount);
 }
 
+int volatile infunc = 0;
+
 __attribute__((no_instrument_function)) void __cyg_profile_func_enter(void *this_fn,void *call_site)
 {
+	if (infunc) {
+		printf("Error: Recursive call to __cyg_profile_func_enter()\n");fflush(stdout);
+		return;
+	}
+
+	infunc = 1;
+
     if (funcTracingEnabled == 0) {
+    	infunc = 0;
         return;
     }
 
@@ -561,6 +583,7 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_enter(void *this
 
     cpu = cachedCPU[core];
     if (cpu == NULL) {
+    	infunc = 0;
     	return;
     }
 
@@ -576,9 +599,9 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_enter(void *this
 
     volatile uint32_t *stimulus = perfStimulusCPUPairing[core];
 
-    // need to write some kind of marker so we know this is a func entry
-    // we write a 'C' as a one byte write so we can identify it in the trace.
+    // we write a 'C' as a one byte write so we can identify it in the trace as a function entry
 
+    while (*stimulus == 0) { /* empty */ }
 
     ((uint8_t*)stimulus)[3] = 'C';
 
@@ -635,47 +658,22 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_enter(void *this
         *stimulus = csL;
     }
 
-    int perfCntrIndex = 0;
+    perfEmitCntrs(core,perfCntrMask);
 
-    while (perfCntrMask != 0) {
-        if (perfCntrMask & 1) {
-            unsigned long long perfCntrVal;
-
-            if (perfCntrIndex == 1) {
-            	perfCntrVal = metal_cpu_get_mtime(cpu);
-            }
-            else {
-            	perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
-            }
-
-            // block until room in FIFO
-            while (*stimulus == 0) { /* empty */ }
-
-            // write the first 32 bits
-            *stimulus = (uint32_t)perfCntrVal;
-
-            // only write one extra byte if needed if it has non-zero data
-
-            uint32_t perfCntrValH = (uint32_t)(perfCntrVal >> 32);
-
-            if (perfCntrValH != 0) {
-                // block until room in FIFO
-                while (*stimulus == 0) { /* empty */ }
-
-                // write extra 16 bits
-
-		((uint16_t*)stimulus)[1] = (uint16_t)perfCntrValH;
-            }
-        }
-
-        perfCntrIndex += 1;
-        perfCntrMask >>= 1;
-    }
+	infunc = 0;
 }
 
 __attribute__((no_instrument_function)) void __cyg_profile_func_exit(void *this_fn,void *call_site)
 {
+	if (infunc) {
+		printf("Error: Recursive call to __cyg_profile_func_exit()\n");fflush(stdout);
+		return;
+	}
+
+	infunc = 1;
+
 	if (funcTracingEnabled == 0) {
+		infunc = 0;
 		return;
 	}
 
@@ -699,8 +697,6 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_exit(void *this_
     }
 
     volatile uint32_t *stimulus = perfStimulusCPUPairing[core];
-
-    // need to write some kind of marker so we know this is a func entry
 
     uint32_t fnL;
     uint32_t fnH;
@@ -755,44 +751,9 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_exit(void *this_
         *stimulus = csL;
     }
 
-    int perfCntrIndex = 0;
+    perfEmitCntrs(core,perfCntrMask);
 
-    while (perfCntrMask != 0) {
-        if (perfCntrMask & 1) {
-            unsigned long long perfCntrVal;
-
-            if (perfCntrIndex == 1) {
-            	perfCntrVal = metal_cpu_get_mtime(cpu);
-            }
-            else {
-            	perfCntrVal = metal_hpm_read_counter(cpu, perfCntrIndex);
-            }
-
-            // block until room in FIFO
-            while (*stimulus == 0) { /* empty */ }
-
-            // write the first 32 bits
-            *stimulus = (uint32_t)perfCntrVal;
-
-            // only write one extra byte if needed if it has non-zero data
-
-            uint32_t perfCntrValH = (uint32_t)(perfCntrVal >> 32);
-
-            if (perfCntrValH != 0) {
-                // block until room in FIFO
-                while (*stimulus == 0) { /* empty */ }
-
-                // write extra 8 bits
-
-                ((uint16_t*)stimulus)[1] = (uint16_t)perfCntrValH;
-            }
-        }
-
-        perfCntrIndex += 1;
-        perfCntrMask >>= 1;
-    }
-
-    return;
+	infunc = 0;
 }
 
 __attribute__((no_instrument_function)) static int perfTimerInit(int core,int _interval,int itcChannel,uint32_t perfCntrMask)
