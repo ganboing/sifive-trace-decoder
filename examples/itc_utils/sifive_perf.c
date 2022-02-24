@@ -199,7 +199,7 @@ __attribute__((no_instrument_function)) static int perfSetChannel(int core,uint3
 	return 0;
 }
 
-__attribute__((no_instrument_function)) /*static*/ void perfEmitCntrs(int core,uint32_t perfCntrMask)
+__attribute__((no_instrument_function)) static void perfEmitCntrs(int core,uint32_t perfCntrMask)
 {
     struct metal_cpu *cpu;
 
@@ -611,10 +611,16 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_enter(void *this
     uint32_t csH;
 
     fnL = (uint32_t)(unsigned long)this_fn;
-    fnH = (uint32_t)((unsigned long)this_fn >> 32);
-
     csL = (int32_t)(unsigned long)call_site;
-    csH = (int32_t)((unsigned long)call_site >> 32);
+
+    if (sizeof this_fn > sizeof(uint32_t)) {
+        fnH = (uint32_t)((uint64_t)this_fn >> 32);
+        csH = (int32_t)((uint64_t)call_site >> 32);
+    }
+    else {
+    	fnH = 0;
+    	csH = 0;
+    }
 
     if (fnH != 0) {
         // block until room in FIFO
@@ -704,10 +710,16 @@ __attribute__((no_instrument_function)) void __cyg_profile_func_exit(void *this_
     uint32_t csH;
 
     fnL = (uint32_t)(unsigned long)this_fn;
-    fnH = (uint32_t)((unsigned long)this_fn >> 32);
-
     csL = (int32_t)(unsigned long)call_site;
-    csH = (int32_t)((unsigned long)call_site >> 32);
+
+    if (sizeof this_fn > sizeof(uint32_t)) {
+        fnH = (uint32_t)((uint64_t)this_fn >> 32);
+        csH = (int32_t)((uint64_t)call_site >> 32);
+    }
+    else {
+    	fnH = 0;
+    	csH = 0;
+    }
 
     if (fnH != 0) {
         // block until room in FIFO
