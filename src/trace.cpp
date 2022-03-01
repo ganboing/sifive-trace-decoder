@@ -1979,6 +1979,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			}
 			break;
 		case perfStateGetAddrH:
+//			printf("perfStateGetAddrH\n");
 			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
 
 			emitPerfAddr(coreId,ts,lastAddress[coreId]);
@@ -2001,6 +2002,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			consumed = true;
 			break;
 		case perfStateGetCntr:
+//			printf("perfStateGetCntr\n");
 			if (addr & 0x3) {
 				// havea partial write - extention of previous write
 
@@ -2064,6 +2066,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			}
 			break;
 		case perfStateGetMarkerMask:
+//			printf("perfStateGetMarkerMask\n");
 			cntrMask[coreId] = data;
 			cntrMaskIndex[coreId] = 3; // skip over cntr 0 - 2; they are fixed function and not programmable
 
@@ -2086,6 +2089,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			consumed = true;
 			break;
 		case perfStateGetCounterDefs:
+//			printf("perfStateGetCounterDefs\n");
 			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
 
 			savedLow32[coreId] = data;
@@ -2095,6 +2099,7 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			consumed = true;
 			break;
 		case perfStateGetCounterDefsH:
+//			printf("perfStateGetCounterDefsH\n");
 			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
 
 			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
@@ -2267,9 +2272,10 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 			consumed = true;
 			break;
 		case perfStateFuncGetCntr:
-//			printf("state perfStateFuncGetCntr: 0x%08x\n",data);
+//			printf("state perfStateFuncGetCntr: addr: 0x%08x, data: 0x%08x\n",addr,data);
 
 			if ((addr & 0x03) == 3) {
+				// single byte - this mean new function call start
 				if (cntrValPending[coreId]) {
 					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
 					cntrValPending[coreId] = false;

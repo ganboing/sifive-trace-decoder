@@ -8961,7 +8961,7 @@ TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
 	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
 
 	if (disassembler == nullptr) {
-		printf("Error: ObjFile::setLableMode(): Could n ot create Disassembler object\n");
+		printf("Error: ObjFile::setLabelMode(): Could not create Disassembler object\n");
 
 		status = TraceDqr::DQERR_ERR;
 		return status;
