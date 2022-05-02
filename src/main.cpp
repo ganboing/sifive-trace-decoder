@@ -550,7 +550,7 @@ int main(int argc, char *argv[])
 
 				rc = of->sourceInfo(addr,instInfo,srcInfo);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: cannot get sourceInfo for address 0x%08x\n");
+					printf("Error: cannot get sourceInfo for address 0x%08x\n", addr);
 				}
 
 				printf("For address 0x%08x\n",addr);
