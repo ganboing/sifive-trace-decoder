@@ -551,15 +551,14 @@ int main(int argc, char *argv[])
 				rc = of->sourceInfo(addr,instInfo,srcInfo);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: cannot get sourceInfo for address 0x%08x\n", addr);
+				} else {
+					printf("For address 0x%08x\n",addr);
+					printf("File: %s:%d\n",srcInfo.sourceFile,srcInfo.sourceLineNum);
+					printf("Function: %s\n",srcInfo.sourceFunction);
+					printf("Src: %s\n",srcInfo.sourceLine);
+
+					printf("Label: %s+0x%08x\n",instInfo.addressLabel,instInfo.addressLabelOffset);
 				}
-
-				printf("For address 0x%08x\n",addr);
-				printf("File: %s:%d\n",srcInfo.sourceFile,srcInfo.sourceLineNum);
-				printf("Function: %s\n",srcInfo.sourceFunction);
-				printf("Src: %s\n",srcInfo.sourceLine);
-
-				printf("Label: %s+0x%08x\n",instInfo.addressLabel,instInfo.addressLabelOffset);
-
 				i += 1;
 			}
 
