@@ -42,3 +42,4 @@ install/
 make.log
 packlist.txt
 .vs/
+.vscode/
