@@ -1,27 +1,5 @@
-/*
- * Copyright 2019 Sifive, Inc.
- *
- * main.cpp
- */
-
-/*
-   This file is part of dqr, the SiFive Inc. Risc-V Nexus 2001 trace decoder.
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 3 of the License, or
-   (at your option) any later version.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, see <https://www.gnu.org/licenses/>.
-*/
-
-#include "config.h"
+/* Copyright 2022 SiFive, Inc */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 #include <iostream>
 #include <iomanip>
@@ -35,23 +13,29 @@ using namespace std;
 
 static void usage(char *name)
 {
-	printf("Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] [-btm | -htm] -basename name\n");
-	printf("           [-pf propfile] [-srcbits=nn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]\n");
+	printf("Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] [-od objdump] [-btm | -htm] -basename name\n");
+	printf("           [-sf settingsfile] [-srcbits=n] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]\n");
 	printf("           [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]\n");
 	printf("           [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]\n");
 	printf("           [-noanalytics] [-freq nn] [-tssize=n] [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n]\n");
-	printf("           [-cutpath=<base path>] [-s file] [-r addr] [-labels] [-nolables] [-debug] [-nodebug] [-v] [-h]\n");
+	printf("           [-cutpath=<base path>] [-s file] [-r addr] [-debug] [-nodebug] [-v] [-h]\n");
 	printf("\n");
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
 	printf("-s simfile:   Specify the name of the simulator output file. When using a simulator output file, cannot use\n");
 	printf("              a tracefile (-t option). Can provide an elf file (-e option), but is not required.\n");
-	printf("-pf propfile: Specify a properties file containing information on trace. Properties may be overridden using command\n");
+	printf("-sf propfile: Specify a settings file containing information on trace. Properties may be overridden using command\n");
 	printf("              flags.\n");
+	printf("-p vcdfile:   Specify the name of a PCD file to decode.\n");
 	printf("-ca cafile:   Specify the name of the cycle accurate trace file. Must also specify the -t and -e switches.\n");
 	printf("-catype nn:   Specify the type of the CA trace file. Valid options are none, instruction, and vector\n");
+	printf("-od objdump:  Specify the path and name of the obdjump executable to use. By default uses riscv64-unkonwn-elf-objdump in the\n");
+	printf("              current path unless overridden by the RISCV_PATH environment variable. If not found in either of those, tries the\n");
+	printf("              current working directory.\n");
 	printf("-btm:         Specify the type of the trace file as btm (branch trace messages). On by default.\n");
 	printf("-htm:         Specify the type of the trace file as htm (history trace messages).\n");
+	printf("-pcd:         Process the trace as a PCD trace. Can be used to disambiguate between htm, btm instruction, event, and vcd traces when\n");
+	printf("              using a properties files, or htm and btm traces\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
 	printf("              should be given. The extensions .rtd and .elf will be added to basename.\n");
 	printf("-cutpath=<cutPath>[,<newRoot>]: When searching for source files, <cutPath> is removed from the beginning of thepath name\n");
@@ -100,8 +84,6 @@ static void usage(char *name)
 	printf("              (default).\n");
 	printf("-srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 16. Setting srcbits to 0 disables\n");
 	printf("              multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.\n");
-	printf("-labels:      Treat labels as functions for source information and disassembly. On by default.\n");
-	printf("-nolables:    Do not use local labels as function names when returning source information or instruction location information.\n");
 	printf("-analytics:   Compute and display detail level 1 trace analytics.\n");
 	printf("-analytics=n: Specify the detail level for trace analytics display. N sets the level to either 0 (no analytics display)\n");
 	printf("              1 (sort system totals), or 2 (display analytics by core).\n");
@@ -177,6 +159,8 @@ int main(int argc, char *argv[])
 	char *sf_name = nullptr;
 	char *ca_name = nullptr;
 	char *pf_name = nullptr;
+	char *vf_name = nullptr;
+	const char *od_name = DEFAULTOBJDUMPNAME;
 	char buff[128];
 	int buff_index = 0;
 	bool usage_flag = false;
@@ -200,7 +184,6 @@ int main(int argc, char *argv[])
 	TraceDqr::pathType pt = TraceDqr::PATH_TO_UNIX;
 	int archSize = 32;
 	int msgLevel = 2;
-	bool labelFlag = true;
 	TraceDqr::CATraceType caType = TraceDqr::CATRACE_NONE;
 	TraceDqr::TraceType traceType = TraceDqr::TRACETYPE_BTM;
 	char *cutPath = nullptr;
@@ -247,10 +230,10 @@ int main(int argc, char *argv[])
 
 			ef_name = argv[i];
 		}
-		else if (strcmp("-pf",argv[i]) == 0) {
+		else if (strcmp("-sf",argv[i]) == 0) {
 			i += 1;
 			if (i >= argc) {
-				printf("Error: option -pf requires a file name\n");
+				printf("Error: option -sf requires a file name\n");
 				usage(argv[0]);
 				return 1;
 			}
@@ -267,6 +250,16 @@ int main(int argc, char *argv[])
 
 			ca_name = argv[i];
 		}
+		else if (strcmp("-od",argv[i]) == 0) {
+			i += 1;
+			if (i > argc) {
+				printf("Error: option -od requires a file name/path\n");
+				usage(argv[0]);
+				return 1;
+			}
+
+			od_name = argv[i];
+		}
 		else if (strcmp("-ctf",argv[i]) == 0) {
 			ctf_flag = true;
 		}
@@ -278,6 +271,9 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp("-htm",argv[i]) == 0) {
 			traceType = TraceDqr::TRACETYPE_HTM;
+		}
+		else if (strcmp("-pcd",argv[i]) == 0) {
+			traceType = TraceDqr::TRACETYPE_VCD;
 		}
 		else if (strcmp("-src",argv[i]) == 0) {
 			src_flag = true;
@@ -452,7 +448,7 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
-		else if (strncmp("-tssize=",argv[i],sizeof "-tssize=") == 0) {
+		else if (strncmp("-tssize=",argv[i],strlen("-tssize=")) == 0) {
 			tssize = atoi(argv[i]+strlen("-tssize="));
 
 			if ((tssize <= 0) || (tssize > 64)) {
@@ -495,7 +491,7 @@ int main(int argc, char *argv[])
 
 			sf_name = argv[i];
 		}
-		else if (strncmp("-archsize=",argv[i],sizeof "-archsize=") == 0) {
+		else if (strncmp("-archsize=",argv[i],strlen("-archsize=")) == 0) {
 			archSize = atoi(argv[i]+strlen("-archsize="));
 
 			if ((archSize != 32) && (archSize != 64)) {
@@ -503,7 +499,7 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
-		else if (strncmp("-msglevel=",argv[i],sizeof "-msglevel") == 0) {
+		else if (strncmp("-msglevel=",argv[i],strlen("-msglevel=")) == 0) {
 			msgLevel = atoi(argv[i]+strlen("-msglevel="));
 
 			if ((msgLevel < 0) || (msgLevel > 3)) {
@@ -519,21 +515,19 @@ int main(int argc, char *argv[])
 			}
 
 			if (ef_name == nullptr) {
-				printf("option -r requires first specifying the elf file name (with the -e flag)\n");
+				printf("option -r requires first specifying the ELF file name (with the -e flag)\n");
 				return 1;
 			}
 
 			ObjFile *of;
 			TraceDqr::DQErr rc;
 
-			of = new ObjFile(ef_name);
+			of = new ObjFile(ef_name,od_name);
 			rc = of->getStatus();
 			if (rc != TraceDqr::DQERR_OK) {
 				printf("Error: cannot create ObjFile object\n");
 				return 1;
 			}
-
-			of->setLabelMode(labelFlag);
 
 			while (i < argc) {
 				uint32_t addr;
@@ -550,8 +544,9 @@ int main(int argc, char *argv[])
 
 				rc = of->sourceInfo(addr,instInfo,srcInfo);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: cannot get sourceInfo for address 0x%08x\n", addr);
-				} else {
+					printf("Error: cannot get sourceInfo for address 0x%08x\n",addr);
+				}
+				else {
 					printf("For address 0x%08x\n",addr);
 					printf("File: %s:%d\n",srcInfo.sourceFile,srcInfo.sourceLineNum);
 					printf("Function: %s\n",srcInfo.sourceFunction);
@@ -563,12 +558,6 @@ int main(int argc, char *argv[])
 			}
 
 			return 0;
-		}
-		else if (strcmp("-labels",argv[i]) == 0) {
-			labelFlag = true;
-		}
-		else if (strcmp("-nolabels",argv[i]) == 0) {
-			labelFlag = false;
 		}
 		else if (strcmp("-debug",argv[i]) == 0) {
 			globalDebugFlag = 1;
@@ -596,6 +585,15 @@ int main(int argc, char *argv[])
 				printf("Error: CA Trace type must be either none, instruction, or vector\n");
 				return 1;
 			}
+		}
+		else if (strcmp("-p",argv[i]) == 0) {
+			i += 1;
+			if (i >= argc) {
+				printf("Error: -p flag require a PCD file name\n");
+				return 1;
+			}
+
+			vf_name = argv[i];
 		}
 		else {
 			printf("Unkown option '%s'\n",argv[i]);
@@ -627,17 +625,18 @@ int main(int argc, char *argv[])
 
 	Trace *trace = nullptr;
 	Simulator *sim = nullptr;
+	VCD *vcd = nullptr;
 
 	if (sf_name != nullptr) {
-		if ( ef_name != nullptr) {
-			sim = new (std::nothrow) Simulator(sf_name,ef_name);
-		}
-		else {
-			sim = new (std::nothrow) Simulator(sf_name,archSize);
+		if ( ef_name == nullptr) {
+			printf("Error: Simulator requires an ELF file (-e switch)\n");
+
+			return 1;
 		}
 
+		sim = new (std::nothrow) Simulator(sf_name,ef_name,od_name);
 		if (sim == nullptr) {
-			printf("Error: Could not creat Simulator object\n");
+			printf("Error: Could not create Simulator object\n");
 			return 1;
 		}
 
@@ -659,9 +658,59 @@ int main(int argc, char *argv[])
 			}
 		}
 
-		sim->setLabelMode(labelFlag);
+		srcbits = 1;
 	}
-	else if ((pf_name != nullptr) || (tf_name != nullptr)) {
+	else if ((vf_name != nullptr) || (traceType == TraceDqr::TRACETYPE_VCD)) {
+		if (pf_name != nullptr) {
+			vcd = new (std::nothrow) VCD(pf_name);
+			if (vcd == nullptr) {
+				printf("Error: Could not create VCD object\n");
+				return 1;
+			}
+
+			if (vcd->getStatus() != TraceDqr::DQERR_OK) {
+				delete vcd;
+				vcd = nullptr;
+				printf("Error: new VCD(%s) failed\n",pf_name);
+
+				return 1;
+			}
+		}
+		else {
+			if ( ef_name == nullptr) {
+				printf("Error: -vf switch also requires an ELF file (-e switch)\n");
+
+				return 1;
+			}
+
+			vcd = new (std::nothrow) VCD(vf_name,ef_name,od_name);
+			if (vcd == nullptr) {
+				printf("Error: Could not create VCD object\n");
+				return 1;
+			}
+
+			if (vcd->getStatus() != TraceDqr::DQERR_OK) {
+				delete vcd;
+				vcd = nullptr;
+				printf("Error: new VCD(%s,%s,%s) failed\n",vf_name,ef_name,od_name);
+
+				return 1;
+			}
+
+			if (cutPath != nullptr) {
+				TraceDqr::DQErr rc;
+
+				rc = vcd->subSrcPath(cutPath,newRoot);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Could not set cutPath or newRoot\n");
+					return 1;
+				}
+			}
+		}
+
+		srcbits = 1;
+	}
+	else if ((pf_name != nullptr) || (tf_name != nullptr) || (traceType == TraceDqr::TRACETYPE_BTM) || (traceType == TraceDqr::TRACETYPE_HTM)) {
 		TraceDqr::DQErr rc;
 
 		if (pf_name != nullptr) {
@@ -695,7 +744,7 @@ int main(int argc, char *argv[])
 			}
 		}
 		else {
-			trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,freq);
+			trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,od_name,freq);
 
 			if (trace == nullptr) {
 				printf("Error: Could not create Trace object\n");
@@ -739,8 +788,6 @@ int main(int argc, char *argv[])
 			if (itcPrintOpts != TraceDqr::ITC_OPT_NLS) {
 				trace->setITCPrintOptions(itcPrintOpts,4096,itcPrintChannel);
 			}
-
-			trace->setLabelMode(labelFlag);
 
 			if (ctf_flag != false) {
 				rc = trace->enableCTFConverter(-1,nullptr);
@@ -796,9 +843,14 @@ int main(int argc, char *argv[])
 	uint32_t core_mask = 0;
 	TraceDqr::TIMESTAMP startTime, endTime;
 
+	msgInfo = nullptr;
+
 	do {
 		if (sim != nullptr) {
-			ec = sim->NextInstruction(&instInfo,&msgInfo,&srcInfo);
+			ec = sim->NextInstruction(&instInfo,&srcInfo);
+		}
+		else if (vcd != nullptr) {
+			ec = vcd->NextInstruction(&instInfo,&srcInfo);
 		}
 		else {
 			ec = trace->NextInstruction(&instInfo,&msgInfo,&srcInfo);
@@ -880,16 +932,20 @@ int main(int argc, char *argv[])
 				instInfo->addressToText(dst,sizeof dst,0);
 
 				if (func_flag) {
-					if (srcbits > 0) {
-						printf("[%d] ",instInfo->coreId);
-					}
-					if (instInfo->address != (lastAddress + lastInstSize / 8)) {
+					if (((instInfo->addressLabel != nullptr) && (instInfo->addressLabelOffset == 0)) || (instInfo->address != (lastAddress + lastInstSize / 8))) {
+						if (srcbits > 0) {
+							printf("[%d] ",instInfo->coreId);
+						}
+
 						if (instInfo->addressLabel != nullptr) {
 							printf("<%s",instInfo->addressLabel);
 							if (instInfo->addressLabelOffset != 0) {
 								printf("+%x",instInfo->addressLabelOffset);
 							}
 							printf(">\n");
+						}
+						else {
+							printf("label null\n");
 						}
 					}
 
@@ -903,7 +959,7 @@ int main(int argc, char *argv[])
 
 				int n;
 
-				if (((sim != nullptr) || (ca_name != nullptr)) && (instInfo->timestamp != 0)) {
+				if (((vcd != nullptr) || (sim != nullptr) || (ca_name != nullptr)) && (instInfo->timestamp != 0)) {
 					n = printf("t:%d ",instInfo->timestamp);
 
 					if (instInfo->caFlags & (TraceDqr::CAFLAG_PIPE0 | TraceDqr::CAFLAG_PIPE1)) {
@@ -935,6 +991,17 @@ int main(int argc, char *argv[])
 
 					for (int i = n; i < 14; i++) {
 						printf(" ");
+					}
+				}
+				else if (vcd != nullptr) {
+					if (instInfo->caFlags & TraceDqr::CAFLAG_PIPE0) {
+						n = printf("[0]");
+					}
+					else if (instInfo->caFlags & TraceDqr::CAFLAG_PIPE1) {
+						n = printf("[1]");
+					}
+					else {
+						n = printf("[?]");
 					}
 				}
 
@@ -1146,6 +1213,11 @@ int main(int argc, char *argv[])
 	if (sim != nullptr) {
 		delete sim;
 		sim = nullptr;
+	}
+
+	if (vcd != nullptr) {
+		delete vcd;
+		vcd = nullptr;
 	}
 
 	return 0;

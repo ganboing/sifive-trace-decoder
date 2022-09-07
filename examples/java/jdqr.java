@@ -17,14 +17,14 @@ public class jdqr {
 
   public static void main(String argv[]) {
     System.out.printf("%d elements in argv[]\n",argv.length);
-    if (argv.length != 2) {
-	    System.out.println("Usage: java jdqr <trace-file-name> <elf-file-name>");
+    if (argv.length != 3) {
+	    System.out.println("Usage: java jdqr <trace-file-name> <elf-file-name> <objdump-path>");
 	    System.exit(1);
     }
 
 //    System.out.printf("dqrdll version: %s\n",Trace.version());
  
-    Trace t = new Trace(argv[0],argv[1],32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
+    Trace t = new Trace(argv[0],argv[1],32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0,argv[2]);
     if (t == null) {
       System.out.println("t is null");
       System.exit(1);

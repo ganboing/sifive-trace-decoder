@@ -1,39 +1,10 @@
-/*
- * Copyright 2019 SiFive, Inc.
- *
- * dqr.hpp
- */
-
-/*
-   This file is part of dqr, the SiFive Inc. Risc-V Nexus 2001 trace decoder.
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 3 of the License, or
-   (at your option) any later version.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, see <https://www.gnu.org/licenses/>.
-*/
+/* Copyright 2022 SiFive, Inc */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef DQR_HPP_
 #define DQR_HPP_
 
-// if config.h is not present, uncomment the lines below
-
-//#define PACKAGE 1
-//#define PACKAGE_VERSION 1
-
 // PUBLIC definitions
-
-#include "config.h"
-#include "bfd.h"
-#include "dis-asm.h"
 
 #include <iostream>
 #include <iomanip>
@@ -45,6 +16,8 @@
 //#define DO_TIMES	1
 
 #define DQR_MAXCORES	16
+
+#define DEFAULTOBJDUMPNAME	"riscv64-unknown-elf-objdump"
 
 extern int globalDebugFlag;
 extern const char * const DQR_VERSION;
@@ -323,6 +296,7 @@ public:
 		TRACETYPE_unknown = 0,
 		TRACETYPE_BTM,
 		TRACETYPE_HTM,
+		TRACETYPE_VCD,
 	};
 
 	enum CallReturnFlag {
@@ -392,7 +366,6 @@ public:
 	%ignore Instruction::addressToText(char *dst,size_t len,int labelLevel);
 	%ignore Instruction::instructionToText(char *dst,size_t len,int labelLevel);
 	%ignore Instruction::addressLabel;
-	%ignore Instruction::operandLabel;
 #endif // SWIG
 
 class Instruction {
@@ -400,7 +373,6 @@ public:
 	void addressToText(char *dst,size_t len,int labelLevel);
 	std::string addressToString(int labelLevel);
 	std::string addressLabelToString();
-	std::string operandLabelToString();
 //	void opcodeToText();
 	void instructionToText(char *dst,size_t len,int labelLevel);
 	std::string instructionToString(int labelLevel);
@@ -417,19 +389,13 @@ public:
 	TraceDqr::ADDRESS address;
 	int               instSize;
 	TraceDqr::RV_INST instruction;
-	char              instructionText[64];
+	char             *instructionText;
+
 #ifdef SWIG
 	%immutable		addressLabel;
 #endif // SWIG
 	const char       *addressLabel;
 	int               addressLabelOffset;
-	bool              haveOperandAddress;
-	TraceDqr::ADDRESS operandAddress;
-#ifdef SWIG
-	%immutable		operandLabel;
-#endif // SWIG
-	const char       *operandLabel;
-	int               operandLabelOffset;
 
 	TraceDqr::TIMESTAMP timestamp;
 
@@ -802,18 +768,15 @@ private:
 
 class ObjFile {
 public:
-	ObjFile(char *ef_name);
+	ObjFile(char *ef_name,const char *odExe);
 	~ObjFile();
 	void cleanUp();
 
 	TraceDqr::DQErr getStatus() {return status;}
 	TraceDqr::DQErr sourceInfo(TraceDqr::ADDRESS addr,Instruction &instInfo,Source &srcInfo);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
-	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
 	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
-
-	TraceDqr::DQErr getSymbolByName(char *symName,TraceDqr::ADDRESS &addr);
 	TraceDqr::DQErr parseNLSStrings(TraceDqr::nlStrings (&nlsStrings)[32]);
 
 	TraceDqr::DQErr dumpSyms();
@@ -839,7 +802,7 @@ private:
 
 class Trace {
 public:
-    Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq = 0);
+    Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,const char *odExe,uint32_t freq = 0);
     Trace(char *mf_ame);
     ~Trace();
     void cleanUp();
@@ -851,10 +814,9 @@ public:
 	TraceDqr::DQErr setCATraceFile(char *caf_name,TraceDqr::CATraceType catype);
 	TraceDqr::DQErr enableCTFConverter(int64_t startTime,char *hostName);
 	TraceDqr::DQErr enableEventConverter();
-	TraceDqr::DQErr enablePerfConverter(int perfChannel,uint32_t markerValue,uint32_t funcMarkerValue);
+	TraceDqr::DQErr enablePerfConverter(int perfChannel,uint32_t markerValue);
 
 	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
-	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 
 	enum TraceFlags {
 		TF_INSTRUCTION = 0x01,
@@ -878,9 +840,8 @@ public:
 	std::string getITCPrintStr(int core, bool &haveData,double &startTime,double &endTime);
 	std::string flushITCPrintStr(int core, bool &haveData,double &startTime,double &endTime);
 
-	const char *getSymbolByAddress(TraceDqr::ADDRESS addr);
-	const char *getNextSymbolByAddress();
-	int         Disassemble(TraceDqr::ADDRESS addr);
+//	const char *getSymbolByAddress(TraceDqr::ADDRESS addr);
+	TraceDqr::DQErr Disassemble(TraceDqr::ADDRESS addr);
 	int         getArchSize();
 	int         getAddressSize();
 	void        analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
@@ -908,11 +869,11 @@ private:
 	TraceDqr::TraceType	   traceType;
 	class SliceFileParser *sfp;
 	class ElfReader       *elfReader;
-	class Symtab          *symtab;
 	class Disassembler    *disassembler;
 	class CTFConverter    *ctf;
 	class EventConverter  *eventConverter;
 	class PerfConverter   *perfConverter;
+	char                  *objdump;
 	char                  *rtdName;
 	char                  *efName;
 	char                  *cutPath;
@@ -998,22 +959,20 @@ public:
 
 class Simulator {
 public:
-	Simulator(char *f_name,int arch_size = 32);
-	Simulator(char *f_name,char *e_name);
+	Simulator(char *f_name,char *e_name,const char *odExe);
 	~Simulator();
 
 	void cleanUp();
 	TraceDqr::DQErr getStatus() {return status;}
 
 	TraceDqr::DQErr getTraceFileOffset(int &size,int &offset);
-	int Disassemble(SRec *srec);
+	TraceDqr::DQErr Disassemble(SRec *srec);
 
-	TraceDqr::DQErr NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
-	TraceDqr::DQErr NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags);
+	TraceDqr::DQErr NextInstruction(Instruction **instInfo,Source **srcInfo);
+	TraceDqr::DQErr NextInstruction(Instruction *instInfo,Source *srcInfo, int *flags);
 
 	void analyticsToText(char *dst,int dst_len,int detailLevel) {/*analytics.toText(dst,dst_len,detailLevel);*/ }
 //	std::string analyticsToString(int detailLevel) { /* return analytics.toString(detailLevel);*/ }
-	TraceDqr::DQErr setLabelMode(bool labelsAreFuncs);
 	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
 
 private:
@@ -1032,15 +991,14 @@ private:
 
 	Instruction  instructionInfo;
 	Source       sourceInfo;
-	NexusMessage messageInfo;
 
 	class ElfReader    *elfReader; // need this class to create disassembler class
+	class Symtab       *symtab;
+	class Section      *sections;
 	class Disassembler *disassembler;
 	char               *cutPath;
 	char               *newRoot;
 
-	disassemble_info disasm_info;
-	disassembler_ftype disasm_func;
 	uint32_t instructionBuffer[2];
 
 	uint64_t currentTime[DQR_MAXCORES];
@@ -1054,6 +1012,75 @@ private:
 //	need to rename nextAddr to compueFlags or something
 	TraceDqr::DQErr computeBranchFlags(int core,TraceDqr::ADDRESS currentAddr,uint32_t currentInst,TraceDqr::ADDRESS &nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag);
 	TraceDqr::DQErr buildInstructionFromSrec(SRec *srec,TraceDqr::BranchFlags brFlags,int crFlag);
+};
+
+#ifdef SWIG
+	%ignore VCD::NextInstruction(Instruction **instInfo,Source **srcInfo);
+	%ignore VCD::analyticsToText(char *dst,int dst_len,int detailLevel);
+#endif // SWIG
+
+class VCD {
+public:
+	VCD(const char *vcd_name,const char *ef_name,const char *odExe);
+	VCD(const char *pf_name);
+	~VCD();
+
+	void cleanUp();
+	TraceDqr::DQErr getStatus() {return status;}
+
+	TraceDqr::DQErr Disassemble(uint64_t pc);
+
+	TraceDqr::DQErr NextInstruction(Instruction **instInfo,Source **srcInfo);
+	TraceDqr::DQErr NextInstruction(Instruction *instInfo,Source *srcInfo, int *flags);
+
+	TraceDqr::DQErr getTraceFileOffset(int &size,int &offset);
+
+	void analyticsToText(char *dst,int dst_len,int detailLevel) {/*analytics.toText(dst,dst_len,detailLevel);*/ }
+//	std::string analyticsToString(int detailLevel) { /* return analytics.toString(detailLevel);*/ }
+	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
+
+private:
+	struct VRec {
+		uint64_t ts;
+		uint16_t flags;
+		uint64_t pc;
+	};
+
+	enum VCDFlags {
+		VCDFLAG_PIPE = 0x01
+	};
+
+	TraceDqr::DQErr status;
+
+	int archSize;
+
+	bool haveLookaheadVRec;
+	VRec lookaheadVRec;
+
+	Instruction  instructionInfo;
+	Source       sourceInfo;
+
+	int   vcd_fd;
+	int   totalPCDRecords;
+	int   nextPCDRecord;
+
+	int   numVCDRecords;
+	int   currentVCDRecord;
+	uint8_t *vcdBuff;
+	class ElfReader    *elfReader; // need this class to create disassembler class
+	class Disassembler *disassembler;
+
+	TraceDqr::pathType pathType;
+
+	uint64_t currentTime[DQR_MAXCORES];
+	int  enterISR[DQR_MAXCORES];
+
+	TraceDqr::DQErr configure(class TraceSettings &settings);
+
+	TraceDqr::DQErr getNextVRec(VRec &srec);
+
+	TraceDqr::DQErr computeBranchFlags(int core,TraceDqr::ADDRESS currentAddr,uint32_t currentInst,TraceDqr::ADDRESS nextAddr,int &crFlag,TraceDqr::BranchFlags &brFlag);
+	TraceDqr::DQErr buildInstructionFromVRec(VRec *vrec,uint32_t instruction,TraceDqr::BranchFlags brFlags,int crFlag);
 };
 
 #endif /* DQR_HPP_ */

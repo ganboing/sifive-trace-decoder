@@ -1,28 +1,5 @@
-/*
- * Copyright 2019 Sifive, Inc.
- *
- * main.cpp
- *
- */
-
-/*
-   This file is part of dqr, the SiFive Inc. Risc-V Nexus 2001 trace decoder.
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 3 of the License, or
-   (at your option) any later version.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, see <https://www.gnu.org/licenses/>.
-*/
-
-#include "config.h"
+/* Copyright 2022 SiFive, Inc */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 #include <iostream>
 #include <iomanip>
@@ -30,6 +7,7 @@
 #include <cstring>
 #include <cstdint>
 #include <time.h>
+#include <sys/stat.h>
 #ifdef WINDOWS
 #include <winsock2.h>
 #else // WINDOWS
@@ -1478,13 +1456,12 @@ static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,cha
 //	printf("absPath: %s\n",absPath);
 }
 
-PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t channel,uint32_t marker,uint32_t funcMarker,uint32_t freq)
+PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int numCores,uint32_t channel,uint32_t marker,uint32_t freq)
 {
 	status = TraceDqr::DQERR_OK;
 
 	perfChannel = channel;
 	markerValue = marker;
-	funcMarkerValue = funcMarker;
 
 	for (int i = 0; i < (int)(sizeof state / sizeof state[0]); i++) {
 		state[i] = perfStateSync;
@@ -1498,12 +1475,24 @@ PerfConverter::PerfConverter(char *elf,char *rtd,Disassembler *disassembler,int 
 		cntrMask[i] = 0;
 	}
 
-	for (int i = 0; i < (int)(sizeof cntrValPending / sizeof cntrValPending[0]); i++) {
-		cntrValPending[i] = false;
+	for (int i = 0; i < (int)(sizeof valuePending / sizeof valuePending[0]); i++) {
+		valuePending[i] = false;
+	}
+
+	for (int i = 0; i < (int)(sizeof cntrCode / sizeof cntrCode[0]); i++) {
+		cntrCode[i] = 0;
+	}
+
+	for (int i = 0; i < (int)(sizeof cntrEventData / sizeof cntrEventData[0]); i++) {
+		cntrEventData[i] = 0;
 	}
 
 	for (int i = 0; i < (int)(sizeof perfFDs / sizeof perfFDs[0]); i++) {
 		perfFDs[i] = -1;
+	}
+
+	for (int i = 0; i < (int)(sizeof lastCount / sizeof lastCount[0]); i++) {
+		lastCount[i] = nullptr;
 	}
 
 	this->disassembler = disassembler;
@@ -1597,6 +1586,13 @@ PerfConverter::~PerfConverter()
 		delete [] elfNamePath;
 		elfNamePath = nullptr;
 	}
+
+	for (int i = 0; i < (int)(sizeof lastCount / sizeof lastCount[0]); i++) {
+		if (lastCount[i] != nullptr) {
+			delete [] lastCount[i];
+			lastCount[i] = nullptr;
+		}
+	}
 }
 
 TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,TraceDqr::ADDRESS pc)
@@ -1621,6 +1617,23 @@ TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,Trac
 		}
 
 		write(perfFDs[pt_addressIndex],elfNamePath,strlen(elfNamePath));
+
+		switch (cntType[core]) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: unknown\n");
+			break;
+		}
+
+		write(perfFDs[pt_addressIndex],msgBuff,n);
 	}
 
 	if ((perfFDs[pt_addressIndex] >= 0) || (perfFD >= 0)) {
@@ -1631,7 +1644,7 @@ TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,Trac
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
@@ -1639,12 +1652,22 @@ TraceDqr::DQErr PerfConverter::emitPerfAddr(int core,TraceDqr::TIMESTAMP ts,Trac
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
 		}
+
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Address]",core,ts,pc);
 
 		if (perfFD >= 0) {
@@ -1683,6 +1706,23 @@ TraceDqr::DQErr PerfConverter::emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,T
 		}
 
 		write(perfFDs[pt_fnIndex],elfNamePath,strlen(elfNamePath));
+
+		switch (cntType[core]) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: unknown\n");
+			break;
+		}
+
+		write(perfFDs[pt_fnIndex],msgBuff,n);
 	}
 
 	if ((perfFDs[pt_fnIndex] >= 0) || (perfFD >= 0)) {
@@ -1693,7 +1733,7 @@ TraceDqr::DQErr PerfConverter::emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,T
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
@@ -1701,12 +1741,22 @@ TraceDqr::DQErr PerfConverter::emitPerfFnEntry(int core,TraceDqr::TIMESTAMP ts,T
 			const char *line;
 
 			rc = disassembler->getSrcLines(fnAddr,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(fnAddr,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
 		}
+
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Func Enter at 0x%08llx] [Called From 0x%08llx]",core,ts,fnAddr,csAddr);
 
 		if (perfFD >= 0) {
@@ -1745,6 +1795,23 @@ TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,Tr
 		}
 
 		write(perfFDs[pt_fnIndex],elfNamePath,strlen(elfNamePath));
+
+		switch (cntType[core]) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: unknown\n");
+			break;
+		}
+
+		write(perfFDs[pt_fnIndex],msgBuff,n);
 	}
 
 	if ((perfFDs[pt_fnIndex] >= 0) || (perfFD >= 0)) {
@@ -1755,19 +1822,29 @@ TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,Tr
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
 			unsigned int   linenumber;
 			const char *line;
 
-			rc = disassembler->getSrcLines(fnAddr,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			rc = disassembler->getSrcLines(csAddr,&filename,&cutPathIndex,&functionname,&linenumber,&line);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(csAddr,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+
 		}
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Func Exit] [Func at 0x%08llx] [Returning to 0x%08llx]",core,ts,fnAddr,csAddr);
 
@@ -1780,6 +1857,33 @@ TraceDqr::DQErr PerfConverter::emitPerfFnExit(int core,TraceDqr::TIMESTAMP ts,Tr
 			write(perfFDs[pt_fnIndex],msgBuff,n);
 			write(perfFDs[pt_fnIndex],fileInfoBuff,f);
 		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr PerfConverter::emitPerfCntType(int core,TraceDqr::TIMESTAMP ts,int cntType)
+{
+	char msgBuff[512];
+	int n;
+
+	if (perfFD >= 0) {
+		switch (cntType) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: unknown\n");
+			break;
+		}
+
+		write(perfFD,msgBuff,n);
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -1809,6 +1913,23 @@ TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,Trac
 		}
 
 		write(perfFDs[cntrIndex],elfNamePath,strlen(elfNamePath));
+
+		switch (cntType[core]) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: unknown\n");
+			break;
+		}
+
+		write(perfFDs[cntrIndex],msgBuff,n);
 	}
 
 	if ((perfFDs[cntrIndex] >= 0) || (perfFD >= 0)) {
@@ -1819,7 +1940,7 @@ TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,Trac
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
@@ -1827,11 +1948,20 @@ TraceDqr::DQErr PerfConverter::emitPerfCntr(int core,TraceDqr::TIMESTAMP ts,Trac
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
 		}
 
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d PC=0x%08llx [Perf Cntr] [Index=%d] [Value=%lld] ",core,ts,pc,cntrIndex,cntrVal);
@@ -1866,7 +1996,10 @@ TraceDqr::DQErr PerfConverter::emitPerfCntrMask(int core,TraceDqr::TIMESTAMP ts,
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint64_t cntrDef)
+//should def break type 1 into cache_id, op_id, result_id?
+//function entry/exit second address is messing up following addresses!!
+
+TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,int cntrIndex,uint32_t cntrType,uint32_t cntrCode,uint64_t eventData,uint32_t cntrInfo)
 {
 	char msgBuff[512];
 	int n;
@@ -1890,10 +2023,30 @@ TraceDqr::DQErr PerfConverter::emitPerfCntrDef(int core,TraceDqr::TIMESTAMP ts,i
 		}
 
 		write(perfFDs[cntrIndex],elfNamePath,strlen(elfNamePath));
+
+		switch (cntType[core]) {
+		case perfCount_Raw:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: RAW\n");
+			break;
+		case perfCount_Delta:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: Delta\n");
+			break;
+		case perfCount_DeltaXOR:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: DeltaXOR\n");
+			break;
+		default:
+			n = snprintf(msgBuff,sizeof msgBuff,"# COUNT_TYPE: unknown\n");
+			break;
+		}
+
+		write(perfFDs[cntrIndex],msgBuff,n);
 	}
 
 	if ((perfFDs[cntrIndex] >= 0) || (perfFD >= 0)) {
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Perf Cntr Def] [Index=%d] [Def=0x%08llx]\n",core,ts,cntrIndex,cntrDef);
+		uint32_t csr = cntrInfo & 0xfff;
+		uint32_t bits = ((cntrInfo >> 12) & 0x3f)+1;
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Perf Cntr Def] [Counter=%d] [Type=%d] [Code=%d] [EventData=0x%08lx] [CntrCSR=0x%03x] [CntrBits=%d]\n",core,ts,cntrIndex,cntrType,cntrCode,eventData,csr,bits);
 
 		if (perfFD >= 0) {
 			write(perfFD,msgBuff,n);
@@ -1921,119 +2074,370 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 		return TraceDqr::DQERR_OK;
 	}
 
-//	printf("--> processITCPerf(): data: 0x%08x address: 0x%08x state:%d core:%d\n",data,addr,state[coreId],coreId);
-
 	while (!consumed) {
 		switch (state[coreId]) {
 		case perfStateSync:
+			// look for an initial trace marker to sync the trace
+
 //			printf("state sync\n");
+
 			if (data == markerValue) {
-				state[coreId] = perfStateStart;
+				lastAddress[coreId] = 0;
+				cntrAddress[coreId] = 0;
+
+				state[coreId] = perfStateGetCntType;
 			}
-			else if (data == funcMarkerValue) {
-				state[coreId] = perfStateFuncStart;
+
+			consumed = true;
+			break;
+
+		case perfStateGetCntType:
+			// should have an 8 bit count type
+
+//			printf("state perfStateGetCountType\n");
+
+			if ((addr & 0x3) == 0x3) {
+				// 8 bit write
+
+				switch (data) {
+				case perfCount_Raw:
+				case perfCount_Delta:
+				case perfCount_DeltaXOR:
+					cntType[coreId] = (uint8_t)data;
+
+					emitPerfCntType(coreId,ts,cntType[coreId]);
+
+					state[coreId] = perfStateGetCntrMask;
+					consumed = true;
+					break;
+				default:
+					printf("Error: processITCPerf(): perfStateGetCountType: unknown count type %d; resyncing\n",data);
+
+					state[coreId] = perfStateSync;
+					break;
+				}
 			}
 			else {
-				consumed = true;
+				state[coreId] = perfStateSync;
 			}
 			break;
 
 		// states for timer and manual perf data parsing
 
-		case perfStateStart:
-//			printf("state start\n");
-			if (data == markerValue) {
-				state[coreId] = perfStateGetMarkerMask;
-				consumed = true;
-			}
-			else if (data == funcMarkerValue) {
-				state[coreId] = perfStateSync;
-			}
-			else {
-				// should be an instruction pointer
+		case perfStateGetCntrMask:
+			// 32 bit counter mask
 
-				if (data & 1) {
-					savedLow32[coreId] = data ^ 1;
-					state[coreId] = perfStateGetAddrH;
+//			printf("perfStateGetMarkerMask (mask: 0x%08x\n",data);
+
+			if ((addr & 0x3) == 0) {
+				// 32 bit write
+
+				cntrMask[coreId] = data;
+
+				emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
+
+				if (cntrMask[coreId] == 0) {
+					// no counter defs - But still have address
+					state[coreId] = perfStateGetCntrRecord;
 				}
 				else {
-					lastAddress[coreId] = data;
+					if (cntType[coreId] == perfCount_DeltaXOR) {
+						// need to allocate last count array to compute counts for XOR Delta
+
+						if (lastCount[coreId] == nullptr) {
+							lastCount[coreId] = new uint64_t [32];
+
+							for (int i = 0; i < 32; i++) {
+								lastCount[coreId][i] = 0;
+							}
+						}
+					}
+
+					// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+
+					cntrMaskIndex[coreId] = 0;
+
+					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+						cntrMaskIndex[coreId] += 1;
+					}
+
+					state[coreId] = perfStateGetCntrDef;
+				}
+
+				consumed = true;
+			}
+			else {
+				// this is an error. Try recovery?
+
+				state[coreId] = perfStateSync;
+			}
+			break;
+		case perfStateGetCntrDef:
+//			printf("state perfStateGetCntrDef\n");
+
+			cntrType[coreId] = data;
+
+			switch (cntrType[coreId]) {
+			case 0:
+			case 1:
+				cntrEventData[coreId] = 0;
+				state[coreId] = perfStateGetCntrCode;
+				break;
+			case 2:
+				cntrCode[coreId] = 0;
+				state[coreId] = perfStateGetCntrEventData;
+				break;
+			default:
+				printf("Error: processITCPerf(): invalid counter type: %d\n",cntrType[coreId]);
+
+				state[coreId] = perfStateError;
+			}
+
+			consumed = true;
+			break;
+		case perfStateGetCntrCode:
+//			printf("state perfStateGetCntrCode\n");
+
+			cntrCode[coreId] = data;
+			state[coreId] = perfStateGetCntrInfo;
+
+			consumed = true;
+			break;
+		case perfStateGetCntrEventData:
+//			printf("state perfStateGetCntrEventData\n");
+
+			if (valuePending[coreId]) {
+				cntrEventData[coreId] = (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+
+				valuePending[coreId] = false;
+
+				state[coreId] = perfStateGetCntrInfo;
+			}
+			else {
+				savedLow32[coreId] = data;
+				valuePending[coreId] = true;
+			}
+
+			consumed = true;
+			break;
+		case perfStateGetCntrInfo:
+//			printf("state perfStateGetCntrInfo\n");
+
+			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],cntrType[coreId],cntrCode[coreId],cntrEventData[coreId],data);
+
+			cntrMaskIndex[coreId] += 1;
+
+			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+				cntrMaskIndex[coreId] += 1;
+			}
+
+			if (cntrMaskIndex[coreId] >= 32) {
+				// out of counter defs, go to get counter record
+
+//				cntrMaskIndex[coreId] = 0;
+//
+//				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+//					cntrMaskIndex[coreId] += 1;
+//				}
+
+				state[coreId] = perfStateGetCntrRecord;
+			}
+			else {
+				// get the next counter def
+				state[coreId] = perfStateGetCntrDef;
+			}
+
+			consumed = true;
+			break;
+		case perfStateGetCntrRecord:
+//			printf("state perfStateGetCntrRecord (type: %d)\n",data);
+
+			if ((addr & 0x3) == 3) {
+				// 8 bit type
+
+				recordType[coreId] = (uint8_t)data;
+				valuePending[coreId] = false;
+
+				state[coreId] = perfStateGetAddr;
+			}
+			else {
+				printf("Error: processITCPerf(): bad record type size.\n");
+
+				state[coreId] = perfStateError;
+			}
+
+			consumed = true;
+			break;
+		case perfStateGetAddr:
+//			printf("state perfStateGetAddr (%d:0x%08x)\n",valuePending[coreId],data);
+
+			if (valuePending[coreId] == true) {
+				if (cntType[coreId] == perfCount_DeltaXOR) {
+					lastAddress[coreId] ^= ((((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
+				}
+				else {
+					lastAddress[coreId] = (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+				}
+
+				valuePending[coreId] = false;
+
+				if ((recordType[coreId] == perfRecord_FuncEnter) || (recordType[coreId] == perfRecord_FuncExit)) {
+					state[coreId] = perfStateGetCallSite;
+				}
+				else {
+					cntrAddress[coreId] = lastAddress[coreId];
 
 					emitPerfAddr(coreId,ts,lastAddress[coreId]);
 
 					if (cntrMask[coreId] != 0) {
-						state[coreId] = perfStateGetCntr;
 						cntrMaskIndex[coreId] = 0;
 
-						// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+						while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+								cntrMaskIndex[coreId] += 1;
+						}
+
+						state[coreId] = perfStateGetCnts;
+					}
+					else {
+						state[coreId] = perfStateGetCntrRecord;
+					}
+				}
+			}
+			else if (data & 1) {
+				savedLow32[coreId] = data & ~1;
+				valuePending[coreId] = true;
+			}
+			else { // nothing pending. LSb is not set
+				if (cntType[coreId] == perfCount_DeltaXOR) {
+					lastAddress[coreId] ^= data;
+				}
+				else {
+					lastAddress[coreId] = data;
+				}
+
+				if ((recordType[coreId] == perfRecord_FuncEnter) || (recordType[coreId] == perfRecord_FuncExit)) {
+					state[coreId] = perfStateGetCallSite;
+				}
+				else {
+					cntrAddress[coreId] = lastAddress[coreId];
+
+					emitPerfAddr(coreId,ts,lastAddress[coreId]);
+
+					if (cntrMask[coreId] != 0) {
+						cntrMaskIndex[coreId] = 0;
 
 						while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-							cntrMaskIndex[coreId] += 1;
+								cntrMaskIndex[coreId] += 1;
 						}
+
+						state[coreId] = perfStateGetCnts;
 					}
 					else {
-						state[coreId] = perfStateStart; // already in this state, but won't hurt
+						state[coreId] = perfStateGetCntrRecord;
 					}
 				}
-				consumed = true;
 			}
+			consumed = true;
 			break;
-		case perfStateGetAddrH:
-//			printf("perfStateGetAddrH\n");
-			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
+		case perfStateGetCallSite:
+//			printf("state perfStateGetCallSite (%d:0x%08x)\n",valuePending[coreId],data);
 
-			emitPerfAddr(coreId,ts,lastAddress[coreId]);
+			if (valuePending[coreId] == true) {
+				uint64_t nextAddr;
 
-			if (cntrMask[coreId] == 0) {
-				state[coreId] = perfStateStart;
+				if (cntType[coreId] == perfCount_DeltaXOR) {
+					nextAddr = lastAddress[coreId] ^ ((((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
+				}
+				else {
+					nextAddr = (((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId];
+				}
+
+				if (recordType[coreId] == perfRecord_FuncEnter) {
+					emitPerfFnEntry(coreId,ts,lastAddress[coreId],nextAddr);
+					cntrAddress[coreId] = lastAddress[coreId];
+				}
+				else {
+					emitPerfFnExit(coreId,ts,lastAddress[coreId],nextAddr);
+					cntrAddress[coreId] = nextAddr;
+				}
+
+				lastAddress[coreId] = nextAddr;
+
+				valuePending[coreId] = false;
+
+				if (cntrMask[coreId] != 0) {
+					cntrMaskIndex[coreId] = 0;
+
+					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+							cntrMaskIndex[coreId] += 1;
+					}
+
+					state[coreId] = perfStateGetCnts;
+				}
+				else {
+					state[coreId] = perfStateGetCntrRecord;
+				}
+			}
+			else if (data & 1) {
+				savedLow32[coreId] = data & ~1;
+				valuePending[coreId] = true;
 			}
 			else {
-				state[coreId] = perfStateGetCntr;
+				uint64_t nextAddr;
 
-				cntrMaskIndex[coreId] = 0;
+				if (cntType[coreId] == perfCount_DeltaXOR) {
+					nextAddr = lastAddress[coreId] ^ (uint64_t)data;
+				}
+				else {
+					nextAddr = (uint64_t)data;
+				}
 
-				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
+				if (recordType[coreId] == perfRecord_FuncEnter) {
+					emitPerfFnEntry(coreId,ts,lastAddress[coreId],nextAddr);
+					cntrAddress[coreId] = lastAddress[coreId];
+				}
+				else {
+					emitPerfFnExit(coreId,ts,lastAddress[coreId],nextAddr);
+					cntrAddress[coreId] = nextAddr;
+				}
 
-				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
+				lastAddress[coreId] = nextAddr;
+
+				if (cntrMask[coreId] != 0) {
+					cntrMaskIndex[coreId] = 0;
+
+					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
+							cntrMaskIndex[coreId] += 1;
+					}
+
+					state[coreId] = perfStateGetCnts;
+				}
+				else {
+					state[coreId] = perfStateGetCntrRecord;
 				}
 			}
 
 			consumed = true;
 			break;
-		case perfStateGetCntr:
-//			printf("perfStateGetCntr\n");
-			if (addr & 0x3) {
-				// havea partial write - extention of previous write
+		case perfStateGetCnts:
+//			printf("state perfStateGetCnts p:%d i:%d s:%d\n",valuePending[coreId],cntrMaskIndex[coreId],32-(addr&3)*8);
 
-				if (cntrValPending[coreId] == false) {
-					state[coreId] = perfStateError;
-					return TraceDqr::DQERR_ERR;
-				}
+			switch (addr & 0x3) {
+			case 0:
+				// 32 bit data. This should be a low count. If we have a pending, emit it
 
-				emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
+				if (valuePending[coreId]) {
+					if (cntType[coreId] == perfCount_DeltaXOR) {
+						lastCount[coreId][cntrMaskIndex[coreId]] ^= savedLow32[coreId];
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
+					}
+					else {
+						// emit the previously pending count
 
-				cntrValPending[coreId] = false;
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+					}
 
-				cntrMaskIndex[coreId] += 1;
-
-				while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
-				}
-
-				if (cntrMaskIndex[coreId] >= 32) {
-					// out of counter defs, go to start state
-
-					state[coreId] = perfStateStart;
-				}
-
-				consumed = true;
-			}
-			else {
-				// have a full write
-
-				if (cntrValPending[coreId]) {
-					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
+					valuePending[coreId] = false;
 
 					cntrMaskIndex[coreId] += 1;
 
@@ -2044,278 +2448,39 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 					if (cntrMaskIndex[coreId] >= 32) {
 						// out of counter defs, go to start state
 
-						cntrValPending[coreId] = false;
+						state[coreId] = perfStateGetCntrRecord;
 
-						state[coreId] = perfStateStart;
-
-						// don't return, just loop again and reprocess this value!! Leave consumed == false to make it happen
+						// do not set consumed!
 					}
 					else {
+						valuePending[coreId] = true;
 						savedLow32[coreId] = data;
-						cntrValPending[coreId] = true;
-
 						consumed = true;
 					}
 				}
 				else {
+					valuePending[coreId] = true;
 					savedLow32[coreId] = data;
-					cntrValPending[coreId] = true;
-
 					consumed = true;
 				}
-			}
-			break;
-		case perfStateGetMarkerMask:
-//			printf("perfStateGetMarkerMask\n");
-			cntrMask[coreId] = data;
-			cntrMaskIndex[coreId] = 3; // skip over cntr 0 - 2; they are fixed function and not programmable
+				break;
+			case 2:
+				// 16 bit data. This is a high count. If nothing pending, error
 
-			if (cntrMask[coreId] < (1 << 3)) {
-				// no counter defs - goto start
-				state[coreId] = perfStateStart;
-			}
-			else {
-				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
-				}
-
-				state[coreId] = perfStateGetCounterDefs;
-			}
-
-			emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
-
-			consumed = true;
-			break;
-		case perfStateGetCounterDefs:
-//			printf("perfStateGetCounterDefs\n");
-			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
-
-			savedLow32[coreId] = data;
-
-			state[coreId] = perfStateGetCounterDefsH;
-
-			consumed = true;
-			break;
-		case perfStateGetCounterDefsH:
-//			printf("perfStateGetCounterDefsH\n");
-			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
-
-			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
-
-			cntrMaskIndex[coreId] += 1;
-
-			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-				cntrMaskIndex[coreId] += 1;
-			}
-
-			if (cntrMaskIndex[coreId] >= 32) {
-				// out of counter defs, go to start state
-
-				state[coreId] = perfStateStart;
-			}
-
-			consumed = true;
-			break;
-
-		// states for function entry/exit parsing
-
-		case perfStateFuncStart:
-//			printf("state func start: 0x%08x\n",data);
-
-			if (data == funcMarkerValue) {
-				state[coreId] = perfStateFuncGetMarkerMask;
-				consumed = true;
-			}
-			else if (data == markerValue) {
-				state[coreId] = perfStateSync;
-			}
-			else if ((addr & 0x3) == 3) {
-				if (data == 'C') {
-					state[coreId] = perfStateFuncCallStart;
-				}
-				else {
+				if (valuePending[coreId] == false) {
+					printf("Error: processITCPerf(): bad perf trace.\n");
 					state[coreId] = perfStateError;
 				}
-				consumed = true;
-			}
-			else {
-				state[coreId] = perfStateFuncReturnStart;
-			}
-			break;
-		case perfStateFuncCallStart:
-//			printf("state perfStatFuncCallstart: %08x\n",data);
-			if (data & 1) {
-				savedLow32[coreId] = data ^ 1;
-				state[coreId] = perfStateFuncCallGetfnAddrH;
-			}
-			else {
-				lastAddress[coreId] = data;
-				state[coreId] = perfStateFuncGetCallSite;
-			}
-			consumed = true;
-			break;
-		case perfStateFuncCallGetfnAddrH:
-//			printf("state perfStateFuncCallGetfnAddrH: 0x%08x\n",data);
-			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
-			state[coreId] = perfStateFuncGetCallSite;
-			consumed = true;
-			break;
-		case perfStateFuncGetCallSite:
-//			printf("state perfStateFuncGetCallSite: 0x%08x\n",data);
-			if (data & 1) {
-				savedLow32[coreId] = data ^ 1;
-				state[coreId] = perfStateFuncGetCallSiteH;
-			}
-			else {
-				emitPerfFnEntry(coreId,ts,lastAddress[coreId],(uint64_t)data);
-
-				if (cntrMask[coreId] != 0) {
-					state[coreId] = perfStateFuncGetCntr;
-					cntrMaskIndex[coreId] = 0;
-
-					// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-						cntrMaskIndex[coreId] += 1;
-					}
-				}
 				else {
-					state[coreId] = perfStateFuncStart;
-				}
-			}
-			consumed = true;
-			break;
-		case perfStateFuncGetCallSiteH:
-//			printf("state perfStateFuncGetCallSiteH: 0x%08x\n",data);
-			emitPerfFnEntry(coreId,ts,lastAddress[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
-
-			if (cntrMask[coreId] != 0) {
-				state[coreId] = perfStateFuncGetCntr;
-				cntrMaskIndex[coreId] = 0;
-
-				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
-				}
-			}
-			else {
-				state[coreId] = perfStateFuncStart;
-			}
-			consumed = true;
-			break;
-		case perfStateFuncReturnStart:
-//			printf("state perfStateFuncReturnStart: 0x%08x\n",data);
-			if (data & 1) {
-				savedLow32[coreId] = data ^ 1;
-				state[coreId] = perfStateFuncReturnStartH;
-			}
-			else {
-				lastAddress[coreId] = data;
-				state[coreId] = perfStateFuncReturnGetCallSite;
-			}
-			consumed = true;
-			break;
-		case perfStateFuncReturnStartH:
-//			printf("state perfStateFuncReturnStartH: 0x%08x\n",data);
-
-			lastAddress[coreId] = ((uint64_t)data << 32) | savedLow32[coreId];
-			state[coreId] = perfStateFuncReturnGetCallSite;
-			consumed = true;
-			break;
-		case perfStateFuncReturnGetCallSite:
-//			printf("state perfStateFuncReturnGetCallSite: 0x%08x\n",data);
-
-			if (data & 1) {
-				savedLow32[coreId] = data ^ 1;
-				state[coreId] = perfStateFuncReturnGetCallSiteH;
-			}
-			else {
-				emitPerfFnExit(coreId,ts,lastAddress[coreId],(uint64_t)data);
-
-				if (cntrMask[coreId] != 0) {
-					state[coreId] = perfStateFuncGetCntr;
-					cntrMaskIndex[coreId] = 0;
-
-					// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-					while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-						cntrMaskIndex[coreId] += 1;
+					if (cntType[coreId] == perfCount_DeltaXOR) {
+						lastCount[coreId][cntrMaskIndex[coreId]] ^= ((((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
 					}
-				}
-				else {
-					state[coreId] = perfStateFuncStart;
-				}
-			}
-			consumed = true;
-			break;
-		case perfStateFuncReturnGetCallSiteH:
-//			printf("state perfStateFuncReturnGetCallSiteH: 0x%08x\n",data);
+					else {
+						// emit the previously pending count
 
-			emitPerfFnExit(coreId,ts,lastAddress[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
-
-			if (cntrMask[coreId] != 0) {
-				state[coreId] = perfStateFuncGetCntr;
-				cntrMaskIndex[coreId] = 0;
-
-				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
-				}
-			}
-			else {
-				state[coreId] = perfStateFuncStart;
-			}
-			consumed = true;
-			break;
-		case perfStateFuncGetCntr:
-//			printf("state perfStateFuncGetCntr: addr: 0x%08x, data: 0x%08x\n",addr,data);
-
-			if ((addr & 0x03) == 3) {
-				// single byte - this mean new function call start
-				if (cntrValPending[coreId]) {
-					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
-					cntrValPending[coreId] = false;
-				}
-
-				state[coreId] = perfStateFuncStart;
-			}
-			else if (addr & 0x3) {
-				// havea partial write - extention of previous write
-
-				if (cntrValPending[coreId] == false) {
-					state[coreId] = perfStateError;
-					return TraceDqr::DQERR_ERR;
-				}
-
-				emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
-
-				cntrValPending[coreId] = false;
-
-				cntrMaskIndex[coreId] += 1;
-
-				while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
-				}
-
-				if (cntrMaskIndex[coreId] >= 32) {
-					// out of counter defs, go to start state
-
-					state[coreId] = perfStateFuncStart;
-				}
-
-				consumed = true;
-			}
-			else {
-				// have a full write
-
-				if (cntrValPending[coreId]) { // flush pending, add new to pending
-					emitPerfCntr(coreId,ts,lastAddress[coreId],cntrMaskIndex[coreId],savedLow32[coreId]);
-
-					cntrValPending[coreId] = false;
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],(((uint64_t)data) << 32) | (uint64_t)savedLow32[coreId]);
+					}
 
 					cntrMaskIndex[coreId] += 1;
 
@@ -2326,78 +2491,47 @@ TraceDqr::DQErr PerfConverter::processITCPerf(int coreId,TraceDqr::TIMESTAMP ts,
 					if (cntrMaskIndex[coreId] >= 32) {
 						// out of counter defs, go to start state
 
-						state[coreId] = perfStateFuncStart;
+						state[coreId] = perfStateGetCntrRecord;
 
-						// don't return, just loop again and reprocess this value!! Leave consumed == false to make it happen
+						// do not set consumed!
+					}
+
+					valuePending[coreId] = false;
+				}
+
+				consumed = true;
+				break;
+			case 3:
+				// 8 bit data - this is actually a record type. If any pending values, emit.
+				// swtich state to get record
+
+				if (valuePending[coreId] == true) {
+					if (cntType[coreId] == perfCount_DeltaXOR) {
+						lastCount[coreId][cntrMaskIndex[coreId]] ^= (uint64_t)savedLow32[coreId];
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],lastCount[coreId][cntrMaskIndex[coreId]]);
 					}
 					else {
-						savedLow32[coreId] = data;
-						cntrValPending[coreId] = true;
+						// emit the previously pending count
 
-						consumed = true;
+						emitPerfCntr(coreId,ts,cntrAddress[coreId],cntrMaskIndex[coreId],(uint64_t)savedLow32[coreId]);
 					}
-				}
-				else {
-					savedLow32[coreId] = data;
-					cntrValPending[coreId] = true;
 
-					consumed = true;
-				}
-			}
-			break;
-		case perfStateFuncGetMarkerMask:
-//			printf("state perfStateFuncGetMarkerMask: 0x%08x\n",data);
+					valuePending[coreId] = false;
 
-			cntrMask[coreId] = data;
-			cntrMaskIndex[coreId] = 3;  // skip over cntr 0 - 2; they are fixed function and not programmable
-
-			if (cntrMask[coreId] < (1 << 3)) {
-				// no counter defs - goto start
-				state[coreId] = perfStateFuncStart;
-			}
-			else {
-				// find index of first counter def. markerMask[coreID] != 0, so loop will terminate correctly
-
-				while ((cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-					cntrMaskIndex[coreId] += 1;
+					// could add error checking here to make sure there aren't any more counters expected??
 				}
 
-				state[coreId] = perfStateFuncGetCounterDefs;
+				state[coreId] = perfStateGetCntrRecord;
+
+				// do not set consumed
+
+				break;
+			default:
+				printf("Error: processITCPerf(): invalid counter size: %d\n",addr & 0x3);
+
+				state[coreId] = perfStateError;
+				break;
 			}
-
-			emitPerfCntrMask(coreId,ts,cntrMask[coreId]);
-
-			consumed = true;
-			break;
-		case perfStateFuncGetCounterDefs:
-//			printf("state perfStateFuncGetCounterDefs: 0x%08x\n",data);
-
-			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
-
-			savedLow32[coreId] = data;
-			state[coreId] = perfStateFuncGetCounterDefsH;
-			consumed = true;
-			break;
-		case perfStateFuncGetCounterDefsH:
-//			printf("state perfStateFuncGetCounterDefsH: 0x%08x\n",data);
-
-			// markerMaskIndex[coreId] already has the bit position of the lowest unprocessed marker def
-
-			emitPerfCntrDef(coreId,ts,cntrMaskIndex[coreId],((uint64_t)data << 32) | savedLow32[coreId]);
-
-			cntrMaskIndex[coreId] += 1;
-
-			while ((cntrMaskIndex[coreId] < 32) && (cntrMask[coreId] & (1 << cntrMaskIndex[coreId])) == 0) {
-				cntrMaskIndex[coreId] += 1;
-			}
-
-			if (cntrMaskIndex[coreId] >= 32) {
-				// out of counter defs, go to start state
-
-				state[coreId] = perfStateFuncStart;
-			}
-
-			consumed = true;
 			break;
 
 		case perfStateError:
@@ -2423,7 +2557,6 @@ EventConverter::EventConverter(char *elf,char *rtd,Disassembler *disassembler,in
 	char elfBaseName[256];
 	int eventNameLen;
 	char nameBuff[512];
-
 
 	getPathsNames(elf,elfBaseName,nullptr,nullptr);
 
@@ -2543,7 +2676,7 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
@@ -2551,11 +2684,20 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
 		}
 
 		if (ckdf == 0) {
@@ -2611,7 +2753,7 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
@@ -2619,11 +2761,20 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
 		}
 
 		if (ckdf == 0) {
@@ -2739,7 +2890,7 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
@@ -2747,11 +2898,20 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
 		}
 
 		if (crFlags & TraceDqr::isCall) {
@@ -2819,7 +2979,7 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
@@ -2827,11 +2987,20 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
 		}
 
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception] PC=0x%08x Cause=[%d:%s]",core,ts,pc,cause,getExceptionCauseText(cause));
@@ -2882,7 +3051,7 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
@@ -2890,11 +3059,20 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
 		}
 
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x Cause=[%d:%s]",core,ts,pc,cause,getInterruptCauseText(cause));
@@ -2965,7 +3143,7 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
@@ -2973,11 +3151,20 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
 		}
 
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [%s] PC=0x%08x Context=[%d]",core,ts,newContext,pc,context >> 2);
@@ -3028,7 +3215,7 @@ TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
@@ -3036,11 +3223,20 @@ TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
 		}
 
 		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [PC Sample] PC=0x%08x 0=[0]",core,ts,pc);
@@ -3111,7 +3307,7 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 		f = sizeof "\n" - 1;
 
 		if (disassembler != nullptr) {
-			int   rc;
+			TraceDqr::DQErr rc;
 			const char *filename;
 			int   cutPathIndex;
 			const char *functionname;
@@ -3119,11 +3315,20 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc == 1) {
-				// have file/line info
-
-				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," fl:%s:%d\n",filename,linenumber);
+			if (rc != TraceDqr::DQERR_OK) {
+				return TraceDqr::DQERR_ERR;
 			}
+
+			if (functionname == nullptr) {
+				int offset;
+
+				rc = disassembler->getFunctionName(pc,functionname,offset);
+				if (rc != TraceDqr::DQERR_OK) {
+					return TraceDqr::DQERR_ERR;
+				}
+			}
+
+			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
 		}
 
 		if (ckdf == 0) {
@@ -3822,9 +4027,11 @@ TraceDqr::DQErr CTFConverter::addRet(int core,TraceDqr::ADDRESS srcAddr,TraceDqr
 
 TraceSettings::TraceSettings()
 {
+	odName = nullptr;
 	tfName = nullptr;
 	efName = nullptr;
 	caName = nullptr;
+	pfName = nullptr;
 	caType = TraceDqr::CATRACE_NONE;
 	srcBits = 0;
 	numAddrBits = 0;
@@ -3832,14 +4039,11 @@ TraceSettings::TraceSettings()
 	itcPrintBufferSize = 4096;
 	itcPrintChannel = 0;
 	itcPerfEnable = false;
-	itcPerfMask = 0;
 	itcPerfChannel = 6;
 	itcPerfMarkerValue = (uint32_t)(('p' << 24) | ('e' << 16) | ('r' << 8) | ('f' << 0));
-	itcPerfFuncMarkerValue = (uint32_t)(('f' << 24) | ('u' << 16) | ('n' << 8) | ('c' << 0));
 	cutPath = nullptr;
 	srcRoot = nullptr;
 	pathType = TraceDqr::PATH_TO_UNIX;
-	labelsAsFunctions = true;
 	freq = 0;
 	addrDispFlags = 0;
 	tsSize = 40;
@@ -3881,6 +4085,11 @@ TraceSettings::~TraceSettings()
 		delete [] hostName;
 		hostName = nullptr;
 	}
+
+	if (odName != nullptr) {
+		delete [] odName;
+		odName = nullptr;
+	}
 }
 
 TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
@@ -3907,6 +4116,13 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 				rc = propertyToEFName(value);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: TraceSettings::addSettings(): Could not set elf file name in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("pcd",name) == 0) {
+				rc = propertyToPFName(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could net set pcd file name in settings\n");
 					return rc;
 				}
 			}
@@ -3966,20 +4182,6 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
-			else if (strcasecmp("trace.config.int.itc.perf.functionmarker",name) == 0) {
-				rc = propertyToITCPerfFuncMarkerValue(value);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: TraceSettings::addSettings(): Could not set ITC perf funciton marker value in settings\n");
-					return rc;
-				}
-			}
-			else if (strcasecmp("trace.config.int.itc.perf.mask",name) == 0) {
-				rc = propertyToITCPerfMask(value);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: TraceSettings::addSettings(): Could not set ITC perf mask in settings\n");
-					return rc;
-				}
-			}
 			else if (strcasecmp("source.root",name) == 0) {
 				rc = propertyToSrcRoot(value);
 				if (rc != TraceDqr::DQERR_OK) {
@@ -4022,13 +4224,6 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
-			else if (strcasecmp("labelsAsFunctions",name) == 0) {
-				rc = propertyToLabelsAsFuncs(value);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: TraceSettings::addSettings(): Could not set labels as functions in settings\n");
-					return rc;
-				}
-			}
 			else if (strcasecmp("freq",name) == 0) {
 				rc = propertyToFreq(value);
 				if (rc != TraceDqr::DQERR_OK) {
@@ -4045,13 +4240,6 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 			}
 			else if (strcasecmp("eventConversionEnable",name) == 0) {
 				rc = propertyToEventConversionEnable(value);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: TraceSettings::addSettings(): Could not set eventConversionEnable in settings\n");
-					return rc;
-				}
-			}
-			else if (strcasecmp("filterControlEvents",name) == 0) {
-				rc = propertyToFilterControlEvents(value);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: TraceSettings::addSettings(): Could not set eventConversionEnable in settings\n");
 					return rc;
@@ -4078,6 +4266,13 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
+			else if (strcasecmp("objdump",name) == 0) {
+				rc = propertyToObjdumpName(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set name of objdump executable in settings\n");
+					return rc;
+				}
+			}
 		}
 	} while (rc == TraceDqr::DQERR_OK);
 
@@ -4098,7 +4293,25 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToTFName(char *value)
+TraceDqr::DQErr TraceSettings::propertyToObjdumpName(const char *value)
+{
+	if (value != nullptr) {
+		if (odName != nullptr) {
+			delete [] odName;
+			odName = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		odName = new char [l];
+		strcpy(odName,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToTFName(const char *value)
 {
 	if (value != nullptr) {
 		if (tfName != nullptr) {
@@ -4116,7 +4329,7 @@ TraceDqr::DQErr TraceSettings::propertyToTFName(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToEFName(char *value)
+TraceDqr::DQErr TraceSettings::propertyToEFName(const char *value)
 {
 	if (value != nullptr) {
 		if (efName != nullptr) {
@@ -4134,7 +4347,25 @@ TraceDqr::DQErr TraceSettings::propertyToEFName(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToAddrDispFlags(char *value)
+TraceDqr::DQErr TraceSettings::propertyToPFName(const char *value)
+{
+	if (value != nullptr) {
+		if (pfName != nullptr) {
+			delete [] pfName;
+			pfName = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		pfName = new char [l];
+		strcpy(pfName,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToAddrDispFlags(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		addrDispFlags = 0;
@@ -4164,7 +4395,7 @@ TraceDqr::DQErr TraceSettings::propertyToAddrDispFlags(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToSrcBits(char *value)
+TraceDqr::DQErr TraceSettings::propertyToSrcBits(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		char *endp;
@@ -4179,7 +4410,7 @@ TraceDqr::DQErr TraceSettings::propertyToSrcBits(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToNumAddrBits(char *value)
+TraceDqr::DQErr TraceSettings::propertyToNumAddrBits(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		char *endp;
@@ -4194,13 +4425,12 @@ TraceDqr::DQErr TraceSettings::propertyToNumAddrBits(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToITCPrintOpts(char *value)
+TraceDqr::DQErr TraceSettings::propertyToITCPrintOpts(const char *value)
 {
 	TraceDqr::DQErr rc;
 	bool opts;
 
 	rc = propertyToBool(value,opts);
-
 	if (rc != TraceDqr::DQERR_OK) {
 		return rc;
 	}
@@ -4215,7 +4445,7 @@ TraceDqr::DQErr TraceSettings::propertyToITCPrintOpts(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToITCPrintChannel(char *value)
+TraceDqr::DQErr TraceSettings::propertyToITCPrintChannel(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		char *endp;
@@ -4230,7 +4460,7 @@ TraceDqr::DQErr TraceSettings::propertyToITCPrintChannel(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToITCPrintBufferSize(char *value)
+TraceDqr::DQErr TraceSettings::propertyToITCPrintBufferSize(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		char *endp;
@@ -4245,13 +4475,12 @@ TraceDqr::DQErr TraceSettings::propertyToITCPrintBufferSize(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToITCPerfEnable(char *value)
+TraceDqr::DQErr TraceSettings::propertyToITCPerfEnable(const char *value)
 {
 	TraceDqr::DQErr rc;
 	bool opts;
 
 	rc = propertyToBool(value,opts);
-
 	if (rc != TraceDqr::DQERR_OK) {
 		return rc;
 	}
@@ -4266,7 +4495,7 @@ TraceDqr::DQErr TraceSettings::propertyToITCPerfEnable(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToITCPerfChannel(char *value)
+TraceDqr::DQErr TraceSettings::propertyToITCPerfChannel(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		char *endp;
@@ -4281,7 +4510,7 @@ TraceDqr::DQErr TraceSettings::propertyToITCPerfChannel(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToITCPerfMarkerValue(char *value)
+TraceDqr::DQErr TraceSettings::propertyToITCPerfMarkerValue(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		char *endp;
@@ -4296,37 +4525,7 @@ TraceDqr::DQErr TraceSettings::propertyToITCPerfMarkerValue(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToITCPerfFuncMarkerValue(char *value)
-{
-	if ((value != nullptr) && (value[0] != '\0')) {
-		char *endp;
-
-		itcPerfFuncMarkerValue = strtol(value,&endp,0);
-
-		if (endp == value) {
-			return TraceDqr::DQERR_ERR;
-		}
-	}
-
-	return TraceDqr::DQERR_OK;
-}
-
-TraceDqr::DQErr TraceSettings::propertyToITCPerfMask(char *value)
-{
-	if ((value != nullptr) && (value[0] != '\0')) {
-		char *endp;
-
-		itcPerfMask = strtol(value,&endp,0);
-
-		if (endp == value) {
-			return TraceDqr::DQERR_ERR;
-		}
-	}
-
-	return TraceDqr::DQERR_OK;
-}
-
-TraceDqr::DQErr TraceSettings::propertyToSrcRoot(char *value)
+TraceDqr::DQErr TraceSettings::propertyToSrcRoot(const char *value)
 {
 	if (value != nullptr) {
 		if (srcRoot != nullptr) {
@@ -4344,7 +4543,7 @@ TraceDqr::DQErr TraceSettings::propertyToSrcRoot(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToSrcCutPath(char *value)
+TraceDqr::DQErr TraceSettings::propertyToSrcCutPath(const char *value)
 {
 	if (value != nullptr) {
 		if (cutPath != nullptr) {
@@ -4362,7 +4561,7 @@ TraceDqr::DQErr TraceSettings::propertyToSrcCutPath(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToCAName(char *value)
+TraceDqr::DQErr TraceSettings::propertyToCAName(const char *value)
 {
 	if (value != nullptr) {
 		int l;
@@ -4375,7 +4574,7 @@ TraceDqr::DQErr TraceSettings::propertyToCAName(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToCAType(char *value)
+TraceDqr::DQErr TraceSettings::propertyToCAType(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		if (strcasecmp(value,"none") == 0) {
@@ -4404,7 +4603,7 @@ TraceDqr::DQErr TraceSettings::propertyToCAType(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToPathType(char *value)
+TraceDqr::DQErr TraceSettings::propertyToPathType(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		if (strcasecmp("unix",value) == 0) {
@@ -4424,7 +4623,7 @@ TraceDqr::DQErr TraceSettings::propertyToPathType(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToBool(char *src,bool &value)
+TraceDqr::DQErr TraceSettings::propertyToBool(const char *src,bool &value)
 {
 	if ((src != nullptr) && (src[0] != '\0')) {
 		if (strcasecmp("true",src) == 0) {
@@ -4441,32 +4640,25 @@ TraceDqr::DQErr TraceSettings::propertyToBool(char *src,bool &value)
 			}
 		}
 	}
+	else {
+		value = false;
+	}
 
 	return TraceDqr::DQERR_OK;
 }
 
 
-TraceDqr::DQErr TraceSettings::propertyToLabelsAsFuncs(char *value)
-{
-	return propertyToBool(value,labelsAsFunctions);
-}
-
-TraceDqr::DQErr TraceSettings::propertyToCTFEnable(char *value)
+TraceDqr::DQErr TraceSettings::propertyToCTFEnable(const char *value)
 {
 	return propertyToBool(value,CTFConversion);
 }
 
-TraceDqr::DQErr TraceSettings::propertyToEventConversionEnable(char *value)
+TraceDqr::DQErr TraceSettings::propertyToEventConversionEnable(const char *value)
 {
 	return propertyToBool(value,eventConversionEnable);
 }
 
-TraceDqr::DQErr TraceSettings::propertyToFilterControlEvents(char *value)
-{
-	return propertyToBool(value,filterControlEvents);
-}
-
-TraceDqr::DQErr TraceSettings::propertyToFreq(char *value)
+TraceDqr::DQErr TraceSettings::propertyToFreq(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		char *endp;
@@ -4481,7 +4673,7 @@ TraceDqr::DQErr TraceSettings::propertyToFreq(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToStartTime(char *value)
+TraceDqr::DQErr TraceSettings::propertyToStartTime(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		char *endp;
@@ -4496,7 +4688,7 @@ TraceDqr::DQErr TraceSettings::propertyToStartTime(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToHostName(char *value)
+TraceDqr::DQErr TraceSettings::propertyToHostName(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		if (hostName != nullptr) {
@@ -4514,7 +4706,7 @@ TraceDqr::DQErr TraceSettings::propertyToHostName(char *value)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr TraceSettings::propertyToTSSize(char *value)
+TraceDqr::DQErr TraceSettings::propertyToTSSize(const char *value)
 {
 	if ((value != nullptr) && (value[0] != '\0')) {
 		char *endp;
@@ -4531,7 +4723,7 @@ TraceDqr::DQErr TraceSettings::propertyToTSSize(char *value)
 
 // class propertiesParser methods
 
-propertiesParser::propertiesParser(char *srcData)
+propertiesParser::propertiesParser(const char *srcData)
 {
 	status = TraceDqr::DQERR_OK;
 
@@ -4866,20 +5058,28 @@ TraceDqr::DQErr propertiesParser::getNextProperty(char **name,char **value)
 
 // class trace methods
 
-int Trace::decodeInstructionSize(uint32_t inst, int &inst_size)
-{
-  return disassembler->decodeInstructionSize(inst,inst_size);
-}
-
-int Trace::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
-{
-	return disassembler->decodeInstruction(instruction,getArchSize(),inst_size,inst_type,rs1,rd,immediate,is_branch);
-}
-
 Trace::Trace(char *mf_name)
 {
+	sfp          = nullptr;
+	elfReader    = nullptr;
+	disassembler = nullptr;
+	caTrace      = nullptr;
+	counts       = nullptr;//delete this line if compile error
+	efName       = nullptr;
+	rtdName      = nullptr;
+	cutPath      = nullptr;
+	newRoot      = nullptr;
+	itcPrint     = nullptr;
+	nlsStrings   = nullptr;
+	ctf          = nullptr;
+	eventConverter = nullptr;
+	perfConverter = nullptr;
+	objdump       = nullptr;
+
 	if (mf_name == nullptr) {
 		printf("Error: Trace(): mf_name argument null\n");
+
+		cleanUp();
 
 		status = TraceDqr::DQERR_ERR;
 		return;
@@ -4892,6 +5092,9 @@ Trace::Trace(char *mf_name)
 	rc = properties.getStatus();
 	if (rc != TraceDqr::DQERR_OK) {
 		printf("Error: Trace(): new propertiesParser(%s) from file failed with %d\n",mf_name,rc);
+
+		cleanUp();
+
 		status = rc;
 		return;
 	}
@@ -4902,6 +5105,8 @@ Trace::Trace(char *mf_name)
 	if (rc != TraceDqr::DQERR_OK) {
 		printf("Error: Trace(): addSettings() failed\n");
 
+		cleanUp();
+
 		status = rc;
 
 		return;
@@ -4911,25 +5116,50 @@ Trace::Trace(char *mf_name)
 	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
 
+		cleanUp();
+
 		return;
 	}
 
 	status = TraceDqr::DQERR_OK;
 }
 
-Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,uint32_t freq)
+Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,const char *odExe,uint32_t freq)
 {
 	TraceDqr::DQErr rc;
-
 	TraceSettings ts;
+
+	sfp          = nullptr;
+	elfReader    = nullptr;
+	disassembler = nullptr;
+	caTrace      = nullptr;
+	counts       = nullptr;//delete this line if compile error
+	efName       = nullptr;
+	rtdName      = nullptr;
+	cutPath      = nullptr;
+	newRoot      = nullptr;
+	itcPrint     = nullptr;
+	nlsStrings   = nullptr;
+	ctf          = nullptr;
+	eventConverter = nullptr;
+	perfConverter = nullptr;
+	objdump       = nullptr;
+
 	ts.propertyToTFName(tf_name);
 	ts.propertyToEFName(ef_name);
+	ts.propertyToObjdumpName(odExe);
 	ts.numAddrBits = numAddrBits;
+
 	ts.addrDispFlags = addrDispFlags;
 	ts.srcBits = srcBits;
 	ts.freq = freq;
 
 	rc = configure(ts);
+
+	if (rc != TraceDqr::DQERR_OK) {
+		cleanUp();
+	}
+
 	status = rc;
 }
 
@@ -4949,7 +5179,6 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 	sfp          = nullptr;
 	elfReader    = nullptr;
-	symtab       = nullptr;
 	disassembler = nullptr;
 	caTrace      = nullptr;
 	counts       = nullptr;//delete this line if compile error
@@ -4963,9 +5192,24 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	eventConverter = nullptr;
 	eventFilterMask = 0;
 	perfConverter = nullptr;
+	objdump       = nullptr;
 
 	syncCount = 0;
 	caSyncAddr = (TraceDqr::ADDRESS)-1;
+
+	if (settings.odName != nullptr) {
+		int len;
+
+		len = strlen(settings.odName);
+
+		objdump = new char[len+1];
+
+		strcpy(objdump,settings.odName);
+	}
+	else {
+		objdump = new char [sizeof DEFAULTOBJDUMPNAME + 1];
+		strcpy (objdump,DEFAULTOBJDUMPNAME);
+	}
 
 	if (settings.tfName == nullptr) {
 		printf("Error: Trace::configure(): No trace file name specified\n");
@@ -5015,9 +5259,9 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		efName = new char[l];
 		strcpy(efName,settings.efName);
 
-		// create elf object
+		// create elf object - this also forks off objdump and parses the elf file
 
-		elfReader = new (std::nothrow) ElfReader(settings.efName);
+		elfReader = new (std::nothrow) ElfReader(settings.efName,objdump);
 
 		if (elfReader == nullptr) {
 			printf("Error: Trace::Configure(): Could not create ElfReader object\n");
@@ -5028,26 +5272,30 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		}
 
 	    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
-	    	if (sfp != nullptr) {
-	    		delete sfp;
-	    		sfp = nullptr;
-	    	}
-
-	    	delete elfReader;
-	    	elfReader = nullptr;
-
 	    	status = TraceDqr::DQERR_ERR;
+	    	return TraceDqr::DQERR_ERR;
+	    }
 
+	    // get symbol table
+
+	    Symtab *symtab;
+	    Section *sections;
+
+	    symtab = elfReader->getSymtab();
+	    if (symtab == nullptr) {
+	    	status = TraceDqr::DQERR_ERR;
+	    	return TraceDqr::DQERR_ERR;
+	    }
+
+	    sections = elfReader->getSections();
+	    if (sections == nullptr) {
+	    	status = TraceDqr::DQERR_ERR;
 	    	return TraceDqr::DQERR_ERR;
 	    }
 
 	    // create disassembler object
 
-	    bfd *abfd;
-	    abfd = elfReader->get_bfd();
-
-		disassembler = new (std::nothrow) Disassembler(abfd,settings.labelsAsFunctions);
-
+		disassembler = new (std::nothrow) Disassembler(symtab,sections,elfReader->getArchSize());
 		if (disassembler == nullptr) {
 			printf("Error: Trace::Configure(): Could not creat disassembler object\n");
 
@@ -5057,62 +5305,20 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		}
 
 		if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
-			if (sfp != nullptr) {
-				delete sfp;
-				sfp = nullptr;
-			}
-
-			if (elfReader != nullptr) {
-				delete elfReader;
-				elfReader = nullptr;
-			}
-
-			delete disassembler;
-			disassembler = nullptr;
-
 			status = TraceDqr::DQERR_ERR;
-
 			return TraceDqr::DQERR_ERR;
 		}
 
 		rc = disassembler->setPathType(settings.pathType);
 		if (rc != TraceDqr::DQERR_OK) {
-			if (sfp != nullptr) {
-				delete sfp;
-				sfp = nullptr;
-			}
-
-			if (elfReader != nullptr) {
-				delete elfReader;
-				elfReader = nullptr;
-			}
-
-			delete disassembler;
-			disassembler = nullptr;
-
 			status = rc;
 			return rc;
 		}
-
-	    // get symbol table
-
-	    symtab = elfReader->getSymtab();
-	    if (symtab == nullptr) {
-	    	delete elfReader;
-	    	elfReader = nullptr;
-
-	    	delete sfp;
-	    	sfp = nullptr;
-
-	    	status = TraceDqr::DQERR_ERR;
-
-	    	return TraceDqr::DQERR_ERR;
-	    }
 	}
 	else {
 		elfReader = nullptr;
 		disassembler = nullptr;
-		symtab = nullptr;
+		sfp = nullptr;
 	}
 
 	for (int i = 0; (size_t)i < sizeof lastFaddr / sizeof lastFaddr[0]; i++ ) {
@@ -5167,10 +5373,6 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 	instructionInfo.addressLabel = nullptr;
 	instructionInfo.addressLabelOffset = 0;
-	instructionInfo.haveOperandAddress = false;
-	instructionInfo.operandAddress = 0;
-	instructionInfo.operandLabel = nullptr;
-	instructionInfo.operandLabelOffset = 0;
 
 	instructionInfo.timestamp = 0;
 	instructionInfo.caFlags = TraceDqr::CAFLAG_NONE;
@@ -5197,8 +5399,6 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	if (settings.itcPrintOpts != TraceDqr::ITC_OPT_NONE) {
 		rc = setITCPrintOptions(settings.itcPrintOpts,settings.itcPrintBufferSize,settings.itcPrintChannel);
 		if (rc != TraceDqr::DQERR_OK) {
-			cleanUp();
-
 			status = rc;
 			return status;
 		}
@@ -5207,8 +5407,6 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	if ((settings.caName != nullptr) && (settings.caType != TraceDqr::CATRACE_NONE)) {
 		rc = setCATraceFile(settings.caName,settings.caType);
 		if (rc != TraceDqr::DQERR_OK) {
-			cleanUp();
-
 			status = rc;
 			return status;
 		}
@@ -5251,13 +5449,11 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		int perfChannel;
 		uint32_t markerValue;
-		uint32_t funcMarkerValue;
 
 		perfChannel = settings.itcPerfChannel;
 		markerValue = settings.itcPerfMarkerValue;
-		funcMarkerValue = settings.itcPerfFuncMarkerValue;
 
-		rc = enablePerfConverter(perfChannel,markerValue,funcMarkerValue);
+		rc = enablePerfConverter(perfChannel,markerValue);
 		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
 			return status;
@@ -5278,6 +5474,11 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 void Trace::cleanUp()
 {
+	if (objdump != nullptr) {
+		delete [] objdump;
+		objdump = nullptr;
+	}
+
 	for (int i = 0; (size_t)i < (sizeof state / sizeof state[0]); i++) {
 		state[i] = TRACE_STATE_DONE;
 	}
@@ -5310,14 +5511,6 @@ void Trace::cleanUp()
 	if (efName != nullptr) {
 		delete [] efName;
 		efName = nullptr;
-	}
-
-	// do not delete the symtab object!! It is the same symtab object type the elfReader object
-	// contains, and deleting the elfRead above will delete the symtab object below!
-
-	if (symtab != nullptr) {
-//		delete symtab;
-		symtab = nullptr;
 	}
 
 	if (itcPrint  != nullptr) {
@@ -5371,6 +5564,16 @@ void Trace::cleanUp()
 const char *Trace::version()
 {
 	return DQR_VERSION;
+}
+
+int Trace::decodeInstructionSize(uint32_t inst, int &inst_size)
+{
+  return disassembler->decodeInstructionSize(inst,inst_size);
+}
+
+int Trace::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
+{
+	return disassembler->decodeInstruction(instruction,getArchSize(),inst_size,inst_type,rs1,rd,immediate,is_branch);
 }
 
 int Trace::getArchSize()
@@ -5502,7 +5705,7 @@ TraceDqr::DQErr Trace::enableCTFConverter(int64_t startTime,char *hostName)
 	return status;
 }
 
-TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel,uint32_t markerValue,uint32_t funcMarkerValue)
+TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel,uint32_t markerValue)
 {
 	if (perfConverter != nullptr) {
 		delete perfConverter;
@@ -5513,7 +5716,7 @@ TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel,uint32_t markerValue,
 		return TraceDqr::DQERR_ERR;
 	}
 
-	perfConverter = new PerfConverter(efName,rtdName,disassembler,1 << srcbits,perfChannel,markerValue,funcMarkerValue,freq);
+	perfConverter = new PerfConverter(efName,rtdName,disassembler,1 << srcbits,perfChannel,markerValue,freq);
 
 	status = perfConverter->getStatus();
 	if (status != TraceDqr::DQERR_OK) {
@@ -5549,58 +5752,6 @@ TraceDqr::DQErr Trace::setTSSize(int size)
 	tsSize = size;
 
 	return TraceDqr::DQERR_OK;
-}
-
-TraceDqr::DQErr Trace::setLabelMode(bool labelsAreFuncs)
-{
-	if (elfReader == nullptr) {
-		status = TraceDqr::DQERR_ERR;
-		return status;
-	}
-
-	bfd *abfd;
-	abfd = elfReader->get_bfd();
-
-	if (disassembler != nullptr) {
-		delete disassembler;
-		disassembler = nullptr;
-	}
-
-	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
-
-	if (disassembler == nullptr) {
-		printf("Error: Trace::setLabelMode(): Could not create disassembler object\n");
-
-		status = TraceDqr::DQERR_ERR;
-		return status;
-	}
-
-	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
-		if (elfReader != nullptr) {
-			delete elfReader;
-			elfReader = nullptr;
-		}
-
-		delete disassembler;
-		disassembler = nullptr;
-
-		status = TraceDqr::DQERR_ERR;
-
-		return status;
-	}
-
-	TraceDqr::DQErr rc;
-
-	rc = disassembler->subSrcPath(cutPath,newRoot);
-	if (rc != TraceDqr::DQERR_OK) {
-		status = rc;
-
-		return rc;
-	}
-
-	status = TraceDqr::DQERR_OK;
-
-	return status;
 }
 
 TraceDqr::TIMESTAMP Trace::processTS(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs)
@@ -5717,26 +5868,22 @@ TraceDqr::ADDRESS Trace::computeAddress()
 	return currentAddress[currentCore];
 }
 
-int Trace::Disassemble(TraceDqr::ADDRESS addr)
+TraceDqr::DQErr Trace::Disassemble(TraceDqr::ADDRESS addr)
 {
 	if (disassembler == nullptr) {
 		printf("Error: Trace::Disassemble(): No disassembler object\n");
 
 		status = TraceDqr::DQERR_ERR;
 
-		return 0;
+		return TraceDqr::DQERR_ERR;
 	}
 
-	int   rc;
-	TraceDqr::DQErr s;
+	TraceDqr::DQErr rc;
 
-	rc = disassembler->Disassemble(addr);
-
-	s = disassembler->getStatus();
-
-	if (s != TraceDqr::DQERR_OK ) {
-	  status = s;
-	  return 0;
+	rc = disassembler->disassemble(addr);
+	if (rc != TraceDqr::DQERR_OK) {
+	  status = rc;
+	  return TraceDqr::DQERR_ERR;
 	}
 
 	// the two lines below copy each structure completely. This is probably
@@ -5746,18 +5893,13 @@ int Trace::Disassemble(TraceDqr::ADDRESS addr)
 	instructionInfo = disassembler->getInstructionInfo();
 	sourceInfo = disassembler->getSourceInfo();
 
-	return rc;
+	return TraceDqr::DQERR_OK;
 }
 
-const char *Trace::getSymbolByAddress(TraceDqr::ADDRESS addr)
-{
-	return symtab->getSymbolByAddress(addr);
-}
-
-const char *Trace::getNextSymbolByAddress()
-{
-	return symtab->getNextSymbolByAddress();
-}
+//const char *Trace::getSymbolByAddress(TraceDqr::ADDRESS addr)
+//{
+//	return symtab->getSymbolByAddress(addr);
+//}
 
 TraceDqr::DQErr Trace::setITCPrintOptions(int itcFlags,int buffSize,int channel)
 {
@@ -7176,7 +7318,12 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 
 TraceDqr::DQErr Trace::getInstructionByAddress(TraceDqr::ADDRESS addr, Instruction *instInfo,Source *srcInfo,int *flags)
 {
-	Disassemble(addr); // should error check disassembl() call!
+	TraceDqr::DQErr rc;
+
+	rc = Disassemble(addr); // should error check disassembl() call!
+	if (rc != TraceDqr::DQERR_OK) {
+		return TraceDqr::DQERR_ERR;
+	}
 
 	*flags = 0;
 
@@ -7343,28 +7490,34 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 		}
 
 		if (readNewTraceMessage != false) {
-			rc = sfp->readNextTraceMsg(nm,analytics,haveMsg);
+			do {
+				rc = sfp->readNextTraceMsg(nm,analytics,haveMsg);
 
-			if (rc != TraceDqr::DQERR_OK) {
-				// have an error. either EOF, or error
+				if (rc != TraceDqr::DQERR_OK) {
+					// have an error. either EOF, or error
 
-				status = rc;
+					status = rc;
 
-				if (status == TraceDqr::DQERR_EOF) {
-					state[currentCore] = TRACE_STATE_DONE;
+					if (status == TraceDqr::DQERR_EOF) {
+						state[currentCore] = TRACE_STATE_DONE;
+					}
+					else {
+						printf("Error: Trace file does not contain any trace messages, or is unreadable\n");
+
+						state[currentCore] = TRACE_STATE_ERROR;
+					}
+
+					return status;
 				}
-				else {
-					printf("Error: Trace file does not contain any trace messages, or is unreadable\n");
 
-					state[currentCore] = TRACE_STATE_ERROR;
+				if (haveMsg == false) {
+					lastTime[currentCore] = 0;
+					currentAddress[currentCore] = 0;
+	                lastFaddr[currentCore] = 0;
+
+					state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 				}
-
-				return status;
-			}
-
-			if (haveMsg == false) {
-				return status;
-			}
+			} while (haveMsg == false);
 
 			readNewTraceMessage = false;
 			currentCore = nm.coreId;
@@ -8508,11 +8661,21 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			status = elfReader->getInstructionByAddress(addr,inst);
 			if (status != TraceDqr::DQERR_OK) {
-				printf("Error: getInstructionByAddress failed\n");
+				printf("Error: getInstructionByAddress failed - looking for next sync message\n");
 
-				state[currentCore] = TRACE_STATE_ERROR;
+				lastTime[currentCore] = 0;
+				currentAddress[currentCore] = 0;
+                lastFaddr[currentCore] = 0;
 
-				return status;
+				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
+
+				// the evil break below exits the switch statement - not the if statement!
+
+				break;
+
+//				state[currentCore] = TRACE_STATE_ERROR;
+//
+//				return status;
 			}
 
 			// figure out how big the instruction is
@@ -8603,6 +8766,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			currentAddress[currentCore] = addr;
 
 			uint32_t prevCycle;
+			prevCycle = 0;
 
 			if (caTrace != nullptr) {
 				if (syncCount > 0) {

@@ -8,7 +8,7 @@ endif
 
 TOPTARGETS := all clean install
 
-SUBDIRS := Debug Release lib
+SUBDIRS := Debug Release
 
 CONFIG := Debug
 
@@ -18,14 +18,11 @@ include version.mk
 
 $(TOPTARGETS): $(CONFIG)
 
-$(CONFIG): libs
+$(CONFIG):
 	$(MAKE) -C $@ $(MAKECMDGOALS) INSTALLPATH="$(INSTALLABSPATH)"
 
-Release: libs
+Release:
 	$(MAKE) -C Release $(MAKECMDGOALS) INSTALLPATH="$(INSTALLABSPATH)"
-
-libs:
-	$(MAKE) -C lib BINUTILSPATH=$(BINUTILSPATH) $(MAKECMDGOALS) INSTALLPATH="$(INSTALLABSPATH)"
 
 install: install-include install-examples install-scripts
 

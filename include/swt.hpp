@@ -1,3 +1,6 @@
+/* Copyright 2022 SiFive, Inc */
+/* SPDX-License-Identifier: Apache-2.0 */
+
 #include <vector>
 #include <list>
 #include <string>

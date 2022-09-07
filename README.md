@@ -7,42 +7,15 @@ The process to create/capture a trace file is not covered here; only how to buil
 
 This document describes the SiFive trace-decoder, both how to build and how to use.
 
-The name of the stand-alone trace-decoder is `dqr` (for de-queuer). There is also a dynamic library created for Windows, Linux, and Mac OS X (dqr.dll, or libdqr.so). Currently, Freedom Studio uses the  dynamic library to perform trace decodes.
+The name of the stand-alone trace-decoder is `dqr` (for de-queuer). There is also a dynamic library created for Windows, Linux, and Mac OS X (dqr.dll, or libdqr.so). Currently, Freedom Studio uses the dynamic library to perform trace decodes.
 
 ### Licensing:
 
-The trace-decoder is released under the GPL 3 License. For a full copy of the license, see the COPYING file included with the trace-decoder. The licensing statement is:
+The trace-decoder is released under Apache2 and MIT licenses.
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+See LICENSE.Apache2 and LICENSE.MIT for details.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-In addition, the trace-decoder is statically linked with various licensed libraries. The libraries are listed below, along with their licensing:
-
-	libbfd       GNU GPL V3
-	libopcodes   GNU GPL V3
-	libiberty    GNU LGPL V2.1
-	linintl      GNU LGPL V2.1
-	libz         Zlib/libpng License
-
-The GNU GPL V3 license is in the file COPYING; the GNU LGPL V2.1 license is in the file COPYING.LIB; the zlib/libpng License is in the file zlib source file zlib.h, and does not require distribution with the library binary.
-
-These libraries, along with much more, have been ported to RISC-V by SiFive, and are available at the link:
-
-https://github.com/sifive/riscv-binutils-gdb
-
-The binaries for these libraries for all supported platforms are included in this distribution in the lib folders.
-
-### Features Summary as of Version 0.13.0
+### Features Summary as of Version 0.14.0
 
 Available both as a stand-alone executable to decode traces, and as a library suitable for being used as part of a different project. The library also provides interfaces that can be called from Java or C++.
 
@@ -55,6 +28,8 @@ Supports SiFive event trace decoding. When decoding event traces, textual event 
 Multi-core Support. The trace-decoder supports multi-core traces, up to 8 cores through the use of the -srcbits=n switch. When decoding multi-core traces, each line output is prefixed with a core number for identification.
 
 Limited support for generating CTF (Common Trace Format) output files that can be processed by Trace Compass to dispaly Flame Charts and Graphs.
+
+Processes performance trace files created with the SiFive trace perf library, generating textual files containing performance data collected from the processor hardware event counters.
 
 Will process simulator output files and generate a decoded trace-type output
 
@@ -177,15 +152,17 @@ There is a `makefile.init` at the top level that contains the settings that appl
 
 ### Running:
 
+Note: both the trace decider executable and library require a riscv version of objdump. Objdump is used to dump the symbol table information and perform disassembly of the elf file used to generate the trace. See the `-od` swith for addtional information.
+
 Use `dqr -h` to display usage information. It will display something like:
 
 ```
-Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] [-btm | -htm] -basename name
-           [-pf propfile] [-srcbits=nn] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]
+Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] [-od objdump] [-btm | -htm] -basename name
+           [-pf propfile] [-srcbits=n] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]
            [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]
            [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]
            [-noanalytics] [-freq nn] [-tssize=n] [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n]
-           [-cutpath=<base path>] [-s file] [-r addr] [-labels] [-nolables] [-debug] [-nodebug] [-v] [-h]
+           [-cutpath=<base path>] [-s file] [-r addr] [-debug] [-nodebug] [-v] [-h]
 
 -t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).
 -e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).
@@ -195,6 +172,9 @@ Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vec
               flags.
 -ca cafile:   Specify the name of the cycle accurate trace file. Must also specify the -t and -e switches.
 -catype nn:   Specify the type of the CA trace file. Valid options are none, instruction, and vector
+-od objdump:  Specify the path and name of the obdjump executable to use. By default uses riscv64-unkonwn-elf-objdump in the
+              current path unless overridden by the RISCV_PATH environment variable. If not found in either of those, tries the
+              current working directory.
 -btm:         Specify the type of the trace file as btm (branch trace messages). On by default.
 -htm:         Specify the type of the trace file as htm (history trace messages).
 -n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension
@@ -245,8 +225,6 @@ Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vec
               (default).
 -srcbits=n:   The size in bits of the src field in the trace messages. n must 0 to 16. Setting srcbits to 0 disables
               multi-core. n > 0 enables multi-core. If the -srcbits=n switch is not used, srcbits is 0 by default.
--labels:      Treat labels as functions for source information and disassembly. On by default.
--nolables:    Do not use local labels as function names when returning source information or instruction location information.
 -analytics:   Compute and display detail level 1 trace analytics.
 -analytics=n: Specify the detail level for trace analytics display. N sets the level to either 0 (no analytics display)
               1 (sort system totals), or 2 (display analytics by core).
@@ -273,7 +251,7 @@ Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vec
 
 Besides using the trace-decoder from inside Freedom Studio, the most common way to use the program is:
 
-`> dqr -t sort.rtd -e sort.elf -trace`
+`> dqr -t sort.rtd -e sort.elf -trace -od <path/to/objdump/riscv64-unknonwn-elf-objdump>`
 
 This will generate an output that looks something like:
 
@@ -337,37 +315,42 @@ The command line dqr program can use a properties file if the `-pf <filename>` o
 Here is a list of the properties currently processed. The tag field is not case sensitive. Tags other than what is listed below are silently ignored.
 
 ```
-rtd = <rtd file name. Can have abs or rel path>
-elf = <elf file name. Can have abs or rel path>
-srcbits = <number of src bits in trace messages. 2^srcbits = # cores. 0 is the default if srcbits is not present>
-bits = <number of address bits. Normally 32 or 64. Default is 32 if not present>
-trace.config.boolean.enable.itc.print.processing = <true | false. True enables normal ITC prints and nls prints. False enables nls prints. Default is false>
-trace.config.int.itc.print.channel = <n, where n is the itc channel number for itc prints. 0 is the default>
-trace.config.int.itc.print.buffersize = <n, where n is the number of bytes in the itc print buffer. 4096 is the default>
-source.root = <path to prepend to the path for source file lookup. Null by default>
-source.cutpath = <path to remove from beginning of source file lookup before adding source.root. Null by default>
-cafile = <CA trace file name. Can have abs or rel path>
-catype = <none | vector | instruction. Type of ca trace file. None by default>
-tssize = <n, where n is the number of bits in the timestamp counter. 40 by default>
-pathtype = <unix | windows | raw. How source paths should be displayed. unix will use '/' for folder separators, windows will use '\', raw will use what is in the elf file for paths. Default is raw>
-labelsAsFunctions = <true | false. specifies if labels in the elf symbol table are considered functions or not. Default is true>
-freq = <n, where n is the timestamp frequency in Hz. A value of 0 means unknown. 0 is the default>
-ctfenable = <true | false. A value of true enables CTF file generation. Default is false>
-eventconversionenable = <true | false. A value of true enables generation of text CSV files with event information. Default is false>
-addressdisplayflags = <width of addresses to display in bits. If width has a '+' appended to the end, the address displayed will grow past what is specified if needed. Default is 32+>
-starttime = <n, where n is the number of nanoseconds after the Unix Epoch. n == -1 (the default value if not specified) will use the system time as the start time for the trace. Starttime is used in the CTF conversion metadata file.>
-hostname = <host name. This will override the system host name and use the name provided as the host in the CTF conversion metadata file.>
+rtd = <rtd file name>. Can have abs or rel path.
+elf = <elf file name>. Can have abs or rel path.
+srcbits = <number of src bits in trace messages>. 2^srcbits = # cores. 0 is the default if srcbits is not present.
+bits = <number of address bits>. Normally 32 or 64. Default is 32 if not present.
+trace.config.boolean.enable.itc.print.processing = <true | false | 0 | 1>. True enables normal ITC prints and nls prints. False enables nls prints. Default is false.
+trace.config.int.itc.print.channel = <n>, where n is the itc channel number for itc prints. 0 is the default.
+trace.config.int.itc.print.buffersize = <n>, where n is the number of bytes in the itc print buffer. 4096 is the default.
+trace.config.int.itc.perf = <true | false | 0 | 1>. Enables/disabled processing the trace file as a perf trace files. Setting to true will cause the trace decoder to generate text files containing performance counter information collected with the sifive_perf library.
+trace.config.int.itc.perf.channel = <n>, where is the itc channel number for itc perf data. 6 is the default.
+trace.config.int.itc.perf.marker = <n>, where is a a 32 bit number used for identifying the perf data signature in the trace itc message data. Default is the 32 bit value from the expression ('p' << 24) | ('e' << 16) | ('r' << 8) | ('f' << 0), or 0x70657266.
+source.root = <path>. Path will be prepended to the path for source file lookup. Null by default.
+source.cutpath = <path>. Path to remove from beginning of source file lookup before adding source.root. Null by default.
+cafile = <CA trace file name>. Can have abs or rel path.
+catype = <none | vector | instruction>. Type of ca trace file. None by default.
+tssize = <n>. Where n is the number of bits in the timestamp counter. 40 by default.
+pathtype = <unix | windows | raw>. How source paths should be displayed. unix will use '/' for folder separators, windows will use '\', raw will use what is in the elf file for paths. Default is raw.
+freq = <n>. Where n is the timestamp frequency in Hz. A value of 0 means unknown. 0 is the default.
+ctfenable = <true | false | 0 | 1>. A value of true enables CTF file generation. Default is false.
+eventconversionenable = <true | false | 0 | 1>. A value of true enables generation of text files with event information from trace CTF messages. Default is false.
+addressdisplayflags = <width of addresses to display in bits>. If width has a '+' appended to the end, the address displayed will grow past what is specified if needed. Default is 32+.
+starttime = <n>. Where n is the number of nanoseconds after the Unix Epoch. n == -1 (the default value if not specified) will use the system time as the start time for the trace. Starttime is used in the CTF conversion metadata file.
+hostname = <host name>. This will override the system host name and use the name provided as the host in the CTF conversion metadata file.
+objdump = <path-to-objdump>. Specify the name and path for the objdump executable to use. The objdump executable must support RiscV elf files. If not specified, the executable name is riscv64-unknown-elf-objdump and the users path is tried first; if not found there, the environtment variable RISCV_PATH is tried, and if that files, the current working directlly is tried. If on windows, the .exe extention must be included.
 ```
 
 ### CTF and Textual Event File Creation
 
-The trace decoder will translate a SiFive Nexus trace file into a CTF (Common Trace Format) file and textual event files. The CTF file can be processed by Trace Compass for viewing Flame Chart and Flame Graph data.
+The trace decoder can translate a SiFive Nexus trace file into a CTF (Common Trace Format) file, textual event files, or textual performace data files.. The CTF file can be processed by Trace Compass for viewing Flame Chart and Flame Graph data.
 
 If the property `ctfenable = true` is given in the properties file, a ctf folder will be created in the same folder as the Nexus trace file (usually named trace.rtd). CTF files will be written to the ctf folder, one per core plus a metadata file.
 
-If the `eventconversionenable = true` is contained in the properties file, an events folder will be created in the same folder as the Nexus trace file. Text based files will be written to the events folder, one per event type, and one line per event. the name extension identifies the type of events in each file. Also, an events file will be created in the same folder as the Nexus trace file that contains all events. The all events text files with have the extension ".events". An event trace must be processed to get output in the event files. The first column of each event file is the processor ID (core number), the second column is the timestamp. If timestamps are not collected for the trace, all timestamp values will be 0. The columns after the timestamp are dependent on the type of events for the file. All events will have the address that created the event (identified by the "PC=" label). Transfer instructions (jumps, returns) will also have the destination address of the instruction (identified by the 'PCDest=' label).
+If the `eventconversionenable = true` is contained in the properties file, CTF type events in the trace file will be translated and written to textual files. These are not the same as performance event counters (which used the trace.config.int.itc.perf settings flag). An events folder will be created in the same folder as the Nexus trace file. Text based files will be written to the events folder, one per event type, and one line per event. the name extension identifies the type of events in each file. Also, an events file will be created in the same folder as the Nexus trace file that contains all events. The all events text files with have the extension ".events". An event trace must be processed to get output in the event files. The first column of each event file is the processor ID (core number), the second column is the timestamp. If timestamps are not collected for the trace, all timestamp values will be 0. The columns after the timestamp are dependent on the type of events for the file. All events will have the address that created the event (identified by the "PC=" label). Transfer instructions (jumps, returns) will also have the destination address of the instruction (identified by the 'PCDest=' label).
 
-The first line of each textual event file will have the name of the elf file for the trace. Also, each event line in the event files will have the file and line specified where in the source code the event occured (if available).
+If `trace.config.int.itc.perf = true` is specified in the properties files, textual files will be created with hardware event counter information. The trace file must be created using the sifive_perf library, which will capture and write the performance counter infomration into the trace files. In the folder with the elf file, a file will be created using the same base name as the elf file, and the extention perf. Also, a folder will be created with the name perf, and individual files will be written to the folder for each perf type. See the sifive_perf.md document in the trace decoder doc folder for more information.
+
+The first line of each textual event file will have the name of the elf file for the trace. Also, each event line in the event files will have the file, function, and line specified where in the source code the event occured (if available).
 
 Not that CTF and Event conversion can only be enabled in the properties file, and not by using command line switches.
 

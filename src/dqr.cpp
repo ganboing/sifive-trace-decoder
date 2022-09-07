@@ -1,27 +1,5 @@
-/*
- * Copyright 2019 Sifive, Inc.
- *
- * dqr.cpp
- */
-
-/*
-   This file is part of dqr, the SiFive Inc. Risc-V Nexus 2001 trace decoder.
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 3 of the License, or
-   (at your option) any later version.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, see <https://www.gnu.org/licenses/>.
-*/
-
-#include "config.h"
+/* Copyright 2022 SiFive, Inc */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 #include <iostream>
 #include <iomanip>
@@ -33,10 +11,13 @@
 #include <fcntl.h>
 #ifdef WINDOWS
 #include <winsock2.h>
+#include <namedpipeapi.h>
 #else // WINDOWS
 #include <netdb.h>
 #include <sys/ioctl.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #endif // WINDOWS
 
 #include "dqr.hpp"
@@ -68,187 +49,8 @@ static int atoh(char a)
 	return -1;
 }
 
-static void override_print_address(bfd_vma addr, struct disassemble_info *info)
-{
-//	lookup symbol at addr.
-
-  Disassembler *dp;
-
-  // use field in info to point to disassembler object so we can call member funcs
-
-//  printf("addr: %08x\n",addr);
-
-  dp = (Disassembler *)info->application_data;
-
-  if (dp == nullptr) {
-	  printf("Error: override_print_address(): No disassembler object\n");
-	  return; // don't have a way to signal an error.
-  }
-
-  dp->overridePrintAddress(addr,info);
-}
-
-static int asymbol_compare_func(const void *arg1,const void *arg2)
-{
-	if (arg1 == nullptr) {
-		printf("Error: asymbol_compare_func(): Null first argument\n");
-		return 0;
-	}
-
-	if (arg2 == nullptr) {
-		printf("Error: asymbol_compare_func(): Null second argument\n");
-		return 0;
-	}
-
-	asymbol *first;
-	asymbol *second;
-
-	first = *(asymbol **)arg1;
-	second = *(asymbol **)arg2;
-
-	// note: use bfd_asymbol_value() because first and second symbols may not be in same section
-
-	return bfd_asymbol_value((asymbol*)first) - bfd_asymbol_value((asymbol*)second);
-}
-
-// should probably delete this function
-
-__attribute__((unused)) static void dump_syms(asymbol **syms, int num_syms) // @suppress("Unused static function")
-{
-	if (syms == nullptr) {
-		printf("Error: dump_syms(): Null syms argument\n");
-		return;
-	}
-
-    for (int i = 0; i < num_syms; i++) {
-    	printf("%d: 0x%llx '%s'",i,bfd_asymbol_value(syms[i]),syms[i]->name);
-
-    	if (syms[i]->flags == 0) {
-    		printf(" NOTYPE");
-    	}
-
-        if (syms[i]->flags & BSF_LOCAL) {
-          printf(" LOCAL");
-        }
-
-        if (syms[i]->flags & BSF_GLOBAL) {
-          printf(" GLOBAL");
-        }
-
-        if (syms[i]->flags & BSF_EXPORT) {
-          printf(" EXPORT");
-        }
-
-        if (syms[i]->flags & BSF_DEBUGGING) {
-          printf(" DEBUGGING");
-        }
-
-        if (syms[i]->flags & BSF_FUNCTION) {
-          printf(" FUNCTION");
-        }
-
-        if (syms[i]->flags & BSF_KEEP) {
-          printf(" KEEP");
-        }
-
-        if (syms[i]->flags & BSF_ELF_COMMON) {
-          printf(" ELF_COMMON");
-        }
-
-        if (syms[i]->flags & BSF_WEAK) {
-          printf(" WEAK");
-        }
-
-        if (syms[i]->flags & BSF_SECTION_SYM) {
-          printf(" SECTION_SYM");
-        }
-
-        if (syms[i]->flags & BSF_OLD_COMMON) {
-          printf(" OLD_COMMON");
-        }
-
-        if (syms[i]->flags & BSF_NOT_AT_END) {
-          printf(" NOT_AT_END");
-        }
-
-        if (syms[i]->flags & BSF_CONSTRUCTOR) {
-          printf(" CONSTRUCTOR");
-        }
-
-        if (syms[i]->flags & BSF_WARNING) {
-          printf(" WARNING");
-        }
-
-        if (syms[i]->flags & BSF_INDIRECT) {
-          printf(" INDIRECT");
-        }
-
-        if (syms[i]->flags & BSF_FILE) {
-          printf(" FILE");
-        }
-
-        if (syms[i]->flags & BSF_DYNAMIC) {
-          printf(" DYNAMIC");
-        }
-
-        if (syms[i]->flags & BSF_OBJECT) {
-          printf(" OBJECT");
-        }
-
-        if (syms[i]->flags & BSF_DEBUGGING_RELOC) {
-          printf(" DEBUGGING_RELOC");
-        }
-
-        if (syms[i]->flags & BSF_THREAD_LOCAL) {
-          printf(" THREAD_LOCAL");
-        }
-
-        if (syms[i]->flags & BSF_RELC) {
-          printf(" RELC");
-        }
-
-        if (syms[i]->flags & BSF_SRELC) {
-          printf(" SRELC");
-        }
-
-        if (syms[i]->flags & BSF_SYNTHETIC) {
-          printf(" SYNTHETIC");
-        }
-
-        if (syms[i]->flags & BSF_GNU_INDIRECT_FUNCTION) {
-          printf(" GNU_INDIRECT_FUNCTION");
-        }
-
-        printf("\n");
-    }
-}
-
-static char *dis_output;
-
-static int stringify_callback(FILE *stream, const char *format, ...)
-{
-	char buffer[128];
-	va_list vl;
-	int rc;
-
-	// need a smarter struct for dis_output that contains a pointer for where to put the data and a lenght of thedata already in the string
-	// then don't need to strcat, but just print into the buffer indexed by length
-
-	if (dis_output == nullptr) {
-		return 0;
-	}
-
-	va_start(vl, format);
-	rc = vsprintf(buffer, format, vl);
-	va_end(vl);
-
-	strcat(dis_output,buffer);
-
-	return rc;
-}
-
 // Section Class Methods
-cachedInstInfo::cachedInstInfo(const char *file,int cutPathIndex,const char *func,int linenum,const char *lineTxt,const char *instText,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset)
+cachedInstInfo::cachedInstInfo(const char *file,int cutPathIndex,const char *func,int linenum,const char *lineTxt,const char *instText,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset)
 {
 	// Don't need to allocate and copy file and function. They will remain until trace object is deleted
 
@@ -263,11 +65,6 @@ cachedInstInfo::cachedInstInfo(const char *file,int cutPathIndex,const char *fun
 
 	addressLabel = addresslabel;
 	addressLabelOffset = addresslabeloffset;
-
-	haveOperandAddress = haveoperandaddress;
-	operandAddress = operandaddress;
-	operandLabel = operandlabel;
-	operandLabelOffset = operandlabeloffset;
 
 	// Need to allocate and copy instruction. src changes every time an instruction is disassembled, so we need to save it
 
@@ -287,7 +84,6 @@ cachedInstInfo::~cachedInstInfo()
 	functionname = nullptr;
 	lineptr = nullptr;
 	addressLabel = nullptr;
-	operandLabel = nullptr;
 
 	if (instructionText != nullptr) {
 		delete [] instructionText;
@@ -307,36 +103,57 @@ void cachedInstInfo::dump()
 	printf("instruction text: '%s'\n",instructionText);
 	printf("addressLabel: '%s'\n",addressLabel);
 	printf("addressLabelOffset: %d\n",addressLabelOffset);
-	printf("haveOperandAddress: %d\n",haveOperandAddress);
-	printf("operandAddress: 0x%08x\n",operandAddress);
-	printf("operandLabel:%p\n",operandLabel);
-	printf("operandLabel: '%s'\n",operandLabel);
-	printf("operandLabelOffset: %d\n",operandLabelOffset);
 }
 
-// work with elf file sections using libbfd
+// work with elf file sections
 
-section::section()
+Section::Section()
 {
 	next      = nullptr;
-	abfd      = nullptr;
-	asecptr   = nullptr;
+	name[0]   = 0;
+	flags     = 0;
 	size      = 0;
+	offset    = 0;
 	startAddr = (TraceDqr::ADDRESS)0;
 	endAddr   = (TraceDqr::ADDRESS)0;
 	code      = nullptr;
+	fName     = nullptr;
+	line      = nullptr;
+	diss      = nullptr;
 	cachedInfo = nullptr;
 }
 
-section::~section()
+Section::~Section()
 {
 	if (code != nullptr) {
 		delete [] code;
 		code = nullptr;
 	}
 
+	if (fName != nullptr) {
+		// what fNameo[] points to will be deleted when deleting srcFileRoot object
+		delete [] fName;
+		fName = nullptr;
+	}
+
+	if (line != nullptr) {
+		delete [] line;
+		line = nullptr;
+	}
+
+	if (diss != nullptr) {
+		for (unsigned int i = 0; i < size/2; i++) {
+			if (diss[i] != nullptr) {
+				delete [] diss[i];
+				diss[i] = nullptr;
+			}
+		}
+		delete [] diss;
+		diss = nullptr;
+	}
+
 	if (cachedInfo != nullptr) {
-		for (int i = 0; i < size/2; i++) {
+		for (unsigned int i = 0; i < size/2; i++) {
 			if (cachedInfo[i] != nullptr) {
 				delete cachedInfo[i];
 				cachedInfo[i] = nullptr;
@@ -348,56 +165,20 @@ section::~section()
 	}
 }
 
-section *section::initSection(section **head, asection *newsp,bool enableInstCaching)
+void Section::dump()
 {
-	next = *head;
-	*head = this;
+	printf("section: %s 0x%08x - 0x%08x, size: %u, flags: 0x%08x\n",name,startAddr,endAddr,size,flags);
 
-	abfd = newsp->owner;
-	asecptr = newsp;
-	size = newsp->size;
-	startAddr = (TraceDqr::ADDRESS)newsp->vma;
-	endAddr = (TraceDqr::ADDRESS)(newsp->vma + size - 1);
-
-	int words = (size+1)/2;
-
-	code = nullptr;
-
-//	could make code only read when it is needed (lazzy eval), so if nver used, no memory is
-//	ever allocated and no time to read
-
-	code = new (std::nothrow) uint16_t[words];
-
-	if (code == nullptr) {
-		printf("Error: section::initSection(): Could not create code object\n");
-
-		return nullptr;
+	if ((flags & Section::sect_CODE) && (fName != nullptr) && (line != nullptr)) {
+		for (uint32_t i = 0; i < size/2; i++) {
+			printf("[%u]: addr: 0x%08llx, %s:%d\n",i,startAddr + i*2,fName[i],line[i]);
+		}
 	}
-
-    bfd_boolean rc;
-    rc = bfd_get_section_contents(abfd,newsp,(void*)code,0,size);
-    if (rc != TRUE) {
-      printf("Error: bfd_get_section_contents() failed\n");
-      return nullptr;
-    }
-
-    if (enableInstCaching) {
-    	cachedInfo = new cachedInstInfo*[size/2];	// divide by 2 because we want entries for addr/2
-
-    	for (int i = 0; i < size/2; i++) {
-    		cachedInfo[i] = nullptr;
-    	}
-    }
-    else {
-    	cachedInfo = nullptr;
-    }
-
-    return this;
 }
 
-section *section::getSectionByAddress(TraceDqr::ADDRESS addr)
+Section *Section::getSectionByAddress(TraceDqr::ADDRESS addr)
 {
-	section *sp = this;
+	Section *sp = this;
 
 	while (sp != nullptr) {
 		if ((addr >= sp->startAddr) && (addr <= sp->endAddr)) {
@@ -410,7 +191,22 @@ section *section::getSectionByAddress(TraceDqr::ADDRESS addr)
 	return nullptr;
 }
 
-cachedInstInfo *section::setCachedInfo(TraceDqr::ADDRESS addr,const char *file,int cutPathIndex,const char *func,int linenum,const char *lineTxt,const char *instTxt,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset,bool haveoperandaddress,TraceDqr::ADDRESS operandaddress,const char *operandlabel,int operandlabeloffset)
+Section *Section::getSectionByName(char *secName)
+{
+	Section *sp = this;
+
+	while (sp != nullptr) {
+		if (strcmp(sp->name,secName) == 0) {
+			return sp;
+		}
+
+		sp = sp->next;
+	}
+
+	return nullptr;
+}
+
+cachedInstInfo *Section::setCachedInfo(TraceDqr::ADDRESS addr,const char *file,int cutPathIndex,const char *func,int linenum,const char *lineTxt,const char *instTxt,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset)
 {
 	if ((addr >= startAddr) && (addr <= endAddr)) {
 		if (cachedInfo != nullptr) {
@@ -418,12 +214,12 @@ cachedInstInfo *section::setCachedInfo(TraceDqr::ADDRESS addr,const char *file,i
 			int index = (addr - startAddr) >> 1;
 
 			if (cachedInfo[index] != nullptr) {
-				printf("Error: section::setCachedInfo(): cachedInfo[%d] not null\n",index);
+				printf("Error: Section::setCachedInfo(): cachedInfo[%d] not null\n",index);
 				return nullptr;
 			}
 
 			cachedInstInfo *cci;
-			cci = new cachedInstInfo(file,cutPathIndex,func,linenum,lineTxt,instTxt,inst,instSize,addresslabel,addresslabeloffset,haveoperandaddress,operandaddress,operandlabel,operandlabeloffset);
+			cci = new cachedInstInfo(file,cutPathIndex,func,linenum,lineTxt,instTxt,inst,instSize,addresslabel,addresslabeloffset);
 
 			cachedInfo[index] = cci;
 
@@ -434,7 +230,7 @@ cachedInstInfo *section::setCachedInfo(TraceDqr::ADDRESS addr,const char *file,i
 	return nullptr;
 }
 
-cachedInstInfo *section::getCachedInfo(TraceDqr::ADDRESS addr)
+cachedInstInfo *Section::getCachedInfo(TraceDqr::ADDRESS addr)
 {
 	if ((addr >= startAddr) && (addr <= endAddr)) {
 		if (cachedInfo != nullptr) {
@@ -445,9 +241,9 @@ cachedInstInfo *section::getCachedInfo(TraceDqr::ADDRESS addr)
 	return nullptr;
 }
 
-int      Instruction::addrSize;
-uint32_t Instruction::addrDispFlags;
-int      Instruction::addrPrintWidth;
+int        Instruction::addrSize;
+uint32_t   Instruction::addrDispFlags;
+int        Instruction::addrPrintWidth;
 
 std::string Instruction::addressToString(int labelLevel)
 {
@@ -508,32 +304,15 @@ void Instruction::instructionToText(char *dst,size_t len,int labelLevel)
 		return;
 	}
 
-	int n;
-
 	dst[0] = 0;
 
 //	should cache this (as part of other instruction stuff cached)!!
 
 	if (instSize == 32) {
-		n = snprintf(dst,len,"%08x    %s",instruction,instructionText);
+		snprintf(dst,len,"%08x    %s",instruction,instructionText);
 	}
 	else {
-		n = snprintf(dst,len,"%04x        %s",instruction,instructionText);
-	}
-
-	if (haveOperandAddress) {
-		n += snprintf(dst+n,len-n,"%llx",operandAddress);
-
-		if (labelLevel >= 1) {
-			if (operandLabel != nullptr) {
-				if (operandLabelOffset != 0) {
-					snprintf(dst+n,len-n," <%s+%x>",operandLabel,operandLabelOffset);
-				}
-				else {
-					snprintf(dst+n,len-n," <%s>",operandLabel);
-				}
-			}
-		}
+		snprintf(dst,len,"%04x        %s",instruction,instructionText);
 	}
 }
 
@@ -542,15 +321,6 @@ std::string Instruction::addressLabelToString()
 
 	if (addressLabel != nullptr) {
 		return std::string (addressLabel);
-	}
-
-	return std::string("");
-}
-
-std::string Instruction::operandLabelToString()
-{
-	if (operandLabel != nullptr) {
-		return std::string(operandLabel);
 	}
 
 	return std::string("");
@@ -1096,235 +866,2641 @@ TraceDqr::DQErr fileReader::subSrcPath(const char *cutPath,const char *newRoot)
 	return TraceDqr::DQERR_OK;
 }
 
-Symtab::Symtab(bfd *abfd)
+static int symCompareFunc(const void *arg1,const void *arg2)
 {
-	if (abfd == nullptr) {
-		printf("Error: Symtab::Symtab(): abfd was not specified\n");
+	if (arg1 == nullptr) {
+		printf("Error: symCompareFunc(): Null first argument\n");
+		return 0;
+	}
 
-		symbol_table = nullptr;
-		vma = 0;
-		index = 0;
-		number_of_symbols = 0;
-		this->abfd = nullptr;
+	if (arg2 == nullptr) {
+		printf("Error: symCompareFunc(): Null second argument\n");
+		return 0;
+	}
+
+	Sym *first;
+	Sym *second;
+
+	first = *(Sym **)arg1;
+	second = *(Sym **)arg2;
+
+    int64_t cv;
+    cv = first->address - second->address;
+
+    int rv;
+
+// > 0: first comes after second, return 1
+// < 0: first comes before second, return -1
+// = 0: break tie:
+// 	if first is weak and second is not, first comes after second, return 1
+// 	if first is not weak and second is weak, first comes before second, return -1
+//
+// 	if first is debug and second is not, first comes after second, return 1
+// 	if first is not debug and second is debug, first comes before second, return -1
+//
+// 	if first is not global and second is global, first comes after second, return 1
+// 	if first is global and seoncd is not global, first comes before second, return -1
+//
+//	if first is not a function and second is a function, first comes after second, return 1
+//	if first is a function and second is not a function, first comes before second, return -1
+//
+// 	otherwise, return 0
+
+    if (cv > 0) {
+    	rv = 1;
+    }
+    else if (cv < 0) {
+    	rv = -1;
+    }
+    else {
+// if addrs are same, use weak as the tie breaker, or global, or debug
+
+       	if ((first->flags & Sym::symWeak) && !(second->flags & Sym::symWeak)) {
+        	rv = 1;
+       	}
+       	else if (!(first->flags & Sym::symWeak) && (second->flags & Sym::symWeak)) {
+        	rv = -1;
+       	}
+       	else if ((first->flags & Sym::symDebug) && !(second->flags & Sym::symDebug)) {
+        	rv = 1;
+       	}
+       	else if (!(first->flags & Sym::symDebug) && (second->flags & Sym::symDebug)) {
+        	rv = -1;
+       	}
+       	else if (!(first->flags & Sym::symGlobal) && (second->flags & Sym::symGlobal)) {
+        	rv = 1;
+       	}
+       	else if ((first->flags & Sym::symGlobal) && !(second->flags & Sym::symGlobal)) {
+        	rv = -1;
+       	}
+       	else if (!(first->flags & Sym::symFunc) && (second->flags & Sym::symFunc)) {
+        	rv = 1;
+       	}
+       	else if ((first->flags & Sym::symFunc) && !(second->flags & Sym::symFunc)) {
+        	rv = -1;
+       	}
+       	else {
+       		// If we get here, the address and attributes are the same. So we do a
+       		// compare of the names, just to make this deterministic across platforms
+
+       		rv = strcmp(first->name,second->name);
+       	}
+   	}
+
+	return rv;
+}
+
+Symtab::Symtab(Sym *syms)
+{
+	status = TraceDqr::DQERR_OK;
+
+        numSyms = 0;
+
+	if (syms == nullptr) {
+		printf("Info: No symbol information\n");
+
+		symLst = nullptr;
+		numSyms = 0;
 
 		return;
 	}
 
-	this->abfd = abfd;
+	cachedSymAddr = 0;
+	cachedSymSize = 0;
+	cachedSymIndex = -1;
 
-	if ((bfd_get_file_flags (abfd) & HAS_SYMS)) {
-		long storage_needed;
+	symLst = syms;
 
-		storage_needed = bfd_get_symtab_upper_bound(abfd);
+	Sym *symPtr;
 
-		if (storage_needed > 0 ) {
-			symbol_table = (asymbol**)new (std::nothrow) char[storage_needed];
-
-			if (symbol_table == nullptr) {
-				printf("Error: Symtab::Symtab(): Could not create symbol_table object\n");
-
-				symbol_table = nullptr;
-				vma = 0;
-				index = 0;
-				storage_needed = 0;
-				number_of_symbols = 0;
-				this->abfd = nullptr;
-
-				return;
-			}
-
-			number_of_symbols = bfd_canonicalize_symtab(abfd,symbol_table);
-		}
-		else {
-			symbol_table = nullptr;
-		}
-	}
-	else {
-		symbol_table = nullptr;
+	for (symPtr = syms; symPtr != nullptr; symPtr = symPtr->next) {
+		numSyms += 1;
 	}
 
-    vma = 0;
-    index = 0;
+	symPtrArray = new struct Sym*[numSyms];
+
+	symPtr = syms;
+
+	//        	make sure all symbols with no type info in code sections have function type added!
+
+	for (int i = 0; i < numSyms; i++) {
+		symPtrArray[i] = symPtr;
+
+	    symPtr = symPtr->next;
+	}
+
+	// note: qsort does not preserver order on equal items!
+
+   	qsort((void*)symPtrArray,(size_t)numSyms,sizeof symPtrArray[0],symCompareFunc);
+
+   	TraceDqr::DQErr rc;
+
+   	rc = fixupFunctionSizes();
+   	if (rc != TraceDqr::DQERR_OK) {
+   		status = rc;
+   	}
 }
 
 Symtab::~Symtab()
 {
-	if (symbol_table != nullptr) {
-		delete[] symbol_table;
-		symbol_table = nullptr;
+	if (symLst != nullptr) {
+		Sym *nextSym;
+		nextSym = symLst;
+		while (nextSym != nullptr) {
+			Sym *tmpSymPtr;
+			tmpSymPtr = nextSym->next;
+
+			nextSym->srcFile = nullptr;
+
+			if (nextSym->name != nullptr) {
+				delete [] nextSym->name;
+				nextSym->name = nullptr;
+			}
+
+			delete nextSym;
+			nextSym = tmpSymPtr;
+		}
+
+		symLst = nullptr;
+	}
+
+	if (symPtrArray != nullptr) {
+		delete [] symPtrArray;
+		symPtrArray = nullptr;
 	}
 }
 
-TraceDqr::DQErr Symtab::getSymbolByName(char *symName, TraceDqr::ADDRESS &addr)
+TraceDqr::DQErr Symtab::fixupFunctionSizes()
 {
-	if (symName == nullptr) {
+	bool haveStartSym;
+
+	for (int s = 0; s < numSyms; s++) {
+		haveStartSym = false;
+
+		if (symPtrArray[s]->size == 0) {
+			// compute size as distance to next symbol
+
+			// if no section, don't have a start sym!
+			// if debug, don't have a start sym!
+
+			if (!(symPtrArray[s]->flags & Sym::symDebug) && (symPtrArray[s]->section != nullptr)) {
+				haveStartSym = true;
+			}
+		}
+
+		if (haveStartSym) {
+			// look for following symbol - does not need to have a size of 0
+
+			bool haveEndSym;
+			haveEndSym = false;
+
+			for (int e = s+1; (e < numSyms) && !haveEndSym; e++) {
+				if (symPtrArray[s]->section != symPtrArray[e]->section) {
+					// went past end of section
+					// size is from sym to end of section
+
+					symPtrArray[s]->size = symPtrArray[s]->section->endAddr + 1 - symPtrArray[s]->address;
+
+					haveEndSym = true;
+				}
+				else if (symPtrArray[e]->address != symPtrArray[s]->address) {
+					if (!(symPtrArray[s]->flags & Sym::symDebug)) {
+						symPtrArray[s]->size = symPtrArray[e]->address - symPtrArray[s]->address;
+
+						haveEndSym = true;
+					}
+				}
+			}
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Symtab::lookupSymbolByAddress(TraceDqr::ADDRESS addr,Sym *&sym)
+{
+	if (addr == 0) {
+		sym = nullptr;
+
 		return TraceDqr::DQERR_ERR;
 	}
 
-	struct bfd_section *section;
-	bfd_vma section_base_vma;
+	// check for a cache hit
 
-	for (int i = 0; i < number_of_symbols; i++) {
-	    if (strcmp(symbol_table[i]->name,symName) == 0) {
-			section = symbol_table[i]->section;
-		    section_base_vma = section->vma;
+	if ((addr >= cachedSymAddr) && (addr < (cachedSymAddr + cachedSymSize))) {
+			sym = symPtrArray[cachedSymIndex];
 
-		    addr = symbol_table[i]->value + section_base_vma;
-		    printf("symtab::getsymbolbyname: found %s at %08llx\n",symName,addr);
+			return TraceDqr::DQERR_OK;
+	}
 
-		    return TraceDqr::DQERR_OK;
+	// not in cache, go look for it
+
+	// maybe use a binary search in the future - maybe not. bsearch will not always get the first
+
+	int found = -1;
+
+	for (int i = 0;(found == -1) && (i < numSyms); i++) {
+	    if ((addr >= symPtrArray[i]->address) && (addr < (symPtrArray[i]->address + symPtrArray[i]->size))) {
+	    	found = i;
 	    }
 	}
 
-	printf("symtab::getsymbolbyname: %s not found\n",symName);
+	if (found >= 0) {
+		// found - cache it
 
-	return TraceDqr::DQERR_ERR;
-}
-const char *Symtab::getSymbolByAddress(TraceDqr::ADDRESS addr)
-{
-	if (addr == 0) {
-		return nullptr;
+		cachedSymIndex = found;
+		cachedSymAddr = symPtrArray[found]->address;
+
+		sym = symPtrArray[found];
+	}
+	else {
+		sym = nullptr;
 	}
 
-	vma = addr;
-
-	struct bfd_section *section;
-	bfd_vma section_base_vma;
-
-	index = 0;
-
-	for (int i = 0; i < number_of_symbols; i++) {
-		section = symbol_table[i]->section;
-	    section_base_vma = section->vma;
-
-	    if ((section_base_vma + symbol_table[i]->value == vma) && (symbol_table[i]->flags & BSF_FUNCTION)) {
-	    	index = i;
-
-	    	return symbol_table[i]->name;
-	    }
-	}
-
-	return nullptr;
-}
-
-// probably can delete the getNextSymboByAddress() funcs
-
-const char *Symtab::getNextSymbolByAddress()
-{
-	struct bfd_section *section;
-	bfd_vma section_base_vma;
-
-	for (int i = index+1; i < number_of_symbols; i++) {
-		section = symbol_table[i]->section;
-	    section_base_vma = section->vma;
-
-	    if ((section_base_vma + symbol_table[i]->value == vma) && (symbol_table[i]->flags & BSF_FUNCTION)) {
-	    	index = i;
-
-	    	return symbol_table[i]->name;
-	    }
-	}
-
-	return nullptr;
+	return TraceDqr::DQERR_OK;
 }
 
 void Symtab::dump()
 {
-    printf("number_of_symbols: %ld\n",number_of_symbols);
+    printf("number_of_symbols: %ld\n",numSyms);
 
-    for (int i = 0; i < number_of_symbols; i++) {
-      printf("symname: %s: \t",symbol_table[i]->name);
-      bfd_print_symbol_vandf(abfd,stdout,symbol_table[i]);
-      printf("\n");
+    for (int i = 0; i < numSyms; i++) {
+      printf("sym[%d]: address: 0x%08llx, size: %8u ",
+		 i,
+			  symPtrArray[i]->address,
+			  (uint32_t)symPtrArray[i]->size);
+
+      uint32_t flags = symPtrArray[i]->flags;
+
+      if ((flags & (Sym::symLocal | Sym::symGlobal)) == (Sym::symLocal | Sym::symGlobal)) {
+    	  printf("!");
+      }
+      else if (flags & Sym::symLocal) {
+    	  printf("l");
+      }
+      else if (flags & Sym::symGlobal) {
+    	  printf("g");
+      }
+      else {
+    	  printf(" ");
+      }
+
+      if (flags & Sym::symWeak) {
+    	  printf("w");
+      }
+      else {
+    	  printf(" ");
+      }
+
+      if (flags & Sym::symConstructor) {
+    	  printf("C");
+      }
+      else {
+    	  printf(" ");
+      }
+
+      if (flags & Sym::symIndirect) {
+    	  printf("I");
+      }
+      else if (flags & Sym::symIndirectFunc) {
+    	  printf("i");
+      }
+      else {
+    	  printf(" ");
+      }
+
+      if (flags & Sym::symDebug) {
+    	  printf("d");
+      }
+      else if (flags & Sym::symDynamic) {
+    	  printf("D");
+      }
+      else {
+    	  printf(" ");
+      }
+
+      if (flags & Sym::symFunc) {
+    	  printf("F");
+      }
+      else if (flags & Sym::symFile) {
+    	  printf("f");
+      }
+      else if (flags & Sym::symObj) {
+    	  printf("O");
+      }
+      else {
+    	  printf(" ");
+      }
+
+      printf(" %s, ",symPtrArray[i]->name);
+
+      if (symPtrArray[i]->section != nullptr) {
+    	  printf(" section: %s\n",symPtrArray[i]->section->name);
+      }
+      else {
+    	  printf(" section: no section\n");
+      }
     }
 }
 
-bool ElfReader::init = false;
-
-ElfReader::ElfReader(char *elfname)
+ObjDump::ObjDump(const char *elfName,const char* objdumpPath,int &archSize,Section *&codeSectionLst,Sym *&syms,SrcFileRoot &srcFileRoot)
 {
+	TraceDqr::DQErr rc;
+
+	status = TraceDqr::DQERR_OK;
+
+	stdoutPipe = -1;
+	objdumpPid = (pid_t)-1;
+	fpipe = nullptr;
+
+	pipeEOF = false;
+	pipeIndex = 0;
+	endOfBuffer = 0;
+
+	rc = execObjDump(elfName,objdumpPath);
+    if (rc != TraceDqr::DQERR_OK) {
+    	status = TraceDqr::DQERR_ERR;
+    	pipeEOF = true;
+
+    	return;
+    }
+
+    rc = parseObjdump(archSize,codeSectionLst,syms,srcFileRoot);
+
+#ifndef WINDOWS
+
+	int status;
+	status = 0;
+
+	waitpid(objdumpPid,&status,0);
+
+#endif	// WINDOWS
+
+    if (rc != TraceDqr::DQERR_OK) {
+    	status = TraceDqr::DQERR_ERR;
+    }
+}
+
+ObjDump::~ObjDump()
+{
+	if (stdoutPipe >= 0) {
+		close(stdoutPipe);
+		stdoutPipe = -1;
+	}
+
+	if (fpipe != nullptr) {
+		fclose(fpipe);
+		fpipe = nullptr;
+	}
+}
+
+#ifdef WINDOWS
+#define PATH_SEP "\\"
+#define PATH_SEG_SEP ';'
+#else // WINDOWS
+#define PATH_SEP "/"
+#define PATH_SEG_SEP ':'
+#endif // WINDOWS
+
+static TraceDqr::DQErr findObjDump(char *objDump,bool &foundExec)
+{
+//	printf("findObjDump(): %s\n",objDump);
+
+	foundExec = false;
+
+	if (objDump == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+#ifdef WINDOWS
+	// make sure there is a .exe extention on the name of objdump
+
+	int l;
+	l = strlen(objDump);
+	if ((l < 4) || (strcasecmp(&objDump[l - 4],".exe") != 0)) {
+		strcat(objDump,".exe");
+	}
+#endif // WINDOWS
+
+	// see if a path was included in the name.
+
+	bool hasPath;
+	hasPath = false;
+
+	for (int i = 0; (hasPath == false) && (objDump[i] != 0); i++) {
+		if (objDump[i] == '/') {
+			hasPath = true;
+		}
+		else if (objDump[i] == '\\') {
+			hasPath = true;
+		}
+	}
+
+//	printf("hasPath: %d\n",hasPath);
+
+	if (hasPath == true) {
+
+		// has a path - don't mess with it
+
+		// still need to see if it exists
+
+#ifdef WINDOWS
+		if (objDump[0] == '/') {
+			if (((objDump[1] >= 'a') && (objDump[1] <= 'z')) ||
+			    ((objDump[1] >= 'A') && (objDump[1] <= 'Z'))) {
+				if ( objDump[2] == '/') {
+					objDump[0] = objDump[1];
+					objDump[1] = ':';
+				}
+			}
+
+		}
+#endif // WINDOWS
+
+//		printf("try0: %s\n",objDump);
+
+		if (access(objDump,X_OK) == 0) {
+			foundExec = true;
+		}
+
+//		printf("found: %d\n",foundExec);
+
+		return TraceDqr::DQERR_OK;
+	}
+
+	char objdumpcmd[512];
+	char *riscv_path;
+
+	// try prepending the RISCV_PATH environment variable
+
+	riscv_path = getenv("RISCV_PATH");
+	if (riscv_path != nullptr) {
+		bool unix_path;
+		bool windows_path;
+		char last_char;
+
+		unix_path = false;
+		windows_path = false;
+		last_char = 0;
+
+		strcpy(objdumpcmd,riscv_path);
+
+		// see if there is a terminating path specifyer in the path
+
+		for (int i = 0; riscv_path[i] != 0; i++) {
+			if (riscv_path[i] == '/') {
+				unix_path = true;
+			}
+			else if (riscv_path[i] == '\\') {
+				windows_path = true;
+			}
+			else {
+				last_char = riscv_path[i];
+			}
+		}
+
+		if (windows_path == true) {
+			if (unix_path == true) {
+				printf("Error: findObjDump(): Conflicting path type\n");
+				return TraceDqr::DQERR_ERR;
+			}
+
+			if (last_char != '\\') {
+				strcat(objdumpcmd,"\\");
+			}
+		}
+		else if (unix_path == true) {
+			if (last_char != '/') {
+				strcat(objdumpcmd,"/");
+			}
+		}
+
+		strcat(objdumpcmd,objDump);
+
+//		printf("try1: %s\n",objdumpcmd);
+
+		if (access(objdumpcmd,X_OK) == 0) {
+			strcpy(objDump,objdumpcmd);
+
+			foundExec = true;
+
+//			printf("found: %d\n",foundExec);
+
+			return TraceDqr::DQERR_OK;
+		}
+	}
+
+	// see if we can execute objdump with the given name (or path/name)
+
+	char *path;
+	path = getenv("PATH");
+
+	if (path != nullptr) {
+		int s;
+		int e;
+		bool path_sep;
+
+		s = 0;
+		while ((path[s] != 0) && (foundExec == false)) {
+			path_sep = false;
+
+			e = s;
+
+			while ((path[e] != 0) && (path[e] != PATH_SEG_SEP)) {
+				if ((path[e] == '/') || (path[e] == '\\')) {
+					path_sep = true;
+				}
+				else {
+					path_sep = false;
+				}
+				e += 1;
+			}
+
+			// try from start to finish
+
+			char end;
+			end = path[e];
+
+			path[e] = 0;
+			strcpy(objdumpcmd,&path[s]);
+
+//			printf("path seg: %s\n",objdumpcmd);
+
+			// add name of objdump program to end
+
+			if (path_sep == false) {
+				strcat(objdumpcmd,PATH_SEP);
+			}
+
+			strcat(objdumpcmd,objDump);
+
+//			printf("trying path %s, %d\n",objdumpcmd,access(objdumpcmd,X_OK));
+
+			if (access(objdumpcmd,X_OK) == 0) {
+				strcpy(objDump,objdumpcmd);
+
+				foundExec = true;
+
+//				printf("found: %d\n",foundExec);
+			}
+
+			if (end != 0) {
+				s = e+1;
+			}
+			else {
+				s = e;
+			}
+		}
+
+		if (foundExec == true) {
+			strcpy(objDump,objdumpcmd);
+			return TraceDqr::DQERR_OK;
+		}
+	}
+
+	// try executing in the current working directory
+
+#ifdef WINDOWS
+	strcpy(objdumpcmd,".\\");
+#else // WINDOWS
+	strcpy(objdumpcmd,"./");
+#endif // WINDOWS
+
+	strcat(objdumpcmd,objDump);
+
+//	printf("try3: %s\n",objdumpcmd);
+
+	if (access(objdumpcmd,X_OK) == 0) {
+		foundExec = true;
+
+		strcpy(objDump,objdumpcmd);
+
+//		printf("found: %d\n",foundExec);
+
+		return TraceDqr::DQERR_OK;
+	}
+
+//	printf("give up: %d\n",foundExec);
+
+	return TraceDqr::DQERR_OK;
+}
+
+#ifdef WINDOWS
+
+TraceDqr::DQErr ObjDump::execObjDump(const char *elfName,const char *objdumpPath)
+{
+  char cmd[1024];
+  char objdump[512];
+  TraceDqr::DQErr rc;
+
+  if (objdumpPath == nullptr) {
+      strcpy(objdump,DEFAULTOBJDUMPNAME);
+  }
+  else {
+  	strcpy(objdump,objdumpPath);
+  }
+
+  bool foundExec;
+
+  rc = findObjDump(objdump,foundExec);
+  if (rc != TraceDqr::DQERR_OK) {
+	  return TraceDqr::DQERR_ERR;
+  }
+
+  if (foundExec == false) {
+	  printf("Error: execObjDump(): Could not find objdump\n");
+	  return TraceDqr::DQERR_ERR;
+  }
+
+  sprintf(cmd,"%s -t -d -h -l %s",objdump,elfName);
+
+//  printf("cmd: '%s'\n",cmd);
+
+  fpipe = _popen(cmd,"rb");
+  if (fpipe == NULL) {
+    printf("Error: popen(): Failed\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  stdoutPipe = fileno(fpipe);
+  if (stdoutPipe == -1) {
+    printf("Error: fileno(): Failed\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  return TraceDqr::DQERR_OK;
+}
+
+#else // WINDOWS
+
+TraceDqr::DQErr ObjDump::execObjDump(const char *elfName,const char *objdumpPath)
+{
+  int rc;
+  bool foundExec;
+
+  char objdump[512];
+
+  if (objdumpPath == nullptr) {
+    strcpy(objdump,DEFAULTOBJDUMPNAME);
+  }
+  else {
+    strcpy(objdump,objdumpPath);
+  }
+
+  rc = findObjDump(objdump,foundExec);
+  if (rc != TraceDqr::DQERR_OK) {
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (foundExec == false) {
+    printf("Error: execObjDump(): Could not find objdump\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  pid_t pid;
+
+  // pid == 0 for child process, for parent process, pid is pid of child
+
+  int stdoutPipefd[2];
+
+  rc = pipe(stdoutPipefd);
+  if (rc < 0) {
+    printf("Error: pipe(): failed\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  pid = fork();
+  if (pid == -1) {
+    printf("Error: fork(): failed\n");
+
+    close(stdoutPipefd[0]);
+    close(stdoutPipefd[1]);
+
+    objdumpPid = (pid_t)-1;
+
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (pid != 0) {
+    // parent
+
+	objdumpPid = pid;
+
+    close(stdoutPipefd[1]);
+
+    stdoutPipe = stdoutPipefd[0];
+
+    return TraceDqr::DQERR_OK;
+  }
+  else {
+    // child
+
+    close(stdoutPipefd[0]);
+
+    rc = dup2(stdoutPipefd[1],STDOUT_FILENO);
+    if (rc < 0) {
+      printf("Error: child: dup2(): failed\n");
+
+      close(stdoutPipefd[1]);
+
+      return TraceDqr::DQERR_ERR;
+    }
+
+    const char * args[7];
+
+    args[0] = objdump;
+    args[1] = "-t";
+    args[2] = "-d";
+    args[3] = "-h";
+    args[4] = "-l";
+    args[5] = elfName;
+    args[6] = NULL;
+
+    execvp(args[0],(char * const *)args);
+
+    printf("Error: execv(): failed\n");
+
+    close(stdoutPipefd[1]);
+
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // should never get here
+
+  return TraceDqr::DQERR_ERR;
+}
+
+#endif // WINDOWS
+
+TraceDqr::DQErr ObjDump::fillPipeBuffer()
+{
+    int rc;
+
+    if (pipeEOF) {
+        return TraceDqr::DQERR_OK;
+    }
+
+    if (stdoutPipe < 0) {
+        printf("Error: fillPipeBuffer(): Invalid pipe\n");
+
+        return TraceDqr::DQERR_ERR;
+    }
+
+    rc = read(stdoutPipe,pipeBuffer,sizeof pipeBuffer);
+    if (rc < 0) {
+        printf("Error: fillPipeBuffer(): read() failed\n");
+        return TraceDqr::DQERR_ERR;
+    }
+
+    if (rc == 0) {
+        pipeEOF = 0;
+    }
+
+//{
+//for (int i = 0; i < rc; i++) {
+//printf("%c",pipeBuffer[i]);
+//}
+//}
+
+    endOfBuffer = rc;
+    pipeIndex = 0;
+
+    return TraceDqr::DQERR_OK;
+}
+
+bool ObjDump::isWSLookahead()
+{
+	if (pipeIndex >= endOfBuffer) {
+		// fill buffer
+
+		TraceDqr::DQErr rc;
+
+        rc = fillPipeBuffer();
+        if (rc != TraceDqr::DQERR_OK) {
+            return odtt_error;
+        }
+
+        if (endOfBuffer == 0) {
+          return false;
+        }
+	}
+
+	switch (pipeBuffer[pipeIndex]) {
+    case ' ':
+    case '\t':
+    	return true;
+    default:
+    	break;
+	}
+
+	return false;
+}
+
+ObjDump::objDumpTokenType ObjDump::getNextLex(char *lex)
+{
+    TraceDqr::DQErr rc;
+    int haveWS = 1;
+
+    lex[0] = 0;
+
+    // strip WS
+
+    do {
+        while ((pipeIndex < endOfBuffer) && haveWS) {
+            switch(pipeBuffer[pipeIndex]) {
+            case ' ':
+            case '\r':
+            case '\t':
+                pipeIndex += 1;
+                break;
+            default:
+                haveWS = 0;
+                break;
+            }
+        }
+
+        if (haveWS) {
+            // if haveWS is still true, we ran out of chars
+
+            rc = fillPipeBuffer();
+            if (rc != TraceDqr::DQERR_OK) {
+                return odtt_error;
+            }
+
+            if (endOfBuffer == 0) {
+              return odtt_eof;
+            }
+        }
+    } while (haveWS);
+
+    // at this point we have a non-ws char (which could be a '\n')
+
+    // could be a \n, number, symbol, text
+
+    switch (pipeBuffer[pipeIndex]) {
+    case ',':
+        pipeIndex += 1;
+        return odtt_comma;
+    case ':':
+        pipeIndex += 1;
+        return  odtt_colon;
+    case '<':
+        pipeIndex += 1;
+        return  odtt_lt;
+    case '>':
+        pipeIndex += 1;
+        return  odtt_gt;
+    case '(':
+        pipeIndex += 1;
+        return  odtt_lp;
+    case ')':
+        pipeIndex += 1;
+        return  odtt_rp;
+    case '\n':
+        pipeIndex += 1;
+        return  odtt_eol;
+    default:
+        break;
+    }
+
+    int i = 0;
+
+    int haveLex = 0;
+
+    do {
+        while ((pipeIndex < endOfBuffer) && (!haveLex)) {
+            char c;
+            c = pipeBuffer[pipeIndex];
+            switch(c) {
+            case ' ':
+            case '\t':
+            case '\r':
+            case '\n':
+            case ':':
+            case '<':
+            case '>':
+            case ',':
+            case '(':
+            case ')':
+              haveLex = 1;
+              break;
+            default:
+              lex[i] = c;
+              i += 1;
+              pipeIndex += 1;
+              break;
+            }
+        }
+
+        if (!haveLex) {
+            // if haveLex is false, we ran out of chars
+
+            rc = fillPipeBuffer();
+            if (rc != TraceDqr::DQERR_OK) {
+                lex[i] = 0;
+                return odtt_error;
+            }
+
+            if (endOfBuffer == 0) {
+                // this is an eof
+
+                haveLex = 1;
+            }
+        }
+    } while (!haveLex);
+
+    lex[i] = 0;
+
+    return odtt_string;
+}
+
+bool ObjDump::isStringAHexNumber(char *s,uint64_t &n)
+{
+    int validNumber;
+    uint64_t val;
+
+    validNumber = 1;
+    val = 0;
+
+    for (int i = 0; validNumber && (s[i] != 0); i++) {
+        char c;
+
+        c = s[i];
+
+        switch(c) {
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+            val = val * 16 + (c - '0');
+            break;
+        case 'a':
+        case 'b':
+        case 'c':
+        case 'd':
+        case 'e':
+        case 'f':
+            val = val * 16 + (c - 'a' + 10);
+            break;
+        case 'A':
+        case 'B':
+        case 'C':
+        case 'D':
+        case 'E':
+        case 'F':
+            val = val * 16 + (c - 'A' + 10);
+            break;
+        default:
+            validNumber = 0;
+            break;
+        }
+    }
+
+    if (validNumber) {
+        n = val;
+        return true;
+    }
+
+    return false;
+}
+
+bool  ObjDump::isStringADecNumber(char *s,uint64_t &n)
+{
+    int validNumber;
+    uint64_t val;
+
+    validNumber = 1;
+    val = 0;
+
+    for (int i = 0; validNumber && (s[i] != 0); i++) {
+        char c;
+
+        c = s[i];
+
+        switch(c) {
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+            val = val * 10 + (c - '0');
+            break;
+        default:
+            validNumber = 0;
+            break;
+        }
+    }
+
+    if (validNumber) {
+        n = val;
+        return true;
+    }
+
+    return false;
+}
+
+TraceDqr::DQErr ObjDump::parseElfName(char *elfName,enum elfType &et)
+{
+  objDumpTokenType type;
+
+  // get the elf file name
+
+  for (int scanning = 1; scanning; ) {
+    type = getNextLex(elfName);
+
+    switch (type) {
+    case odtt_eol:
+        break;
+    case odtt_lt:
+    case odtt_gt:
+    case odtt_lp:
+    case odtt_rp:
+    case odtt_comma:
+    case odtt_number:
+    case odtt_error:
+        printf("Error: parseElfName(): unexpected input\n");
+        return TraceDqr::DQERR_ERR;
+    case odtt_eof:
+        printf("Error: parseElfName(): EOF encountered\n");
+        return TraceDqr::DQERR_ERR;
+    case odtt_colon:
+        printf("Error: parseElfName(): unexpected input ':'\n");
+        return TraceDqr::DQERR_ERR;
+    case odtt_string:
+        scanning = 0;
+        break;
+    }
+  }
+
+  char lex[256];
+
+  type = getNextLex(lex);
+  if (type != odtt_colon) {
+    printf("Error: parseElfName(): expected ':', %d\n",type);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // if the : is followed by white space, we shold look for "file".
+  // Otherwise, continue collecting elf file name
+
+  if (isWSLookahead() == false) {
+	  // The colon we found must be a drive specify. Get rest of elf name
+	  for (int scanning = 1; scanning; ) {
+	    type = getNextLex(lex);
+
+	    switch (type) {
+	    case odtt_eol:
+	        break;
+	    case odtt_lt:
+	    case odtt_gt:
+	    case odtt_lp:
+	    case odtt_rp:
+	    case odtt_comma:
+	    case odtt_number:
+	    case odtt_error:
+	        printf("Error: parseElfName(): unexpected input\n");
+	        return TraceDqr::DQERR_ERR;
+	    case odtt_eof:
+	        printf("Error: parseElfName(): EOF encountered\n");
+	        return TraceDqr::DQERR_ERR;
+	    case odtt_colon:
+	        printf("Error: parseElfName(): unexpected input ':'\n");
+	        return TraceDqr::DQERR_ERR;
+	    case odtt_string:
+	        scanning = 0;
+	        break;
+	    }
+	  }
+
+	  strcat(elfName,":");
+	  strcat(elfName,lex);
+
+	  type = getNextLex(lex);
+	  if (type != odtt_colon) {
+	    printf("Error: parseElfName(): expected ':', %d\n",type);
+	    return TraceDqr::DQERR_ERR;
+	  }
+  }
+
+  // get the elf file format
+
+  lex[0] = 0;
+
+  type = getNextLex(lex);
+  if ((type != odtt_string) || (strcasecmp("file",lex) != 0)) {
+    printf("Error: parseElfName(): expected 'file'\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  type = getNextLex(lex);
+  if ((type != odtt_string) || (strcasecmp("format",lex) != 0)) {
+    printf("Error: parseElfName(): expected 'format'\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  type = getNextLex(lex);
+  if (type != odtt_string) {
+    printf("Error: parseElfName(): execpted elf file format specifier\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (strcasecmp("elf64-littleriscv",lex) == 0) {
+    et = elfType_64_little;
+  }
+  else if (strcasecmp("elf32-littleriscv",lex) == 0) {
+    et = elfType_32_little;
+  }
+  else {
+    printf("Error: parseElfName(): invalid elf file type\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr ObjDump::parseSection(objDumpTokenType &nextType,char *nextLex,Section *&codeSection)
+{
+    objDumpTokenType type;
+    char lex[256];
+    char name[256];
+    uint64_t n;
+
+    // parse sequence number
+
+    type = getNextLex(lex);
+    if (type != odtt_string) {
+        // this is not an error (yet). We may have reached the end of the section list
+
+        nextType = type;
+        strcpy(nextLex,lex);
+
+        return TraceDqr::DQERR_OK;
+    }
+
+    if (isStringADecNumber(lex,n) == false) {
+        // this is not an error (yet). We may have reached the end of the section list
+
+        nextType = type;
+        strcpy(nextLex,lex);
+
+        return TraceDqr::DQERR_OK;
+    }
+
+    // parse section name
+
+    type = getNextLex(name);
+    if (type != odtt_string) {
+        printf("Error: parseSection(): Expected section name\n");
+        return TraceDqr::DQERR_ERR;
+    }
+
+    // parse section size
+
+    type = getNextLex(lex);
+    if (type != odtt_string) {
+        printf("Error: parseSection(): Expected section size\n");
+        return TraceDqr::DQERR_ERR;
+    }
+
+    if (isStringAHexNumber(lex,n) == false) {
+        printf("Error: parseSection(): Expected section size. Not a valid hex number '%s'\n",lex);
+        return TraceDqr::DQERR_ERR;
+    }
+
+    uint32_t sec_size;
+    sec_size = (uint32_t)n;
+
+    // parse section VMA
+
+    type = getNextLex(lex);
+    if (type != odtt_string) {
+        printf("Error: parseSection(): Expected section VMA\n");
+        return TraceDqr::DQERR_ERR;
+    }
+
+    if (isStringAHexNumber(lex,n) == false) {
+        printf("Error: parseSection(): Expected section VMA. Not a valid hex number '%s'\n",lex);
+        return TraceDqr::DQERR_ERR;
+    }
+
+    uint64_t vma = n;
+
+    // parse section LMA
+
+    type = getNextLex(lex);
+    if (type != odtt_string) {
+        printf("Error: parseSection(): Expected section LMA\n");
+        return TraceDqr::DQERR_ERR;
+    }
+
+    if (isStringAHexNumber(lex,n) == false) {
+        printf("Error: parseSection(): Expected section LMA. Not a valid hex number '%s'\n",lex);
+        return TraceDqr::DQERR_ERR;
+    }
+
+    // parse section file offset
+
+    type = getNextLex(lex);
+    if (type != odtt_string) {
+        printf("Error: parseSection(): Expected section file offset\n");
+        return TraceDqr::DQERR_ERR;
+    }
+
+    if (isStringAHexNumber(lex,n) == false) {
+        printf("Error: parseSection(): Expected section file offset. Not a valid hex number '%s'\n",lex);
+        return TraceDqr::DQERR_ERR;
+    }
+
+    uint32_t file_offset;
+    file_offset = (uint32_t)n;
+
+    // parse section alignment
+
+    type = getNextLex(lex);
+    if (type != odtt_string) {
+        printf("Error: parseSection(): Expected section file offset\n");
+        return TraceDqr::DQERR_ERR;
+    }
+
+    // check for valid alignment
+
+    uint32_t align;
+
+    if (strcmp("2**0",lex) == 0) {
+      align = 1 << 0;
+    }
+    else if (strcmp("2**1",lex) == 0) {
+      align = 1 << 1;
+    }
+    else if (strcmp("2**2",lex) == 0) {
+      align = 1 << 2;
+    }
+    else if (strcmp("2**3",lex) == 0) {
+      align = 1 << 3;
+    }
+    else if (strcmp("2**4",lex) == 0) {
+      align = 1 << 4;
+    }
+    else if (strcmp("2**5",lex) == 0) {
+      align = 1 << 5;
+    }
+    else if (strcmp("2**6",lex) == 0) {
+      align = 1 << 6;
+    }
+    else if (strcmp("2**7",lex) == 0) {
+      align = 1 << 7;
+    }
+    else if (strcmp("2**8",lex) == 0) {
+      align = 1 << 8;
+    }
+    else if (strcmp("2**9",lex) == 0) {
+      align = 1 << 8;
+    }
+    else if (strcmp("2**10",lex) == 0) {
+      align = 1 << 8;
+    }
+    else if (strcmp("2**11",lex) == 0) {
+      align = 1 << 8;
+    }
+    else if (strcmp("2**12",lex) == 0) {
+      align = 1 << 8;
+    }
+    else if (strcmp("2**13",lex) == 0) {
+      align = 1 << 8;
+    }
+    else if (strcmp("2**14",lex) == 0) {
+      align = 1 << 8;
+    }
+    else if (strcmp("2**15",lex) == 0) {
+      align = 1 << 8;
+    }
+    else if (strcmp("2**16",lex) == 0) {
+      align = 1 << 8;
+    }
+    else {
+      printf("Error: parseSection(): Invalid section alignment: %s\n",lex);
+      return TraceDqr::DQERR_ERR;
+    }
+
+    type = getNextLex(lex);
+    if (type != odtt_eol) {
+        printf("Error: parseSection(): Expected EOL\n");
+        return TraceDqr::DQERR_ERR;
+    }
+
+    uint32_t flags = 0;
+
+    do {
+        type = getNextLex(lex);
+        if (type != odtt_string) {
+            printf("Error: parseSection(): Expected string\n");
+            return TraceDqr::DQERR_ERR;
+        }
+
+        if (strcasecmp("CONTENTS",lex) == 0 ) {
+            // set CONTENTS flag
+        	flags |= Section::sect_CONTENTS;
+        }
+        else if (strcasecmp("ALLOC",lex) == 0 ) {
+            // set ALLOC flag
+        	flags |= Section::sect_ALLOC;
+        }
+        else if (strcasecmp("LOAD",lex) == 0 ) {
+            // set LOAD flag
+        	flags |= Section::sect_LOAD;
+        }
+        else if (strcasecmp("READONLY",lex) == 0 ) {
+            // set READONLY flag
+        	flags |= Section::sect_READONLY;
+        }
+        else if (strcasecmp("DATA",lex) == 0 ) {
+            // set DATA flag
+        	flags |= Section::sect_DATA;
+        }
+        else if (strcasecmp("CODE",lex) == 0 ) {
+            // set CODE flag
+        	flags |= Section::sect_CODE;
+        }
+        else if (strcasecmp("THREAD_LOCAL",lex) == 0 ) {
+            // set THREAD_LOCAL flag
+        	flags |= Section::sect_THREADLOCAL;
+        }
+        else if (strcasecmp("DEBUGGING",lex) == 0 ) {
+            // set DEBUGGING flag
+        	flags |= Section::sect_DEBUGGING;
+        }
+        else if (strcasecmp("OCTETS",lex) == 0 ) {
+            // set OCTETS flag
+        	flags |= Section::sect_OCTETS;
+        }
+        else {
+            printf("Error: parseSection(): Expected valid section flag: %s\n",lex);
+            return TraceDqr::DQERR_ERR;
+        }
+
+        type = getNextLex(lex);
+        if ((type != odtt_comma) && (type != odtt_eol)) {
+            printf("Error: parseSection(): Expected comma or eol: %d\n",type);
+            return TraceDqr::DQERR_ERR;
+        }
+    } while((type != odtt_eol) && (type != odtt_eof));
+
+    if ((flags & Section::sect_CODE) || (strcmp(".comment",name) == 0)) {
+    	// create new section
+    	Section *sp = new Section();
+
+    	strcpy(sp->name,name);
+    	sp->flags = flags;
+    	sp->size = sec_size;
+    	sp->offset = file_offset;
+    	sp->align = align;
+    	sp->startAddr = vma;
+    	sp->endAddr = vma + sec_size - 1;
+
+    	codeSection = sp;
+    }
+    else {
+    	codeSection = nullptr;
+    }
+
+    nextType = type;
+    strcpy(nextLex,lex);
+
+    return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr ObjDump::parseSectionList(ObjDump::objDumpTokenType &nextType,char *nextLex,Section *&codeSectionLst)
+{
+    objDumpTokenType type;
+    char lex[256];
+
+    // strip all EOLs
+
+    do {
+        type = getNextLex(lex);
+    } while (type == odtt_eol);
+
+    if ((type != odtt_string) || (strcasecmp("Sections",lex) != 0)) {
+        // no sections: section
+
+        nextType = type;
+        strcpy(nextLex,lex);
+
+        return TraceDqr::DQERR_OK;
+    }
+
+    type = getNextLex(lex);
+    if (type != odtt_colon) {
+        printf("Error: parseSectionList(): expected ':' on Sections line\n");
+
+        return TraceDqr::DQERR_ERR;
+    }
+
+    type = getNextLex(lex);
+    if (type != odtt_eol) {
+        printf("Error: parseSectionList(): extra input on Sections line\n");
+
+        return TraceDqr::DQERR_ERR;
+    }
+
+    const char *expected[] = {
+        "Idx",
+        "Name",
+        "Size",
+        "VMA",
+        "LMA",
+        "File",
+        "off",
+        "Algn"
+    };
+
+    for (int i = 0; i < (int)(sizeof expected / sizeof expected[0]); i++) {
+        type = getNextLex(lex);
+
+        if ((type != odtt_string) || (strcasecmp(expected[i],lex) != 0)) {
+            printf("Error: parseSectionList(): expected '%s'\n",expected[i]);
+            return TraceDqr::DQERR_ERR;
+        }
+    }
+
+    type = getNextLex(lex);
+
+    if (type != odtt_eol) {
+        printf("Error: parseSectionList(): expected eol\n");
+        return TraceDqr::DQERR_ERR;
+    }
+
+    do {
+    	Section *newSection;
+    	TraceDqr::DQErr rc;
+
+    	rc = parseSection(type,lex,newSection);
+    	if (rc != TraceDqr::DQERR_OK) {
+    		printf("Error: parseSectionList(): parseSection() failed\n");
+    		return TraceDqr::DQERR_ERR;
+    	}
+
+    	if (newSection != nullptr) {
+    		newSection->next = codeSectionLst;
+    		codeSectionLst = newSection;
+    	}
+    } while (type == odtt_eol);
+
+    nextType = type;
+    strcpy(nextLex,lex);
+
+    return TraceDqr::DQERR_OK;
+}
+
+ObjDump::objDumpTokenType ObjDump::getRestOfLine(char *lex)
+{
+    TraceDqr::DQErr rc;
+    int haveWS = 1;
+
+    lex[0] = 0;
+
+    // strip WS
+
+    do {
+        while ((pipeIndex < endOfBuffer) && haveWS) {
+            switch(pipeBuffer[pipeIndex]) {
+            case ' ':
+            case '\r':
+            case '\t':
+                pipeIndex += 1;
+                break;
+            default:
+                haveWS = 0;
+                break;
+            }
+        }
+
+        if (haveWS) {
+            // if haveWS is still true, we ran out of chars
+
+            rc = fillPipeBuffer();
+            if (rc != TraceDqr::DQERR_OK) {
+                return odtt_error;
+            }
+
+            if (endOfBuffer == 0) {
+              return odtt_eof;
+            }
+        }
+    } while (haveWS);
+
+    // at this point we have a non-ws char (which could be a '\n')
+
+    // copy chars until eof or eol
+
+    if (pipeBuffer[pipeIndex] == '\n') {
+        pipeIndex += 1;
+        return  odtt_eol;
+    }
+
+    int i = 0;
+
+    int haveLex = 0;
+
+    do {
+        while ((pipeIndex < endOfBuffer) && (!haveLex)) {
+            char c;
+            c = pipeBuffer[pipeIndex];
+            switch(c) {
+            case '\n':
+              haveLex = 1;
+              break;
+            case '\r':
+            	pipeIndex += 1;
+            	break;
+            default:
+              lex[i] = c;
+              i += 1;
+              pipeIndex += 1;
+              break;
+            }
+        }
+
+        if (!haveLex) {
+            // if haveLex is false, we ran out of chars
+
+            rc = fillPipeBuffer();
+            if (rc != TraceDqr::DQERR_OK) {
+                lex[i] = 0;
+                return odtt_error;
+            }
+
+            if (endOfBuffer == 0) {
+                // this is an eof
+
+                lex[i] = 0;
+                return odtt_eof;
+            }
+        }
+    } while (!haveLex);
+
+    lex[i] = 0;
+
+    return odtt_eol;
+}
+
+TraceDqr::DQErr ObjDump::parseFileOrLabelOrDisassembly(line_t &lineType,char *text,int &length,uint32_t &value)
+{
+    objDumpTokenType type;
+    char lex[256];
+    uint64_t n;
+
+	// already have hex number
+
+    //	could be:
+    //
+    // 2  address '<' label '>' ':'				<- Hstring '<' string '>' ':' EOL
+    //
+    // 3  address ':' instruction disassembly	<- Hstring ':' Hstring string2end EOL
+    //
+    // 4  drive ':' path-file ':' line			<- [H]string ':' string ':' Dstring EOL
+    //
+    // 5  name '(' ')' ':'						<- string '(' ')' ':' EOL
+
+    type = getNextLex(lex);
+
+    if (type == odtt_lt) {
+    	// case 2: address '<' label '>' ':'
+
+    	lineType = line_t_label;
+
+    	type = getNextLex(text);
+    	if (type != odtt_string) {
+    		printf("Error: parseFileOrLabelOrDisassembly(): expected label\n");
+    		return TraceDqr::DQERR_ERR;
+    	}
+
+    	type = getNextLex(lex);
+    	if (type != odtt_gt) {
+    		printf("Error: parseFileOrLabelOrDisassembly(): expected '>'\n");
+    		return TraceDqr::DQERR_ERR;
+    	}
+
+    	type = getNextLex(lex);
+    	if (type != odtt_colon) {
+    		printf("Error: parseFileOrLabelOrDisassembly(): expected ':'\n");
+    		return TraceDqr::DQERR_ERR;
+    	}
+
+    	type = getNextLex(lex);
+    }
+    else if (type == odtt_lp) {
+    	// case 5: name '(' ')' ':'
+
+    	lineType = line_t_func;
+
+    	type = getNextLex(lex);
+    	if (type != odtt_rp) {
+    		printf("Error: parseFileOrLabelOrDisassembly(): expected ')'\n");
+    		return TraceDqr::DQERR_ERR;
+    	}
+
+    	type = getNextLex(lex);
+    	if (type != odtt_colon) {
+    		printf("Error: parseFileOrLabelOrDisassembly(): expected ':'\n");
+    		return TraceDqr::DQERR_ERR;
+    	}
+
+    	type = getNextLex(lex);
+    }
+    else if (type == odtt_colon) {
+    	// need to look further to figure out what we have
+
+    	type = getNextLex(text);
+    	if (type != odtt_string) {
+    		printf("Error: parseFileOrLabelOrDisassembly(): Expected instruction or path\n");
+    		return TraceDqr::DQERR_ERR;
+    	}
+
+    	if (isStringAHexNumber(text,n) == false) {
+    		// have a filepath:line
+
+    		lineType = line_t_path;
+
+    		type = getNextLex(lex);
+    		if (type != odtt_colon) {
+    			printf("Error: parseFileOrLabelOrDisassembly(): Expected ':'\n");
+    			return TraceDqr::DQERR_ERR;
+    		}
+
+    		type = getNextLex(lex);
+    		if (type != odtt_string) {
+    			printf("Error: parseFileOrLabelOrDisassembly(): Expected line number\n");
+    			return TraceDqr::DQERR_ERR;
+    		}
+
+    		if (isStringADecNumber(lex,n) == false) {
+                // this might be a weird objdump double path (thank you objdump - NOT).
+
+    			// Discard text and copy lex to text
+    			strcpy(text,lex);
+
+    			type = getNextLex(lex);
+    			if (type != odtt_colon) {
+    				printf("Error: parseFileOrLabelOrDisassembly(): Expected line number after double path\n");
+    				return TraceDqr::DQERR_ERR;
+    			}
+
+    			// need to get the line number
+
+    			type = getNextLex(lex);
+    			if (type != odtt_string) {
+    				printf("Error: parseFileOrLabelOrDisassembly(): Expected line number\n");
+    				return TraceDqr::DQERR_ERR;
+    			}
+
+    			if (isStringADecNumber(lex,n) == false) {
+    				printf("Error: parseFileOrLabelOrDisassembly(): Expected line number\n");
+    				return TraceDqr::DQERR_ERR;
+    			}
+    		}
+
+    		value = (uint32_t)n;
+
+    		// see if we have '(' discriminator n ')'
+
+    	    type = getNextLex(lex);
+    		if (type == odtt_lp) {
+    			type = getNextLex(lex);
+    			if (type != odtt_string) {
+    				printf("Error: parseFileOrLabelOrDisassembly(): Expected discriminator\n");
+    				return TraceDqr::DQERR_ERR;
+    			}
+
+    			type = getNextLex(lex);
+    			if (type != odtt_string) {
+    				printf("Error: parseFileOrLabelOrDisassembly(): Expected discriminator number\n");
+    				return TraceDqr::DQERR_ERR;
+    			}
+
+    			type = getNextLex(lex);
+    			if (type != odtt_rp) {
+    				printf("Error: parseFileOrLabelOrDisassembly(): Expected discriminator ')'\n");
+    				return TraceDqr::DQERR_ERR;
+    			}
+
+    			type = getNextLex(lex);
+    		}
+    	}
+    	else {
+    		//  have a disassembly line
+
+    		lineType = line_t_diss;
+
+    		value = (uint32_t)n;
+
+    	    int len;
+    	    len = strlen(text);
+
+    	    if (len == 4) {
+    	    	length = 16;
+    	    }
+    	    else if (len  == 8) {
+    	    	length = 32;
+    	    }
+    	    else {
+    	        printf("Error: pareFileOrLabelOrDisassembly(): Invalid instruction (%s,%d)\n",text,len);
+    	        return TraceDqr::DQERR_ERR;
+    	    }
+
+    	    type = getRestOfLine(text);
+    	    if ((type == odtt_eof) || (type == odtt_eol)) {
+        	    return TraceDqr::DQERR_OK;
+    	    }
+    	}
+    }
+    else {
+    	printf("Error: parseFileOrLabelOrDisassembly(): Unexpected input (%d, %s, %s)\n",type,text,lex);
+    	return TraceDqr::DQERR_ERR;
+    }
+
+    if ((type != odtt_eol) && (type != odtt_eof)) {
+    	printf("Error: parseFileOrLabelOrDisassembly(): Expected EOL\n");
+    	return TraceDqr::DQERR_ERR;
+    }
+
+    return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr ObjDump::parseFileLine(uint32_t &line)
+{
+	enum objDumpTokenType type;
+	char lex[256];
+	uint64_t n;
+
+	// already have filename when we enter this func
+
+	type = getNextLex(lex);
+	if (type != odtt_colon) {
+		printf("Error: parseFileLine(): Expected ':'\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	type = getNextLex(lex);
+	if ((type != odtt_string) || (isStringADecNumber(lex,n) == 0)) {
+		printf("Error: parseFileLine(): Expected line number\n");
+		return TraceDqr::DQERR_ERR;
+	}
+
+	line = (uint32_t)n;
+
+	type = getNextLex(lex);
+
+	// check for (discriminator n)
+
+	if (type == odtt_lp) {
+		// have (discriminator n)
+		type = getNextLex(lex);
+		if ((type != odtt_string) || (strcasecmp("discriminator",lex) != 0)) {
+			printf("Error: parseFileLine(): Expected discriminator\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+		type = getNextLex(lex);
+		if ((type != odtt_string) || (isStringADecNumber(lex,n) == 0)) {
+			printf("Error: parseFileLine(): Expected discriminator number\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+		type = getNextLex(lex);
+		if (type != odtt_rp) {
+			printf("Error: parseFileLine(): Expected ')'\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+		type = getNextLex(lex);
+	}
+
+	if ((type != odtt_eol) && (type != odtt_eof)) {
+		printf("Error: parseFileLine(): Extra input on end of line. Expected EOL (%d)\n",type);
+		return TraceDqr::DQERR_ERR;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr ObjDump::parseFuncName()
+{
+    enum objDumpTokenType type;
+    char lex[256];
+
+    // should be string ( ^ ) : eol
+
+    type = getNextLex(lex);
+    if (type != odtt_rp) {
+      printf("Error: parseFuncName(): Expected ')'\n");
+
+      return TraceDqr::DQERR_ERR;
+    }
+
+    type = getNextLex(lex);
+    if (type != odtt_colon) {
+      printf("Error: parseFuncName(): Expected ':'\n");
+
+      return TraceDqr::DQERR_ERR;
+    }
+
+    type = getNextLex(lex);
+    if ((type != odtt_eol) && (type != odtt_eof)) {
+      printf("Error: parseFuncName(): Expected EOL (%d)\n",type);
+
+      return TraceDqr::DQERR_ERR;
+    }
+
+    return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr ObjDump::parseDisassemblyList(objDumpTokenType &nextType,char *nextLex,Section *codeSectionLst,SrcFileRoot &srcFileRoot)
+{
+  objDumpTokenType type;
+  char lex[1024];
+  char lex2[1024];
+  TraceDqr::DQErr rc;
+  Section *sp;
+
+  type = getNextLex(lex);
+  if ((type != odtt_string) || (strcasecmp("of",lex) != 0)) {
+    printf("Error: parseDisassemblyList(): Expected 'of'\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  type = getNextLex(lex);
+  if ((type != odtt_string) || (strcasecmp("section",lex) != 0)) {
+    printf("Error: parseDisassemblyList(): Expected 'section'\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  type = getNextLex(lex);
+  if (type != odtt_string) {
+    printf("Error: parseDisassemblyList(): Expected section name\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  sp = codeSectionLst->getSectionByName(lex);
+  if (sp == nullptr) {
+	  printf("Error: parseDisassemblyList(): Section '%s' not found\n",lex);
+	  return TraceDqr::DQERR_ERR;
+  }
+
+  if (sp->code == nullptr) {
+	  sp->code = new uint16_t[(sp->size+1)/2]; // don't need to init to 0's
+  }
+
+  if (sp->diss == nullptr) {
+	  sp->diss = new char*[(sp->size+1)/2];
+	  for (int i = 0; i < (int)(sp->size+1)/2; i++) {
+		  sp->diss[i] = nullptr;
+	  }
+  }
+
+  if (sp->line == nullptr) {
+	  sp->line = new uint32_t [(sp->size+1)/2];
+	  for (int i = 0; i < (int)(sp->size+1)/2; i++) {
+		  sp->line[i] = 0;
+	  }
+  }
+
+  if (sp->fName == nullptr) {
+	  sp->fName = new char*[(sp->size+1)/2];
+	  for (int i = 0; i < (int)(sp->size+1)/2; i++) {
+		  sp->fName[i] = nullptr;
+	  }
+  }
+
+  type = getNextLex(lex);
+  if (type != odtt_colon) {
+    printf("Error: parseDisassemblyList(): Expected ':'\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  type = getNextLex(lex);
+  if (type != odtt_eol) {
+    printf("Error: parseDisassemblyList(): Expected EOL\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // now at start of disassembly
+
+  char *fName = nullptr;
+  uint32_t line = 0;
+
+  for (;;) {
+	  int eol_count = 0;
+
+      while (type == odtt_eol) {
+    	  eol_count += 1;
+          type = getNextLex(lex);
+      }
+
+      if (type != odtt_string) {
+        nextType = type;
+        strcpy(nextLex,lex);
+
+        return TraceDqr::DQERR_OK;
+      }
+
+      line_t lineType;
+      int length;
+      uint32_t value;
+      uint64_t addr;
+
+	  // have a string
+
+      // 1  ...									<- string EOL
+      //
+      // 2  address '<' label '>' ':'			<- Hstring '<' string '>' ':' EOL
+      //
+      // 3  address ':' instruction disassembly	<- Hstring ':' Hstring string2end EOL
+      //
+      // 4  drive ':' path-file ':' line		<- [H]string ':' string ':' Dstring EOL
+      //
+      // 5  function '(' ')' ':'				<- string '(' ')' ':' EOL
+      //
+      // 6  disassembly of section label :		<- string string string string ':' EOL
+      //
+      // 7  symbol table ':'					<- string string ':' EOL
+      //
+
+      // want to only look ahead one lex!
+
+      if (strcmp("...",lex) == 0) { // case 1
+    	  type = getNextLex(lex);
+    	  if (type != odtt_eol) {
+    		  printf("Error: parseDisassemblyList(): Expected '...' to be folowed by EOL\n");
+    		  return TraceDqr::DQERR_ERR;
+    	  }
+
+    	  fName = nullptr;
+    	  line = 0;
+
+          // just skip and do next line
+      }
+      else if (isStringAHexNumber(lex,addr) == true) { // cases 2, 3, and sometimes 4
+		  rc = parseFileOrLabelOrDisassembly(lineType,lex,length,value);
+          if (rc != TraceDqr::DQERR_OK) {
+              printf("Error: parseDisassemblyList(): parseDisassembly() failed\n");
+              return TraceDqr::DQERR_ERR;
+          }
+
+		  switch (lineType) {
+		  case line_t_label:
+			  // currently, don't use anyting from address < label > :
+			  // but this information could be added to sym table in place of reading the sym table?
+			  fName = nullptr;
+			  line = 0;
+			  break;
+		  case line_t_diss:
+        	  int index;
+        	  index = (addr - sp->startAddr)/2;
+
+              sp->code[index] = (uint16_t)value;
+              if (length == 32) {
+                  sp->code[index+1] = (uint16_t)(value >> 16);
+              }
+
+              int len;
+              len = strlen(lex)+1;
+
+              sp->diss[index] = new char[len];
+              strcpy(sp->diss[index],lex);
+
+              // save file and line here. They are set below and remain valid until they are updated
+
+              sp->fName[index] = fName;
+              sp->line[index] = line;
+			  break;
+		  case line_t_path:
+			  sprintf(lex2,"%X:%s",(uint32_t)addr,lex);
+			  fName = srcFileRoot.addFile(lex2);
+			  line = value;
+			  break;
+		  case line_t_func:
+			  // if we get here, function name could be interpreted as number, but it shouln't be (such as f1())
+			  fName = nullptr;
+			  line = 0;
+			  break;
+		  }
+      }
+      else if ((eol_count > 0) && ((strcasecmp("disassembly",lex) == 0) || (strcasecmp("symbol",lex) == 0))) {	// case 6, 7
+          nextType = type;
+          strcpy(nextLex,lex);
+
+          return TraceDqr::DQERR_OK;
+      }
+      else if ((lex[0] == '/') || (lex[0] == '\\')) { // more case 4;
+           rc = parseFileLine(line);
+           if (rc != TraceDqr::DQERR_OK) {
+               printf("Error: parseDisassemblyList(): parseFileLine() failed\n");
+               return TraceDqr::DQERR_ERR;
+           }
+
+           fName = srcFileRoot.addFile(lex);
+      }
+      else {	// case 5, reset of case 4
+      	   // have a string. look ahead and see if it is a '(', ':' (case 5, rest of case 4)
+
+          rc = parseFileOrLabelOrDisassembly(lineType,lex2,length,value);
+          if (rc != TraceDqr::DQERR_OK) {
+              printf("Error: parseDisassemblyList(): parseDisassembly() failed\n");
+              return TraceDqr::DQERR_ERR;
+          }
+
+		  switch (lineType) {
+		  case line_t_label:
+			  printf("Error: parseDisassemblyList(): Bad label\n");
+			  return TraceDqr::DQERR_ERR;
+		  case line_t_diss:
+			  printf("Error: parseDisassemblyList(): Bad disassembly\n");
+			  return TraceDqr::DQERR_ERR;
+		  case line_t_path: // case 4
+			  strcat(lex,":");
+			  strcat(lex,lex2);
+			  fName = srcFileRoot.addFile(lex2);
+			  line = value;
+			  break;
+		  case line_t_func: // case 5
+			  // nothing to do. If we saved the function, would we need to even collect the symtable? Probably.
+			  fName = nullptr;
+			  line = 0;
+			  break;
+		  }
+      }
+
+      type = getNextLex(lex);
+  }
+
+  // should never get here
+
+  return TraceDqr::DQERR_ERR;
+}
+
+TraceDqr::DQErr ObjDump::parseFixedField(uint32_t &flags)
+{
+  TraceDqr::DQErr rc;
+
+  flags = 0;
+
+  // skip first space
+
+  if (pipeIndex >= endOfBuffer) {
+    rc = fillPipeBuffer();
+    if (rc != TraceDqr::DQERR_OK) {
+      printf("Error: parseFixedField(): fillPipeBuffer() failed\n");
+      return TraceDqr::DQERR_ERR;
+    }
+  }
+
+  if (endOfBuffer == 0) {
+    // EOF
+
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (pipeBuffer[pipeIndex] != ' ') {
+    printf("Error: parseFixedField(): Expected ' '.\n");
+
+    return TraceDqr::DQERR_ERR;
+  }
+
+  pipeIndex += 1;
+
+  char flagChars[7];
+
+  for (int i = 0; i < 7; i++ ) {
+    if (pipeIndex >= endOfBuffer) {
+      rc = fillPipeBuffer();
+      if (rc != TraceDqr::DQERR_OK) {
+        printf("Error: parseFixedField(): fillPipeBuffer() failed\n");
+        return TraceDqr::DQERR_ERR;
+      }
+    }
+
+    if (endOfBuffer == 0) {
+      // EOF
+
+      return TraceDqr::DQERR_ERR;
+    }
+
+    flagChars[i] = pipeBuffer[pipeIndex];
+    pipeIndex += 1;
+  }
+
+  // group 1
+
+  if (flagChars[0] == ' ') {
+    // neither global or local
+  }
+  else if (flagChars[0] == 'l') {
+    flags |= Sym::symLocal;
+  }
+  else if (flagChars[0] == 'g') {
+    flags |= Sym::symGlobal;
+  }
+  else if (flagChars[0] == 'u') {
+    flags |= Sym::symGlobal;
+  }
+  else if (flagChars[0] == '!') {
+    flags |= Sym::symLocal | Sym::symGlobal;
+  }
+  else {
+    printf("Error: parseFixedField(): Invalid sym flag '%c'\n",flagChars[0]);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // group 2
+
+  if (flagChars[1] == ' ') {
+    // strong by default
+  }
+  else if (flagChars[1] == 'w') {
+    flags |= Sym::symWeak;
+  }
+  else {
+    printf("Error: parseFixedField(): Invalid sym flag '%c'\n",flagChars[1]);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // group 3
+
+  if (flagChars[2] == ' ') {
+    // not a contstructor
+  }
+  else if (flagChars[2] == 'C') {
+    flags |= Sym::symConstructor;
+  }
+  else {
+    printf("Error: parseFixedField(): Invalid sym flag '%c'\n",flagChars[2]);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // group 4
+
+  if (flagChars[3] == ' ') {
+    // nothing to do
+  }
+  else if (flagChars[3] == 'W') {
+    // nothing to do
+  }
+  else {
+    printf("Error: parseFixedField(): Invalid sym flag '%c'\n",flagChars[3]);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // group 5
+
+  if (flagChars[4] == ' ') {
+    // not indirect or indirect func
+  }
+  else if (flagChars[4] == 'I') {
+    flags |= Sym::symIndirect;
+  }
+  else if (flagChars[4] == 'i') {
+    flags |= Sym::symIndirectFunc;
+  }
+  else {
+    printf("Error: parseFixedField(): Invalid sym flag '%c'\n",flagChars[4]);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // group 6
+
+  if (flagChars[5] == ' ') {
+    // nothing to do
+  }
+  else if (flagChars[5] == 'd') {
+    flags |= Sym::symDebug;
+  }
+  else if (flagChars[5] == 'D') {
+    flags |= Sym::symDynamic;
+  }
+  else {
+    printf("Error: parseFixedField(): Invalid sym flag '%c'\n",flagChars[5]);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // group 7
+
+  if (flagChars[6] == ' ') {
+    // nothing to do
+  }
+  else if (flagChars[6] == 'F') {
+    flags |= Sym::symFunc;
+  }
+  else if (flagChars[6] == 'f') {
+    flags |= Sym::symFile;
+  }
+  else if (flagChars[6] == 'O') {
+    flags |= Sym::symObj;
+  }
+  else {
+    printf("Error: parseFixedField(): Invalid sym flag '%c'\n",flagChars[6]);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr ObjDump::parseSymbol(bool &haveSym,char *secName,char *symName,uint32_t &symFlags,uint64_t &symSize)
+{
+  TraceDqr::DQErr rc;
+  objDumpTokenType type;
+  char lex[256];
+
+  // we have already parsed the sym address
+
+  // Get sym Flags
+
+  haveSym = false;
+
+  rc = parseFixedField(symFlags);
+  if (rc != TraceDqr::DQERR_OK) {
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // Get symbol section name
+
+  type = getNextLex(secName);
+  if (type != odtt_string) {
+    printf("Error: parseSymbol(): Expected symbol section name\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // Get symbol alignment or size
+
+  type = getNextLex(lex);
+  if (type != odtt_string) {
+    printf("Error: parseSymbol(): Expected symbol alignment or size\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (isStringAHexNumber(lex,symSize) == false) {
+    printf("Error: parseSymbol(): Expected a number for alignment or size\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // Get symbol name or special flag
+
+  type = getNextLex(symName);
+  if (type != odtt_eol) { // if eol, there is no name, and we can skip
+    if (type != odtt_string) {
+      printf("Error: parseSymbol(): Expected symbol name or special type (%d)\n",type);
+      return TraceDqr::DQERR_ERR;
+    }
+
+    // Get EOL or symbol name
+
+    type = getNextLex(lex);
+    if (type == odtt_string) {
+      strcpy(symName,lex);
+      type = getNextLex(lex);
+      if (type != odtt_eol) {
+        printf("Error: parseSymbol(): Expected EOL\n");
+        return TraceDqr::DQERR_ERR;
+      }
+    }
+    else if (type == odtt_colon) {
+    	type = getNextLex(lex);
+    	if (type != odtt_string) {
+    		printf("Error: parseSymbol(): Expected path string\n");
+    		return TraceDqr::DQERR_ERR;
+    	}
+
+    	strcat(symName,":");
+    	strcat(symName,lex);
+
+    	type = getNextLex(lex);
+    	if (type != odtt_eol) {
+    		printf("Error: parseSymbol(): Expected EOL\n");
+    		return TraceDqr::DQERR_ERR;
+    	}
+    }
+    else if (type != odtt_eol) {
+      printf("Error: parseSymbol(): Expected EOL\n");
+      return TraceDqr::DQERR_ERR;
+    }
+
+    haveSym = true;
+  }
+
+  return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr ObjDump::parseSymbolTable(objDumpTokenType &nextType,char *nextLex,Sym *&syms,Section *&codeSectionLst)
+{
+  objDumpTokenType type;
+  char lex[256];
+  TraceDqr::DQErr rc;
+
+  type = getNextLex(lex);
+  if (type != odtt_string) {
+    printf("Error: parseSymboTable(): Expected 'TABLE'\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (strcasecmp("table",lex) != 0) {
+    printf("Error: parseSymboTable(): Expected 'TABLE'\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  type = getNextLex(lex);
+  if (type != odtt_colon) {
+    printf("Error: parseSymboTable(): Expected ':'\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  type = getNextLex(lex);
+  if (type != odtt_eol) {
+    printf("Error: parseSymboTable(): Expected EOL\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // now at start of symbols
+
+  uint64_t addr;
+  Sym *file;
+
+  file = nullptr;
+
+  for (;;) {
+    // skip any extra eols
+
+    do {
+      type = getNextLex(lex);
+    } while (type == odtt_eol);
+
+    // Get Symbol address
+
+    if (type != odtt_string) {
+      printf("Error: parseSymbolTable(): Bad input found looking for symbol address\n");
+      return TraceDqr::DQERR_ERR;
+    }
+
+    if (isStringAHexNumber(lex,addr) == false) {
+      // end of symbols
+      nextType = type;
+      strcpy(nextLex,lex);
+
+      return TraceDqr::DQERR_OK;
+    }
+
+    bool haveSym;
+    char secName[256];
+    char symName[256];
+    uint64_t symSize;
+    uint32_t symFlags;
+
+    haveSym = false;
+
+    rc = parseSymbol(haveSym,secName,symName,symFlags,symSize);
+    if (rc != TraceDqr::DQERR_OK) {
+        return TraceDqr::DQERR_ERR;
+    }
+
+    if (haveSym) {
+    	Sym *sp;
+    	sp = new Sym();
+
+    	sp->next = syms;
+    	sp->name = new char[strlen(symName)+1];
+    	strcpy(sp->name,symName);
+    	sp->flags = symFlags;
+    	sp->address = addr;
+    	sp->size = symSize;
+
+    	if (symFlags & Sym::symFile) {
+    		file = sp;
+    		sp->srcFile = nullptr;
+    	}
+	else if ((symFlags != Sym::symLocal) && (symFlags != (Sym::symLocal | Sym::symFunc))) {
+		// if not local flag, turn off srcFile setting
+		file = nullptr;
+	}
+    	else {
+    		sp->srcFile = file;
+    	}
+
+    	Section *sec;
+    	sec = codeSectionLst->getSectionByName(secName);
+    	sp->section = sec;
+
+    	syms = sp;
+    }
+    else if (symFlags & Sym::symFile) {
+    	file = nullptr;
+    }
+  }
+
+  // should never get here
+
+  return TraceDqr::DQERR_ERR;
+}
+
+TraceDqr::DQErr ObjDump::parseObjdump(int &archSize,Section *&codeSectionLst,Sym *&symLst,SrcFileRoot &srcFileRoot)
+{
+    TraceDqr::DQErr rc;
+    objDumpTokenType type;
+    char lex[256];
+    char elfName[256];
+    elfType et;
+
+    rc = parseElfName(elfName,et);
+    if (rc != TraceDqr::DQERR_OK) {
+        printf("Error: parseObjdump(): expected file name and type\n");
+        return TraceDqr::DQERR_ERR;
+    }
+
+    switch (et) {
+    case elfType_unknown:
+    	printf("Error: parseObjDump(): Unknown elf file type\n");
+    	return TraceDqr::DQERR_ERR;
+    case elfType_64_little:
+    	archSize = 64;
+    	break;
+    case elfType_32_little:
+    	archSize = 32;
+		break;
+    }
+
+    rc = parseSectionList(type,lex,codeSectionLst);
+    if (rc != TraceDqr::DQERR_OK) {
+        printf("Error: parseObjdump(): parseSectionList() failed\n");
+        return TraceDqr::DQERR_ERR;
+    }
+
+    // strip out eols until we get something else
+
+    while (type == odtt_eol) {
+        type = getNextLex(lex);
+    }
+
+    // below should loop until error or eof
+
+    while (type == odtt_string) {
+        if (strcasecmp("disassembly",lex) == 0) {
+            rc = parseDisassemblyList(type,lex,codeSectionLst,srcFileRoot);
+            if (rc != TraceDqr::DQERR_OK) {
+                return TraceDqr::DQERR_ERR;
+            }
+        }
+        else if (strcasecmp("symbol",lex) == 0) {
+            rc = parseSymbolTable(type,lex,symLst,codeSectionLst);
+            if (rc != TraceDqr::DQERR_OK) {
+                return TraceDqr::DQERR_ERR;
+            }
+        }
+        else {
+            printf("Error: parseObjdump(): Unexpected input in stream: '%s'\n",lex);
+            return TraceDqr::DQERR_ERR;
+        }
+    }
+
+    if (type != odtt_eof) {
+        printf("Error: parseObjdump(): unexpected stuff in input %d\n",type);
+        return TraceDqr::DQERR_ERR;
+    }
+
+    return TraceDqr::DQERR_OK;
+}
+
+SrcFile::SrcFile(char *fName,SrcFile *nxt)
+{
+	int len;
+	len = strlen(fName)+1;
+
+	file = new char[len];
+	strcpy(file,fName);
+
+	next = nxt;
+}
+
+SrcFile::~SrcFile()
+{
+	if (file != nullptr) {
+		delete [] file;
+		file = nullptr;
+	}
+
+	next = nullptr;
+}
+
+SrcFileRoot::SrcFileRoot()
+{
+	fileRoot = nullptr;
+}
+
+SrcFileRoot::~SrcFileRoot()
+{
+	SrcFile *srcFile;
+
+	srcFile = fileRoot;
+
+	while (srcFile != nullptr) {
+		SrcFile *next;
+		next = srcFile->next;
+		delete srcFile;
+		srcFile = next;
+	}
+
+	fileRoot = nullptr;
+}
+
+char *SrcFileRoot::addFile(char *fName)
+{
+	if (fName == nullptr) {
+		printf("Error: SrcFile::AddFile(): Null fName argument\n");
+		return nullptr;
+	}
+
+	SrcFile *srcFile = fileRoot;
+
+	for (bool found = false; (srcFile != nullptr) && (found == false);) {
+		if (strcmp(srcFile->file,fName) == 0) {
+			found = true;
+		}
+		else {
+			srcFile = srcFile->next;
+		}
+	}
+
+	if (srcFile == nullptr) {
+		srcFile = new SrcFile(fName,fileRoot);
+		fileRoot = srcFile;
+	}
+
+	return srcFile->file;
+}
+
+void SrcFileRoot::dump()
+{
+	for (SrcFile *sfp = fileRoot; sfp != nullptr; sfp = sfp->next) {
+		printf("sfp: 0x%08llx, file: 0x%08llx %s, next: 0x%08llx\n",sfp,sfp->file,sfp->file,sfp->next);
+	}
+}
+
+ElfReader::ElfReader(const char *elfname,const char *odExe)
+{
+  status = TraceDqr::DQERR_OK;
+  symtab = nullptr;
+  codeSectionLst = nullptr;
+  elfName = nullptr;
+
   if (elfname == nullptr) {
 	printf("Error: ElfReader::ElfReader(): No elf file name specified\n");
 	status = TraceDqr::DQERR_ERR;
 	return;
   }
 
-  if (init == false) {
-	  // only call bfd_init once - not once per object
+  int len = strlen(elfname)+1;
+  elfName = new char [len];
+  strcpy (elfName,elfname);
 
-	  bfd_init();
-	  init = true;
-  }
+  Sym *symLst = nullptr;
 
-  abfd = bfd_openr(elfname,NULL);
-  if (abfd == nullptr) {
-    status = TraceDqr::DQERR_ERR;
-
-    bfd_error_type bfd_error = bfd_get_error();
-    printf("Error: bfd_openr() returned null. Error: %d\n",bfd_error);
-    printf("Error: Can't open file %s\n",elfname);
-
-    return;
-  }
-
-  if(!bfd_check_format(abfd,bfd_object)) {
-    printf("Error: ElfReader(): %s not object file: %d\n",elfname,bfd_get_error());
+  ObjDump *objdump = new ObjDump(elfname,odExe,archSize,codeSectionLst,symLst,srcFileRoot);
+  if (objdump->getStatus() != TraceDqr::DQERR_OK) {
+	delete objdump;
+	objdump = nullptr;
 
 	status = TraceDqr::DQERR_ERR;
-
 	return;
   }
 
-  const bfd_arch_info_type *aitp;
+  delete objdump;
+  objdump = nullptr;
 
-  aitp = bfd_get_arch_info(abfd);
-  if (aitp == nullptr) {
-	  printf("Error: ElfReader(): Cannot get arch info for file %s\n",elfname);
-
-	  status = TraceDqr::DQERR_ERR;
-	  return;
+  switch (archSize) {
+  case 32:
+	  bitsPerAddress = 32;
+	  break;
+  case 64:
+	  bitsPerAddress = 64;
+	  break;
   }
 
-// lines below are commented out because the bfd is reaturning the wrong arch for
-// riscv arch (returning 67 and not 74)
-//
-//  printf("arch: %d, bfd_arch_riscv: %d, mach: %d\n",aitp->arch,bfd_arch_riscv,aitp->mach);
-//
-//  if (aitp->arch != bfd_arch_riscv) {
-//    printf("Error: ElfReader(): elf file is not for risc-v architecture\n");
-//
-//	  status = dqr::dqr::DQERR_ERR;
-//	  return;
-//  }
+  symtab = new Symtab(symLst);
 
-  switch (aitp->mach) {
-  case bfd_mach_riscv32:
-	  archSize = 32;
-	  bitsPerWord = aitp->bits_per_word;
-	  bitsPerAddress = aitp->bits_per_address;
-	  break;
-  case bfd_mach_riscv64:
-	  archSize = 64;
-	  bitsPerWord = aitp->bits_per_word;
-	  bitsPerAddress = aitp->bits_per_address;
-	  break;
-  default:
-	  printf("Error: ElfReader(): elf file is for unknown machine type\n");
+  TraceDqr::DQErr rc;
 
+  rc = fixupSourceFiles(codeSectionLst,symLst);
+  if (rc != TraceDqr::DQERR_OK) {
 	  status = TraceDqr::DQERR_ERR;
 	  return;
-  }
-
-  symtab = nullptr;
-  codeSectionLst = nullptr;
-
-  for (asection *p = abfd->sections; p != NULL; p = p->next) {
-	  if (p->flags & SEC_CODE) {
-          // found a code section, add to list
-
-		  section *sp = new section;
-		  sp->initSection(&codeSectionLst,p,false);
-	  }
   }
 
   status = TraceDqr::DQERR_OK;
@@ -1332,22 +3508,56 @@ ElfReader::ElfReader(char *elfname)
 
 ElfReader::~ElfReader()
 {
+	if (elfName != nullptr) {
+		delete [] elfName;
+		elfName = nullptr;
+	}
+
 	if (symtab != nullptr) {
+		// elfReader is the only objet that really owns the Symtab, and is the only object that should
+		// delete it!
+
 		delete symtab;
 		symtab = nullptr;
 	}
 
 	while (codeSectionLst != nullptr) {
-		section *nextSection = codeSectionLst->next;
+		Section *nextSection = codeSectionLst->next;
 		delete codeSectionLst;
 		codeSectionLst = nextSection;
 	}
+}
 
-	if (abfd != nullptr) {
-		bfd_close(abfd);
+TraceDqr::DQErr ElfReader::fixupSourceFiles(Section *sections,Sym *syms)
+{
+	// iterate through the symbols looking for non-null srcFile field and add it to fName[index].
 
-		abfd = nullptr;
+	for (Sym *sym = syms; sym != nullptr; sym = sym->next) {
+		if (sym->srcFile != nullptr) {
+			Section *sp = sym->section;
+			if ((sp != nullptr) && (sp->flags & Section::sect_CODE)) {
+				int index;
+				TraceDqr::ADDRESS addr;
+
+				addr = sym->address;
+				index = (addr - sp->startAddr) / 2;
+
+				uint32_t i;
+
+				i = 0;
+
+				do { // do at least one
+					if (sp->fName[index+i] == nullptr) {
+						sp->fName[index+i] = sym->srcFile->name;
+						sp->line[index+i] = 0;
+					}
+					i += 1;
+				} while (i < (uint32_t)sym->size/2);
+			}
+		}
 	}
+
+	return TraceDqr::DQERR_OK;
 }
 
 TraceDqr::DQErr ElfReader::getInstructionByAddress(TraceDqr::ADDRESS addr,TraceDqr::RV_INST &inst)
@@ -1360,7 +3570,7 @@ TraceDqr::DQErr ElfReader::getInstructionByAddress(TraceDqr::ADDRESS addr,TraceD
 
 	// hmmm.. probably should cache section pointer, and not address/instruction! Or maybe not cache anything?
 
-	section *sp;
+	Section *sp;
 	if (codeSectionLst == nullptr) {
 		status = TraceDqr::DQERR_ERR;
 		return status;
@@ -1420,10 +3630,11 @@ TraceDqr::DQErr ElfReader::getInstructionByAddress(TraceDqr::ADDRESS addr,TraceD
 
 TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 {
-	asection *sp;
+	Section *sp;
 	bool found = false;
+	int rc;
 
-	for (sp = abfd->sections; (sp != NULL) && !found;) {
+	for (sp = codeSectionLst; (sp != NULL) && !found;) {
 		if (strcmp(sp->name,".comment") == 0) {
 			found = true;
 		}
@@ -1447,16 +3658,37 @@ TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 		return TraceDqr::DQERR_ERR;
 	}
 
-	bfd_boolean rc;
-	rc = bfd_get_section_contents(abfd,sp,(void*)data,0,size);
-	if (rc != TRUE) {
-		printf("Error: ElfReader::parseNLSStrings(): bfd_get_section_contents() failed\n");
+	int fd;
+	fd = open(elfName,O_RDONLY);
+	if (fd < 0) {
+		printf("Error: elfReader::parseNLSStrings(): Could not open file %s for input\n",elfName);
+		return TraceDqr::DQERR_ERR;
+	}
 
+	rc = lseek(fd,sp->offset,SEEK_SET);
+	if (rc < 0) {
+		printf("Error: ElfReder::parseNLSStrings(): Error seeking to .comment section");
+		close (fd);
+		fd = -1;
 		delete [] data;
 		data = nullptr;
 
 		return TraceDqr::DQERR_ERR;
 	}
+
+	rc = read(fd,data,size);
+	if (rc != size) {
+		printf("Error: ElfReader::parseNLSStrings(): Error reading .comment section\n");
+		close(fd);
+		fd = -1;
+		delete [] data;
+		data = nullptr;
+
+		return TraceDqr::DQERR_ERR;
+	}
+
+	close (fd);
+	fd = -1;
 
 	int index;
 
@@ -1588,25 +3820,7 @@ TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 
 Symtab *ElfReader::getSymtab()
 {
-	if (symtab == nullptr) {
-		symtab = new (std::nothrow) Symtab(abfd);
-
-		if (symtab == nullptr) {
-			printf("Error: ElfReader::getSymtabl(): Could not allocate Symtab object\n");
-			return nullptr;
-		}
-	}
-
 	return symtab;
-}
-
-TraceDqr::DQErr ElfReader::getSymbolByName(char *symName,TraceDqr::ADDRESS &addr)
-{
-	if (symtab == nullptr) {
-		symtab = getSymtab();
-	}
-
-	return symtab->getSymbolByName(symName,addr);
 }
 
 TraceDqr::DQErr ElfReader::dumpSyms()
@@ -2886,7 +5100,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		n = snprintf(dst,dst_len,"Instructions             Compressed                   RV32\n");
 		updateDst(n,dst,dst_len);
 
-		n = snprintf(dst,dst_len,"  %10u    %10u (%0.2f%%)    %10u (%0.2f%%)\n",num_inst_all_cores,num_inst16_all_cores,((float)num_inst16_all_cores)/num_inst_all_cores*100.0,num_inst32_all_cores,((float)num_inst32_all_cores)/num_inst_all_cores*100.0);
+		if (num_inst_all_cores > 0) {
+			n = snprintf(dst,dst_len,"  %10u    %10u (%0.2f%%)    %10u (%0.2f%%)\n",num_inst_all_cores,num_inst16_all_cores,((float)num_inst16_all_cores)/num_inst_all_cores*100.0,num_inst32_all_cores,((float)num_inst32_all_cores)/num_inst_all_cores*100.0);
+		}
+		else {
+			n = snprintf(dst,dst_len,"          -");
+		}
 		updateDst(n,dst,dst_len);
 
 		n = snprintf(dst,dst_len,"\n");
@@ -2901,13 +5120,23 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		n = snprintf(dst,dst_len,"\n");
 		updateDst(n,dst,dst_len);
 
-		n = snprintf(dst,dst_len,"Trace bits per instruction:     %5.2f\n",((float)num_trace_bits_all_cores)/num_inst_all_cores);
+		if (num_inst_all_cores > 0) {
+			n = snprintf(dst,dst_len,"Trace bits per instruction:     %5.2f\n",((float)num_trace_bits_all_cores)/num_inst_all_cores);
+		}
+		else {
+			n = snprintf(dst,dst_len,"  --\n");
+		}
 		updateDst(n,dst,dst_len);
 
 		n = snprintf(dst,dst_len,"Instructions per trace message: %5.2f\n",((float)num_inst_all_cores)/num_trace_msgs_all_cores);
 		updateDst(n,dst,dst_len);
 
-		n = snprintf(dst,dst_len,"Instructions per taken branch:  %5.2f\n",((float)num_inst_all_cores)/num_branches_all_cores);
+		if (num_branches_all_cores > 0) {
+			n = snprintf(dst,dst_len,"Instructions per taken branch:  %5.2f\n",((float)num_inst_all_cores)/num_branches_all_cores);
+		}
+		else {
+			n = snprintf(dst,dst_len,"--\n");
+		}
 		updateDst(n,dst,dst_len);
 
 		if (srcBits > 0) {
@@ -2981,7 +5210,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
+				if (core[i].num_inst > 0) {
 				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_inst16,((float)core[i].num_inst16)/core[i].num_inst*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_inst16;
 				ts += 1;
 			}
@@ -2989,7 +5223,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3003,7 +5242,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_inst32,((float)core[i].num_inst32)/core[i].num_inst*100.0);
+				if (core[i].num_inst > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_inst32,((float)core[i].num_inst32)/core[i].num_inst*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_inst32;
 				ts += 1;
 			}
@@ -3011,7 +5255,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3047,7 +5296,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_syncs,((float)core[i].num_trace_syncs)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_syncs,((float)core[i].num_trace_syncs)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_syncs;
 				ts += 1;
 			}
@@ -3055,7 +5309,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3069,7 +5328,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dbranch,((float)core[i].num_trace_dbranch)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dbranch,((float)core[i].num_trace_dbranch)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_dbranch;
 				ts += 1;
 			}
@@ -3077,7 +5341,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3091,7 +5360,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ibranch,((float)core[i].num_trace_ibranch)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ibranch,((float)core[i].num_trace_ibranch)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_ibranch;
 				ts += 1;
 			}
@@ -3099,7 +5373,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3113,7 +5392,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dbranchws,((float)core[i].num_trace_dbranchws)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dbranchws,((float)core[i].num_trace_dbranchws)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_dbranchws;
 				ts += 1;
 			}
@@ -3121,7 +5405,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3135,7 +5424,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ibranchws,((float)core[i].num_trace_ibranchws)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ibranchws,((float)core[i].num_trace_ibranchws)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_ibranchws;
 				ts += 1;
 			}
@@ -3143,7 +5437,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3157,7 +5456,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dataacq,((float)core[i].num_trace_dataacq)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_dataacq,((float)core[i].num_trace_dataacq)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_dataacq;
 				ts += 1;
 			}
@@ -3165,7 +5469,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3179,7 +5488,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_correlation,((float)core[i].num_trace_correlation)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_correlation,((float)core[i].num_trace_correlation)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_correlation;
 				ts += 1;
 			}
@@ -3187,7 +5501,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3201,7 +5520,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_auxaccesswrite,((float)core[i].num_trace_auxaccesswrite)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_auxaccesswrite,((float)core[i].num_trace_auxaccesswrite)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_auxaccesswrite;
 				ts += 1;
 			}
@@ -3209,7 +5533,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3223,7 +5552,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ownership,((float)core[i].num_trace_ownership)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ownership,((float)core[i].num_trace_ownership)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_ownership;
 				ts += 1;
 			}
@@ -3231,7 +5565,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3245,7 +5584,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_error,((float)core[i].num_trace_error)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_error,((float)core[i].num_trace_error)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_error;
 				ts += 1;
 			}
@@ -3253,7 +5597,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3267,7 +5616,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ihistory,((float)core[i].num_trace_ihistory)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ihistory,((float)core[i].num_trace_ihistory)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_ihistory;
 				ts += 1;
 			}
@@ -3275,7 +5629,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3289,7 +5648,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ihistoryws,((float)core[i].num_trace_ihistoryws)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_ihistoryws,((float)core[i].num_trace_ihistoryws)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_ihistoryws;
 				ts += 1;
 			}
@@ -3297,7 +5661,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3311,7 +5680,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_i_cnt,((float)core[i].num_trace_resourcefull_i_cnt)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_i_cnt,((float)core[i].num_trace_resourcefull_i_cnt)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_resourcefull_i_cnt;
 				ts += 1;
 			}
@@ -3319,7 +5693,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3333,7 +5712,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_hist,((float)core[i].num_trace_resourcefull_hist)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_hist,((float)core[i].num_trace_resourcefull_hist)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_resourcefull_hist;
 				ts += 1;
 			}
@@ -3341,7 +5725,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3355,7 +5744,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_takenCount,((float)core[i].num_trace_resourcefull_takenCount)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_takenCount,((float)core[i].num_trace_resourcefull_takenCount)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_resourcefull_takenCount;
 				ts += 1;
 			}
@@ -3363,7 +5757,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3377,7 +5776,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_notTakenCount,((float)core[i].num_trace_resourcefull_notTakenCount)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_resourcefull_notTakenCount,((float)core[i].num_trace_resourcefull_notTakenCount)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_resourcefull_notTakenCount;
 				ts += 1;
 			}
@@ -3385,7 +5789,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3399,7 +5808,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_incircuittraceWS,((float)core[i].num_trace_incircuittraceWS)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_incircuittraceWS,((float)core[i].num_trace_incircuittraceWS)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_ihistoryws;
 				ts += 1;
 			}
@@ -3407,7 +5821,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3421,7 +5840,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_incircuittrace,((float)core[i].num_trace_incircuittrace)/core[i].num_trace_msgs*100.0);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",core[i].num_trace_incircuittrace,((float)core[i].num_trace_incircuittrace)/core[i].num_trace_msgs*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t2 += core[i].num_trace_ihistoryws;
 				ts += 1;
 			}
@@ -3429,7 +5853,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%10u (%0.2f%%)",t2,((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3486,7 +5915,7 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				if (core[i].num_inst != 0) {
+				if (core[i].num_inst > 0) {
 					position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits)/core[i].num_inst);
 				}
 				else {
@@ -3500,7 +5929,7 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			if (t2 != 0) {
+			if (t2 > 0) {
 				position += sprintf(tmp_dst+position,"%13.2f",((float)t1)/t2);
 			}
 			else {
@@ -3519,7 +5948,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/core[i].num_trace_msgs);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/core[i].num_trace_msgs);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t1 += core[i].num_trace_msgs;
 				ts += 1;
 			}
@@ -3527,7 +5961,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3541,7 +5980,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/(core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws+core[i].num_trace_ihistory_taken_branches+core[i].num_trace_resourcefull_taken_branches));
+				if ((core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws+core[i].num_trace_ihistory_taken_branches+core[i].num_trace_resourcefull_taken_branches) > 0) {
+					position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].num_inst)/(core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws+core[i].num_trace_ihistory_taken_branches+core[i].num_trace_resourcefull_taken_branches));
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t1 += core[i].num_trace_dbranch+core[i].num_trace_ibranch+core[i].num_trace_dbranchws+core[i].num_trace_ibranchws;
 				ts += 1;
 			}
@@ -3549,7 +5993,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%13.2f",((float)t2)/t1);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3564,7 +6013,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits)/core[i].num_trace_msgs);
+				if (core[i].num_trace_msgs > 0) {
+					position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits)/core[i].num_trace_msgs);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t1 += core[i].trace_bits;
 				t2 += core[i].num_trace_msgs;
 				ts += 1;
@@ -3573,7 +6027,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%13.2f",((float)t1)/t2);
+			if (t2 > 0) {
+				position += sprintf(tmp_dst+position,"%13.2f",((float)t1)/t2);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -3658,7 +6117,7 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
 				if (core[i].num_trace_ts > 0) {
-					position += sprintf(tmp_dst+position,"%13.2f",core[i].trace_bits_ts/core[i].num_trace_ts);
+					position += sprintf(tmp_dst+position,"%13.2f",((float)core[i].trace_bits_ts)/core[i].num_trace_ts);
 					t2 += core[i].trace_bits_ts;
 				}
 				else {
@@ -3737,7 +6196,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 		for (int i = 0; i < DQR_MAXCORES; i++) {
 			if (cores & (1<<i)) {
 				while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-				position += sprintf(tmp_dst+position,"%13.2f%%",((float)core[i].trace_bits_ts)/core[i].trace_bits*100.0);
+				if (core[i].trace_bits > 0) {
+					position += sprintf(tmp_dst+position,"%13.2f%%",((float)core[i].trace_bits_ts)/core[i].trace_bits*100.0);
+				}
+				else {
+					position += sprintf(tmp_dst+position,"          -");
+				}
 				t1 += core[i].trace_bits;
 				ts += 1;
 			}
@@ -3745,7 +6209,12 @@ void Analytics::toText(char *dst,int dst_len,int detailLevel)
 
 		if (srcBits > 0) {
 			while (position < tabs[ts]) { position += sprintf(tmp_dst+position," "); }
-			position += sprintf(tmp_dst+position,"%13.2f%%",((float)t2)/t1*100.0);
+			if (t1 > 0) {
+				position += sprintf(tmp_dst+position,"%13.2f%%",((float)t2)/t1*100.0);
+			}
+			else {
+				position += sprintf(tmp_dst+position,"          -");
+			}
 		}
 
 		n = snprintf(dst,dst_len,"%s\n",tmp_dst);
@@ -7349,6 +9818,8 @@ TraceDqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics 
         if (rc != TraceDqr::DQERR_OK) {
             status = rc;
 
+//            printf("Error: parseIndirectBranch(): parseFixedField() for srcbits failed\n");
+
             return status;
         }
 
@@ -7360,11 +9831,17 @@ TraceDqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics 
 		nm.coreId = 0;
 	}
 
+//	if (globalDebugFlag) {
+//		printf("parseIndirectBranch(): coreId: %d\n",nm.coreId);
+//	}
+
 	// parse the fixed length b-type
 
 	rc = parseFixedField(2,&tmp);
 	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
+
+//        printf("Error: parseIndirectBranch(): parseFixedField() for b-type failed\n");
 
 		return status;
 	}
@@ -7373,11 +9850,17 @@ TraceDqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics 
 
 	nm.indirectBranch.b_type = (TraceDqr::BType)tmp;
 
+//	if (globalDebugFlag) {
+//		printf("parseIndirectBranch(): b_type: %d\n",nm.indirectBranch.b_type);
+//	}
+
 	// parse the variable length the i-cnt
 
 	rc = parseVarField(&tmp,&width);
 	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
+
+//        printf("Error: parseIndirectBranch(): parseVarField() for i-cnt failed\n");
 
 		return status;
 	}
@@ -7386,9 +9869,15 @@ TraceDqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics 
 
 	nm.indirectBranch.i_cnt  = (int)tmp;
 
+//	if (globalDebugFlag) {
+//		printf("parseIndirectBranch(): i_cnt: %d\n",nm.indirectBranch.i_cnt);
+//	}
+
 	rc = parseVarField(&tmp,&width);
 	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
+
+//        printf("Error: parseIndirectBranch(): parseVarField() for address failed\n");
 
 		return status;
 	}
@@ -7398,14 +9887,24 @@ TraceDqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics 
 
 	nm.indirectBranch.u_addr = (TraceDqr::ADDRESS)tmp;
 
+//	if (globalDebugFlag) {
+//		printf("parseIndirectBranch(): u_addr: 0x%08llx\n",nm.indirectBranch.u_addr);
+//	}
+
 	if (eom == true) {
 		nm.haveTimestamp = false;
 		nm.timestamp = 0;
+
+//		if (globalDebugFlag) {
+//			printf("parseIndirectBranch(): no timestamp\n");
+//		}
 	}
 	else {
 		rc = parseVarField(&tmp,&width); // this field is optional - check err
 		if (rc != TraceDqr::DQERR_OK) {
 			status = rc;
+
+//	        printf("Error: parseIndirectBranch(): parseFixedField() for timestamp failed\n");
 
 			return status;
 		}
@@ -7418,11 +9917,17 @@ TraceDqr::DQErr SliceFileParser::parseIndirectBranch(NexusMessage &nm,Analytics 
 		if (eom != true) {
 			status = TraceDqr::DQERR_BM;
 
+	        printf("Error: parseIndirectBranch(): End of message expected\n");
+
 			return status;
 		}
 
 		nm.haveTimestamp = true;
 		nm.timestamp = (TraceDqr::TIMESTAMP)tmp;
+
+//		if (globalDebugFlag) {
+//			printf("parseIndirectBranch(): timestamp: %llu\n",nm.timestamp);
+//		}
 	}
 
 	status = analytics.updateTraceInfo(nm,bits+msgSlices*2,msgSlices*2,ts_bits,addr_bits);
@@ -8629,142 +11134,187 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 	TraceDqr::DQErr rc;
 	uint64_t   val;
 	uint8_t    tcode;
-	int getMsgAttempt = 3;
 
-	do { // we will try to get a good message most 3 times if there are problems
+	status = TraceDqr::DQERR_OK;
 
-		status = TraceDqr::DQERR_OK;
+	// read from file, store in object, compute and fill out full fields, such as address and more later
 
-		// read from file, store in object, compute and fill out full fields, such as address and more later
+	rc = readBinaryMsg(haveMsg);
+	if (rc != TraceDqr::DQERR_OK) {
 
-		rc = readBinaryMsg(haveMsg);
-		if (rc != TraceDqr::DQERR_OK) {
+		// all errors from readBinaryMsg() are non-recoverable.
 
-			// all errors from readBinaryMsg() are non-recoverable.
-
-			if (rc != TraceDqr::DQERR_EOF) {
-				std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
-			}
-
-			status = rc;
-
-			return status;
+		if (rc != TraceDqr::DQERR_EOF) {
+			std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
 		}
 
-		if (haveMsg == false) {
-			return TraceDqr::DQERR_OK;
-		}
+		status = rc;
 
-		nm.offset = msgOffset;
+		return status;
+	}
 
-		int i = 0;
+	if (haveMsg == false) {
+		return TraceDqr::DQERR_OK;
+	}
 
-		do {
-			nm.rawData[i] = msg[i];
-			i += 1;
-		} while (((size_t)i < sizeof nm.rawData / sizeof nm.rawData[0]) && ((msg[i-1] & 0x03) != TraceDqr::MSEO_END));
+	nm.offset = msgOffset;
 
-		rc = parseFixedField(6, &val);
-		if (rc == TraceDqr::DQERR_OK) {
-			tcode = (uint8_t)val;
+	int i = 0;
 
-			switch (tcode) {
-			case TraceDqr::TCODE_DEBUG_STATUS:
-				std::cout << "Unsupported debug status trace message\n";
-				rc = TraceDqr::DQERR_ERR;
-				break;
-			case TraceDqr::TCODE_DEVICE_ID:
-				std::cout << "Unsupported device id trace message\n";
-				rc = TraceDqr::DQERR_ERR;
-				break;
-			case TraceDqr::TCODE_OWNERSHIP_TRACE:
-				rc = parseOwnershipTrace(nm,analytics);
-				break;
-			case TraceDqr::TCODE_DIRECT_BRANCH:
-				rc = parseDirectBranch(nm,analytics);
-				break;
-			case TraceDqr::TCODE_INDIRECT_BRANCH:
-				rc = parseIndirectBranch(nm,analytics);
-				break;
-			case TraceDqr::TCODE_DATA_WRITE:
-				std::cout << "unsupported data write trace message\n";
-				rc = TraceDqr::DQERR_ERR;
-				break;
-			case TraceDqr::TCODE_DATA_READ:
-				std::cout << "unsupported data read trace message\n";
-				rc = TraceDqr::DQERR_ERR;
-				break;
-			case TraceDqr::TCODE_DATA_ACQUISITION:
-				rc = parseDataAcquisition(nm,analytics);
-				break;
-			case TraceDqr::TCODE_ERROR:
-				rc = parseError(nm,analytics);
-				break;
-			case TraceDqr::TCODE_SYNC:
-				rc = parseSync(nm,analytics);
-				break;
-			case TraceDqr::TCODE_CORRECTION:
-				std::cout << "Unsupported correction trace message\n";
-				rc = TraceDqr::DQERR_ERR;
-				break;
-			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-				rc = parseDirectBranchWS(nm,analytics);
-				break;
-			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-				rc = parseIndirectBranchWS(nm,analytics);
-				break;
-			case TraceDqr::TCODE_DATA_WRITE_WS:
-				std::cout << "unsupported data write with sync trace message\n";
-				rc = TraceDqr::DQERR_ERR;
-				break;
-			case TraceDqr::TCODE_DATA_READ_WS:
-				std::cout << "unsupported data read with sync trace message\n";
-				rc = TraceDqr::DQERR_ERR;
-				break;
-			case TraceDqr::TCODE_WATCHPOINT:
-				std::cout << "unsupported watchpoint trace message\n";
-				rc = TraceDqr::DQERR_ERR;
-				break;
-			case TraceDqr::TCODE_CORRELATION:
-				rc = parseCorrelation(nm,analytics);
-				break;
-			case TraceDqr::TCODE_AUXACCESS_WRITE:
-				rc = parseAuxAccessWrite(nm,analytics);
-				break;
-			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
-				rc = parseIndirectHistory(nm,analytics);
-				break;
-			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
-				rc = parseIndirectHistoryWS(nm,analytics);
-				break;
-			case TraceDqr::TCODE_INCIRCUITTRACE:
-				rc = parseICT(nm,analytics);
-				break;
-			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-				rc = parseICTWS(nm,analytics);
-				break;
-			case TraceDqr::TCODE_RESOURCEFULL:
-				rc = parseResourceFull(nm,analytics);
-				break;
-			default:
-				std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << int(tcode) << std::dec << std::endl;
-				rc = TraceDqr::DQERR_ERR;
-			}
+	do {
+		nm.rawData[i] = msg[i];
+		i += 1;
+	} while (((size_t)i < sizeof nm.rawData / sizeof nm.rawData[0]) && ((msg[i-1] & 0x03) != TraceDqr::MSEO_END));
 
+	rc = parseFixedField(6, &val);
+	if (rc == TraceDqr::DQERR_OK) {
+		tcode = (uint8_t)val;
+
+		switch (tcode) {
+		case TraceDqr::TCODE_DEBUG_STATUS:
+			std::cout << "Unsupported debug status trace message\n";
+			rc = TraceDqr::DQERR_ERR;
+			break;
+		case TraceDqr::TCODE_DEVICE_ID:
+			std::cout << "Unsupported device id trace message\n";
+			rc = TraceDqr::DQERR_ERR;
+			break;
+		case TraceDqr::TCODE_OWNERSHIP_TRACE:
+			rc = parseOwnershipTrace(nm,analytics);
 			if (rc != TraceDqr::DQERR_OK) {
-				std::cout << "Error possibly due to corrupted first message in trace - skipping message" << std::endl;
+				std::cout << "Error: parseOwnershipTrace()\n";
 			}
+			break;
+		case TraceDqr::TCODE_DIRECT_BRANCH:
+			rc = parseDirectBranch(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseDirectBranch()\n";
+			}
+			break;
+		case TraceDqr::TCODE_INDIRECT_BRANCH:
+			rc = parseIndirectBranch(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseIndirectBranch()\n";
+			}
+			break;
+		case TraceDqr::TCODE_DATA_WRITE:
+			std::cout << "unsupported data write trace message\n";
+			rc = TraceDqr::DQERR_ERR;
+			break;
+		case TraceDqr::TCODE_DATA_READ:
+			std::cout << "unsupported data read trace message\n";
+			rc = TraceDqr::DQERR_ERR;
+			break;
+		case TraceDqr::TCODE_DATA_ACQUISITION:
+			rc = parseDataAcquisition(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseDataAcquisition()\n";
+			}
+			break;
+		case TraceDqr::TCODE_ERROR:
+			rc = parseError(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseError()\n";
+			}
+			break;
+		case TraceDqr::TCODE_SYNC:
+			rc = parseSync(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseSync()\n";
+			}
+			break;
+		case TraceDqr::TCODE_CORRECTION:
+			std::cout << "Unsupported correction trace message\n";
+			rc = TraceDqr::DQERR_ERR;
+			break;
+		case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+			rc = parseDirectBranchWS(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseDirectBranchWS()\n";
+			}
+			break;
+		case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+			rc = parseIndirectBranchWS(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseDirectIndirectBranchWS()\n";
+			}
+			break;
+		case TraceDqr::TCODE_DATA_WRITE_WS:
+			std::cout << "unsupported data write with sync trace message\n";
+			rc = TraceDqr::DQERR_ERR;
+			break;
+		case TraceDqr::TCODE_DATA_READ_WS:
+			std::cout << "unsupported data read with sync trace message\n";
+			rc = TraceDqr::DQERR_ERR;
+			break;
+		case TraceDqr::TCODE_WATCHPOINT:
+			std::cout << "unsupported watchpoint trace message\n";
+			rc = TraceDqr::DQERR_ERR;
+			break;
+		case TraceDqr::TCODE_CORRELATION:
+			rc = parseCorrelation(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseCorrelation()\n";
+			}
+			break;
+		case TraceDqr::TCODE_AUXACCESS_WRITE:
+			rc = parseAuxAccessWrite(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseAuxAccessWrite()\n";
+			}
+			break;
+		case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+			rc = parseIndirectHistory(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseIndirectHistory()\n";
+			}
+			break;
+		case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+			rc = parseIndirectHistoryWS(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseIndirectHisotryWS()\n";
+			}
+			break;
+		case TraceDqr::TCODE_INCIRCUITTRACE:
+			rc = parseICT(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseICT()\n";
+			}
+			break;
+		case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+			rc = parseICTWS(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseICTWS()\n";
+			}
+			break;
+		case TraceDqr::TCODE_RESOURCEFULL:
+			rc = parseResourceFull(nm,analytics);
+			if (rc != TraceDqr::DQERR_OK) {
+				std::cout << "Error: parseResourceFull()\n";
+			}
+			break;
+		default:
+			std::cout << "Error: readNextTraceMsg(): Unknown TCODE " << std::hex << int(tcode) << std::dec << std::endl;
+			rc = TraceDqr::DQERR_ERR;
+		}
+	}
+
+	if (rc != TraceDqr::DQERR_OK) {
+		std::cout << "Error possibly due to corrupted message in trace - skipping message" << std::endl;
+		if (globalDebugFlag) {
+			nm.msgNum += 1;
+			nm.dumpRawMessage();
 		}
 
-		getMsgAttempt -= 1;
-	} while ((rc != TraceDqr::DQERR_OK) && (getMsgAttempt > 0));
+		haveMsg = false;
+	}
 
-	status = rc;
+	status = TraceDqr::DQERR_OK;
 
 	return status;
 }
 
-ObjFile::ObjFile(char *ef_name)
+ObjFile::ObjFile(char *ef_name,const char *odExe)
 {
 	elfReader = nullptr;
 //	symtab = nullptr;
@@ -8778,7 +11328,7 @@ ObjFile::ObjFile(char *ef_name)
 		return;
 	}
 
-	elfReader = new (std::nothrow) ElfReader(ef_name);
+	elfReader = new (std::nothrow) ElfReader(ef_name,odExe);
 
 	if (elfReader == nullptr) {
 		printf("Error: ObjFile::Objfile(): Could not create elfRedaer object\n");
@@ -8795,12 +11345,38 @@ ObjFile::ObjFile(char *ef_name)
 		return;
 	}
 
-	bfd *abfd;
-	abfd = elfReader->get_bfd();
+	Symtab *symtab;
+	Section *sections;
 
-	disassembler = new (std::nothrow) Disassembler(abfd,true);
+	symtab = elfReader->getSymtab();
+	if (symtab == nullptr) {
+		delete elfReader;
+		elfReader = nullptr;
+
+		printf("Error: Objfile::Objfile(): Could not get symtab\n");
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	sections = elfReader->getSections();
+	if (sections == nullptr) {
+		delete elfReader;
+		elfReader = nullptr;
+
+		printf("Error: Objfile::Objfile(): coult not get sections\n");
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	int archSize;
+	archSize = elfReader->getArchSize();
+
+	disassembler = new (std::nothrow) Disassembler(symtab,sections,archSize);
 
 	if (disassembler == nullptr) {
+		delete elfReader;
+		elfReader = nullptr;
+
 		printf("ObjFile::ObjFile(): Coudl not create disassembler object\n");
 		status = TraceDqr::DQERR_ERR;
 		return;
@@ -8824,21 +11400,6 @@ ObjFile::ObjFile(char *ef_name)
 	newRoot = nullptr;
 
 	status = TraceDqr::DQERR_OK;
-
-    // get symbol table
-
-//    symtab = elfReader->getSymtab();
-//    if (symtab == nullptr) {
-//    	delete elfReader;
-//    	elfReader = nullptr;
-//
-//    	delete disassembler;
-//    	disassembler = nullptr;
-//
-//    	status = TraceDqr::DQERR_ERR;
-//
-//    	return;
-//    }
 }
 
 ObjFile::~ObjFile()
@@ -8917,9 +11478,7 @@ TraceDqr::DQErr ObjFile::sourceInfo(TraceDqr::ADDRESS addr,Instruction &instInfo
 		return status;
 	}
 
-	disassembler->Disassemble(addr);
-
-	s = disassembler->getStatus();
+	s = disassembler->disassemble(addr);
 	if (s != TraceDqr::DQERR_OK) {
 		status = s;
 		return s;
@@ -8941,64 +11500,6 @@ TraceDqr::DQErr ObjFile::setPathType(TraceDqr::pathType pt)
 	}
 
 	return TraceDqr::DQERR_ERR;
-}
-
-TraceDqr::DQErr ObjFile::setLabelMode(bool labelsAreFuncs)
-{
-	if (elfReader == nullptr) {
-		status = TraceDqr::DQERR_ERR;
-		return status;
-	}
-
-	bfd *abfd;
-	abfd = elfReader->get_bfd();
-
-	if (disassembler != nullptr) {
-		delete disassembler;
-		disassembler = nullptr;
-	}
-
-	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
-
-	if (disassembler == nullptr) {
-		printf("Error: ObjFile::setLabelMode(): Could not create Disassembler object\n");
-
-		status = TraceDqr::DQERR_ERR;
-		return status;
-	}
-
-	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
-		if (elfReader != nullptr) {
-			delete elfReader;
-			elfReader = nullptr;
-		}
-
-		delete disassembler;
-		disassembler = nullptr;
-
-		status = TraceDqr::DQERR_ERR;
-
-		return status;
-	}
-
-	if ((cutPath != nullptr) || (newRoot != nullptr)) {
-		TraceDqr::DQErr rc;
-
-		rc = disassembler->subSrcPath(cutPath,newRoot);
-		if (rc != TraceDqr::DQERR_OK) {
-			status = rc;
-			return rc;
-		}
-	}
-
-	status = TraceDqr::DQERR_OK;
-
-	return status;
-}
-
-TraceDqr::DQErr ObjFile::getSymbolByName(char *symName,TraceDqr::ADDRESS &addr)
-{
-	return elfReader->getSymbolByName(symName,addr);
 }
 
 TraceDqr::DQErr ObjFile::parseNLSStrings(TraceDqr::nlStrings (&nlsStrings)[32])
@@ -9023,248 +11524,48 @@ TraceDqr::DQErr ObjFile::dumpSyms()
 	return elfReader->dumpSyms();
 }
 
-Disassembler::Disassembler(bfd *abfd,bool labelsAreFunctions)
+Disassembler::Disassembler(Symtab *stp,Section *sp,int archsize)
 {
-	if (abfd == nullptr) {
-		printf("Error: Disassembler::Disassembler(): abfd argument is null\n");
+	status = TraceDqr::DQERR_OK;
+
+	if (stp == nullptr) {
+		printf("Error: Disassembler::Disassembler(): stp argument is null\n");
 
 		status = TraceDqr::DQERR_ERR;
 		return;
 	}
+
+	if (sp == nullptr) {
+		printf("Error: Disassembler::Disassembler(): sp argument is null\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+	archSize = archsize;
+
 	pType = TraceDqr::PATH_TO_UNIX;
 
-	this->abfd = abfd;
+	cachedAddr = 0;
+	cachedSecPtr = nullptr;
+	cachedIndex = -1;
 
-    prev_index       = -1;
-    cached_sym_index = -1;
-    cached_sym_vma   = 0;
-    cached_sym_size  = 0;
-
-    start_address = bfd_get_start_address(abfd);
-
-    long storage_needed;
-
-    storage_needed = bfd_get_symtab_upper_bound(abfd);
-
-//    printf("storage needed = %d\n",storage_needed);
-
-    if (storage_needed > 0) {
-    	symbol_table = (asymbol **)new (std::nothrow) char[storage_needed];
-
-    	if (symbol_table == nullptr) {
-    		printf("Error: Disassembler::Disassembler(): Could not creat symbol table object\n");
-
-    		status = TraceDqr::DQERR_ERR;
-    		return;
-    	}
-
-    	number_of_syms = bfd_canonicalize_symtab(abfd,symbol_table);
-
-    	if (number_of_syms > 0) {
-    		sorted_syms = new (std::nothrow) asymbol*[number_of_syms];
-
-        	if (sorted_syms == nullptr) {
-        		printf("Error: Disassembler::Disassembler(): Could not creat sorted symbols object\n");
-
-        		status = TraceDqr::DQERR_ERR;
-        		return;
-        	}
-
-//        	make sure all symbols with no type info in code sections have function type added!
-
-    		for (int i = 0; i < number_of_syms; i++) {
-    			struct bfd_section *section;
-
-    			section = symbol_table[i]->section;
-
-    			if (labelsAreFunctions) {
-        			if ((section->flags & SEC_CODE)
-        				&& ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL) || (symbol_table[i]->flags & BSF_LOCAL))
-						&& ((symbol_table[i]->flags & BSF_SECTION_SYM) == 0)) {
-        				symbol_table[i]->flags |= BSF_FUNCTION;
-        			}
-    			}
-    			else {
-        			if ((section->flags & SEC_CODE)
-        			    && ((symbol_table[i]->flags == BSF_NO_FLAGS) || (symbol_table[i]->flags & BSF_GLOBAL))
-						&& ((symbol_table[i]->flags & BSF_SECTION_SYM) == 0)) {
-        				symbol_table[i]->flags |= BSF_FUNCTION;
-        			}
-    			}
-
-    			sorted_syms[i] = symbol_table[i];
-    		}
-
-    		// note: qsort does not preserver order on equal items!
-
-    		qsort((void*)sorted_syms,(size_t)number_of_syms,sizeof sorted_syms[0],asymbol_compare_func);
-
-    		func_info = new (std::nothrow) func_info_t[number_of_syms];
-
-        	if (func_info == nullptr) {
-        		printf("Error: Disassembler::Disassembler(): Could not creat function info object\n");
-
-        		status = TraceDqr::DQERR_ERR;
-        		return;
-        	}
-
-
-    		// compute sizes of functions and data items for lookup by address
-
-    		for (int i = 0; i < number_of_syms; i++) {
-				func_info[i].sym_flags = sorted_syms[i]->flags;
-
-				if ((sorted_syms[i]->flags & (BSF_FUNCTION | BSF_OBJECT)) != 0) {
-
-    				// set func_vma to the base+offset address, not just the offest
-
-    				func_info[i].func_vma = bfd_asymbol_value(sorted_syms[i]);
-
-    				int j;
-
-    				for (j = i+1; j < number_of_syms; j++) {
-    					if ((sorted_syms[j]->flags & (BSF_FUNCTION | BSF_OBJECT)) != 0) {
-    						func_info[i].func_size = bfd_asymbol_value(sorted_syms[j]) - func_info[i].func_vma;
-    						break;
-    					}
-    				}
-
-    				if (j >= number_of_syms) {
-    					// size size of func(i) to end of section
-
-    					asection *section;
-    					bfd_vma base_vma;
-    					section = sorted_syms[i]->section;
-    					base_vma = section->vma;
-
-    					func_info[i].func_size = (base_vma + section->size) - func_info[i].func_vma;
-    				}
-    			}
-    			else {
-    				func_info[i].func_size = 0;	// this probably isn't right
-    			}
-
-//				printf("symbol[%d]:%s, addr:%08x size:%d, flags:%08x\n",i,sorted_syms[i]->name,func_info[i].func_vma,func_info[i].func_size,sorted_syms[i]->flags);
-    		}
-    	}
-    }
-    else {
-    	symbol_table = nullptr;
-    	sorted_syms = nullptr;
-    }
-
-    codeSectionLst = nullptr;
-
-    for (asection *p = abfd->sections; p != NULL; p = p->next) {
-  	  if (p->flags & SEC_CODE) {
-            // found a code section, add to list
-
-  		  section *sp = new section;
-  		  if (sp->initSection(&codeSectionLst,p,true) == nullptr) {
-  			  status = TraceDqr::DQERR_ERR;
-  			  return;
-  		  }
-  	  }
-    }
-
-    if (codeSectionLst == nullptr) {
-    	printf("Error: no code sections found\n");
-
-    	status = TraceDqr::DQERR_ERR;
-    	return;
-    }
-
-   	info = new (std::nothrow) disassemble_info;
-
-	if (info == nullptr) {
-		printf("Error: Disassembler::Disassembler(): Could not creat disassembler info object\n");
-
-		status = TraceDqr::DQERR_ERR;
-		return;
-	}
-
-   	disassemble_func = disassembler(bfd_get_arch(abfd), bfd_big_endian(abfd),bfd_get_mach(abfd), abfd);
-   	if (disassemble_func == nullptr) {
-   		printf("Error: Disassmbler::Disassembler(): could not create disassembler\n");
-
-   		delete [] info;
-   		info = nullptr;
-
-   		status = TraceDqr::DQERR_ERR;
-   		return;
-   	}
-
-   	init_disassemble_info(info,stdout,(fprintf_ftype)stringify_callback);
-
-   	info->print_address_func = override_print_address;
-   	info->arch = bfd_get_arch(abfd);
-   	info->mach = bfd_get_mach(abfd);
-
-   	info->buffer_vma = codeSectionLst->startAddr;
-   	info->buffer_length = codeSectionLst->size;
-   	info->section = codeSectionLst->asecptr;
-   	info->buffer = (bfd_byte*)codeSectionLst->code;
-
-   	info->application_data = (void*)this;
-
-   	disassemble_init_for_target(info);
+	symtab = stp;
+	sectionLst = sp;
 
    	fileReader = new class fileReader();
-
-    const bfd_arch_info_type *aitp;
-
-    aitp = bfd_get_arch_info(abfd);
-    if (aitp == nullptr) {
-  	  printf("Error: Disassembler::Disassembler(): Cannot get arch type for elf file\n");
-
-  	  status = TraceDqr::TraceDqr::DQERR_ERR;
-  	  return;
-    }
-
-    switch (aitp->mach) {
-    case bfd_mach_riscv32:
-  	  archSize = 32;
-  	  break;
-    case bfd_mach_riscv64:
-  	  archSize = 64;
-  	  break;
-    default:
-  	  printf("Error: Disassembler::Disassembler(): Unknown machine type\n");
-
-  	  status = TraceDqr::TraceDqr::DQERR_ERR;
-  	  return;
-    }
 
     status = TraceDqr::DQERR_OK;
 }
 
 Disassembler::~Disassembler()
 {
-	if (symbol_table != nullptr) {
-		delete [] symbol_table;
-		symbol_table = nullptr;
-	}
+	// the following three pointers point to objects owned by the elfReader object, and the
+	// elfReader object will delete.
 
-	if (sorted_syms != nullptr) {
-		delete [] sorted_syms;
-		sorted_syms = nullptr;
-	}
-
-	if (func_info != nullptr) {
-		delete [] func_info;
-		func_info = nullptr;
-	}
-
-	while (codeSectionLst != nullptr) {
-		section *nextSection = codeSectionLst->next;
-		delete codeSectionLst;
-		codeSectionLst = nextSection;
-	}
-
-	if (info != nullptr) {
-		delete info;
-		info = nullptr;
-	}
+	sectionLst = nullptr;
+	symtab = nullptr;
+	cachedSecPtr = nullptr;
 
 	if (fileReader != nullptr) {
 		delete fileReader;
@@ -9310,367 +11611,82 @@ TraceDqr::DQErr Disassembler::subSrcPath(const char *cutPath,const char *newRoot
 	return TraceDqr::DQERR_ERR;
 }
 
-int Disassembler::lookupInstructionByAddress(bfd_vma vma,uint32_t *ins,int *ins_size)
+TraceDqr::DQErr Disassembler::lookupInstructionByAddress(TraceDqr::ADDRESS addr,uint32_t &ins,int &insSize)
 {
-	if (ins == nullptr) {
-		printf("Error: Disassembler::lookupInstructionByAddress(): Null ins argument\n");
-
-		status = TraceDqr::DQERR_ERR;
-		return 0;
-	}
-
 	uint32_t inst;
 	int size;
-	int rc;
+	TraceDqr::DQErr rc;
 
 	// need to support multiple code sections and do some error checking on the address!
 
-	if (codeSectionLst == nullptr) {
+	if (sectionLst == nullptr) {
 		status = TraceDqr::DQERR_ERR;
 
-		return 1;
+		return TraceDqr::DQERR_ERR;
 	}
 
-	section *sp;
+	if (addr != cachedAddr) {
+		TraceDqr::DQErr rc;
 
-	sp = codeSectionLst->getSectionByAddress((TraceDqr::ADDRESS)vma);
+		rc = cacheSrcInfo(addr);
+		if (rc != TraceDqr::DQERR_OK) {
+			return TraceDqr::DQERR_ERR;;
+		}
+	}
 
-	if (sp == nullptr) {
+
+	if (cachedSecPtr == nullptr) {
 		status = TraceDqr::DQERR_ERR;
 
-		return 1;
+		return TraceDqr::DQERR_ERR;
 	}
 
-	inst = (uint32_t)sp->code[(vma - sp->startAddr)/2];
+	inst = (uint32_t)cachedSecPtr->code[cachedIndex];
 
 	rc = decodeInstructionSize(inst, size);
-	if (rc != 0) {
+	if (rc != TraceDqr::DQERR_OK) {
 		status = TraceDqr::DQERR_ERR;
 
-		return rc;
+		return TraceDqr::DQERR_ERR;
 	}
 
-	*ins_size = size;
+	insSize = size;
 
 	if (size == 16) {
-		*ins = inst;
+		ins = inst;
 	}
 	else {
-		*ins = (((uint32_t)sp->code[(vma - sp->startAddr)/2+1]) << 16) | inst;
+		ins = (((uint32_t)cachedSecPtr->code[cachedIndex+1]) << 16) | inst;
 	}
 
-	return 0;
+	return TraceDqr::DQERR_OK;
 }
 
-int Disassembler::lookup_symbol_by_address(bfd_vma vma,flagword flags,int *index,int *offset)
-{
-	if (index == nullptr) {
-		printf("Error: Disassembler::lookup_symbol_by_address(): Null index argument\n");
-
-		status = TraceDqr::DQERR_ERR;
-		return 0;
-	}
-
-	if (offset == nullptr) {
-		printf("Error: Disassembler::lookup_symbol_by_address(): Null offset argument\n");
-
-		status = TraceDqr::DQERR_ERR;
-		return 0;
-	}
-
-	// find the function closest to the address. Address should either be start of function, or in body
-	// of function.
-
-//	lookup symbol by address needs to select between function names and locals+function names
-//	do we build two array and use the correct one?
-
-	if ( vma == 0) {
-		return 0;
-	}
-
-	int i;
-
-	// check for a cache hit
-
-	if (cached_sym_index != -1) {
-		if ((vma >= cached_sym_vma) && (vma < (cached_sym_vma + cached_sym_size))) {
-			*index = cached_sym_index;
-			*offset = vma - cached_sym_vma;
-
-			return 1;
-		}
-	}
-
-	//syms = sorted_syms;
-
-	for (i = 0; i < number_of_syms; i++) {
-		if ((func_info[i].sym_flags & flags) != 0) {
-
-			// note: func_vma already has the base+offset address in it
-
-			if (vma == func_info[i].func_vma) {
-				// exact match on vma. Make sure function isn't zero sized
-				// if it is, try to find a following one at the same address
-
-//				printf("\n->vma:%08x size: %d, i=%d, name: %s\n",vma,func_info[i].func_size,i,sorted_syms[i]->name);
-
-				for (int j = i+1; j < number_of_syms; j++) {
-					if ((func_info[j].sym_flags & flags) != 0) {
-						if (func_info[i].func_vma == func_info[j].func_vma) {
-							i = j;
-						}
-					}
-				}
-
-				// have a match with a function
-
-				//printf("have match. Index %d\n",i);
-
-				// cache it for re-lookup speed improvement
-
-				cached_sym_index = i;
-				cached_sym_vma = func_info[i].func_vma;
-				cached_sym_size = func_info[i].func_size;
-
-				*index = i;
-				*offset = vma - cached_sym_vma;
-
-				return 1;
-			}
-			else if (vma > func_info[i].func_vma) {
-				if (vma < (func_info[i].func_vma + func_info[i].func_size)) {
-
-					cached_sym_index = i;
-					cached_sym_vma = func_info[i].func_vma;
-					cached_sym_size = func_info[i].func_size;
-
-					*index = i;
-					*offset = vma - cached_sym_vma;
-
-					return 1;
-				}
-			}
-		}
-	}
-
-	return 0;
-}
-
-void Disassembler::overridePrintAddress(bfd_vma addr, struct disassemble_info *info)
-{
-	if (info == nullptr) {
-		printf("Error: Disassembler::overridePrintAddress(): Null info argument\n");
-
-		status = TraceDqr::DQERR_ERR;
-		return;
-	}
-
-	//	lookup symbol at addr.
-
-	// use field in info to point to disassembler object so we can call member funcs
-
-	if (info != this->info) {
-//		printf("Error: overridePrintAddress(): info does not match (0x%08x, 0x%08x)\n",this->info,info);
-//		this may be okay. Different info.
-	}
-
-	instruction.operandAddress = addr;
-	instruction.haveOperandAddress = true;
-
-	int index;
-	int offset;
-	int rc;
-
-	rc = lookup_symbol_by_address(addr,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
-
-	if (rc != 0) {
-		// found symbol
-
-//		printf("found symbol @0x%08x '%s' %x\n",addr,sorted_syms[index]->name,offset);
-
-		// putting in wrong instrction object!!!!!
-
-		instruction.operandLabel = sorted_syms[index]->name;
-		instruction.operandLabelOffset = offset;
-
-//		if (offset == 0) {
-//			printf("%08lx <%s>",addr,sorted_syms[index]->name);
-//		}
-//		else {
-//			printf("%08lx <%s+%x>",addr,sorted_syms[index]->name,offset);
-//		}
-	}
-	else {
-//		printf("%08lx",addr);
-
-		instruction.operandLabel = nullptr;
-		instruction.operandLabelOffset = 0;
-	}
-}
-
-
-void Disassembler::print_address(bfd_vma vma)
-{
-	// find closest preceeding function symbol and print with offset
-
-	int index;
-	int offset;
-	int rc;
-
-	rc = lookup_symbol_by_address(vma,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
-	if (rc != 0) {
-		// found symbol
-
-	    if (prev_index != index) {
-	    	prev_index = index;
-
-//	    	printf("\n");
-
-	    	// need to know if this is 64 or 32 bit
-
-			switch (archSize) {
-			case 32:
-				if (offset == 0) {
-					printf("%08x <%s>:\n",(uint32_t)vma,sorted_syms[index]->name);
-				}
-				else {
-					printf("%08x <%s+%x>:\n",(uint32_t)vma,sorted_syms[index]->name,offset);
-				}
-				printf("%8x: ",(uint32_t)vma);
-				break;
-			case 64:
-				if (offset == 0) {
-					printf("%08llx <%s>:\n",vma,sorted_syms[index]->name);
-				}
-				else {
-					printf("%08llx <%s+%x>:\n",vma,sorted_syms[index]->name,offset);
-				}
-				printf("%8llx: ",vma);
-				break;
-			default:
-				printf("Error: Disassembler::print_address(): Bad arch size: %d\n",archSize);
-				break;
-			}
-	    }
-	}
-	else {
-		// didn't find symbol
-
-		prev_index = -1;
-
-		switch (archSize) {
-		case 32:
-			printf("%8lx:",(uint32_t)vma);
-			break;
-		case 64:
-			printf("%8llx:",vma);
-			break;
-		default:
-			printf("Error: Disassembler::print_address(): Bad arch size: %d\n",archSize);
-			break;
-		}
-	}
-}
-
-void Disassembler::print_address_and_instruction(bfd_vma vma)
-{
-	uint32_t ins = 0;
-	int ins_size = 0;
-
-	print_address(vma);
-
-	lookupInstructionByAddress(vma,&ins,&ins_size);
-
-	if (ins_size > 16) {
-		 printf("       %08x                ",ins);
-	}
-	else {
-		 printf("       %04x                    ",ins);
-	}
-}
-
-void Disassembler::getAddressSyms(bfd_vma vma)
-{
-	// find closest preceeding function symbol and print with offset
-
-	int index;
-	int offset;
-	int rc;
-
-	rc = lookup_symbol_by_address(vma,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
-	if (rc == 0) {
-		// did not find symbol
-
-		instruction.addressLabel = nullptr;
-		instruction.addressLabelOffset = 0;
-	}
-	else {
-
-		// found symbol
-
-		instruction.addressLabel = sorted_syms[index]->name;
-		instruction.addressLabelOffset = offset;
-	}
-}
-
-void Disassembler::clearOperandAddress()
-{
-	instruction.haveOperandAddress = false;
-}
-
-void Disassembler::setInstructionAddress(bfd_vma vma)
-{
-	instruction.address = vma;
-
-	// find closest preceeding function symbol and print with offset
-
-	int index;
-	int offset;
-	int rc;
-
-	lookupInstructionByAddress(vma,&instruction.instruction,&instruction.instSize);
-
-	rc = lookup_symbol_by_address(vma,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
-	if (rc == 0) {
-		// did not find symbol
-
-		instruction.addressLabel = nullptr;
-		instruction.addressLabelOffset = 0;
-	}
-	else {
-
-		// found symbol
-
-		instruction.addressLabel = sorted_syms[index]->name;
-		instruction.addressLabelOffset = offset;
-	}
-}
-
-int Disassembler::decodeInstructionSize(uint32_t inst, int &inst_size)
+TraceDqr::DQErr Disassembler::decodeInstructionSize(uint32_t inst, int &inst_size)
 {
 	switch (inst & 0x0003) {
 	case 0x0000:	// quadrant 0, compressed
 		inst_size = 16;
-		return 0;
+		return TraceDqr::DQERR_OK;
 	case 0x0001:	// quadrant 1, compressed
 		inst_size = 16;
-		return 0;
+		return TraceDqr::DQERR_OK;
 	case 0x0002:	// quadrant 2, compressed
 		inst_size = 16;
-		return 0;
+		return TraceDqr::DQERR_OK;
 	case 0x0003:	// not compressed. Assume RV32 for now
 		if ((inst & 0x1f) == 0x1f) {
 			fprintf(stderr,"Error: decode_instruction(): cann't decode instructions longer than 32 bits\n");
-			return 1;
+			return TraceDqr::DQERR_ERR;
 		}
 
 		inst_size = 32;
-		return 0;
+		return TraceDqr::DQERR_OK;
 	}
 
 	// error return
 
-	return 1;
+	return TraceDqr::DQERR_ERR;
 }
 
 #define MOVE_BIT(bits,s,d)	(((bits)&(1<<(s)))?(1<<(d)):0)
@@ -10550,7 +12566,7 @@ int Disassembler::decodeInstruction(uint32_t instruction,int archSize,int &inst_
 }
 
 // make all path separators either '/' or '\'; also remove '/./' and /../. Remove weird double path
-// showing up on linux (libbfd issue)
+// showing up on linux
 
 void sanePath(TraceDqr::pathType pt,const char *src,char *dst)
 {
@@ -10642,16 +12658,60 @@ void sanePath(TraceDqr::pathType pt,const char *src,char *dst)
 	dst[w] = 0;
 }
 
-int Disassembler::getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *cutPathIndex,const char **functionname,unsigned int *linenumber,const char **lineptr)
+TraceDqr::DQErr Disassembler::getFunctionName(TraceDqr::ADDRESS addr,const char *&function,int &offset)
+{
+	TraceDqr::DQErr rc;
+	Sym *sym;
+
+	function = nullptr;
+	offset = 0;
+
+	rc = symtab->lookupSymbolByAddress(addr,sym);
+	if (rc != TraceDqr::DQERR_OK) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	if (sym != nullptr) {
+		function = sym->name;
+		offset = addr - sym->address;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Disassembler::findNearestLine(TraceDqr::ADDRESS addr,const char *&file,int &line)
+{
+	if (addr == 0) {
+		file = nullptr;
+		line = 0;
+
+		return TraceDqr::DQERR_OK;
+	}
+
+	if (addr != cachedAddr) {
+		TraceDqr::DQErr rc;
+
+		rc = cacheSrcInfo(addr);
+		if (rc != TraceDqr::DQERR_OK) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	file = cachedSecPtr->fName[cachedIndex];
+	line = cachedSecPtr->line[cachedIndex];
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Disassembler::getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *cutPathIndex,const char **functionname,unsigned int *linenumber,const char **lineptr)
 {
 	const char *file = nullptr;
 	const char *function = nullptr;
-	unsigned int line = 0;
-	unsigned int discrim;
+	int line = 0;
+	int offset;
+	TraceDqr::DQErr rc;
 
 	// need to loop through all sections with code below and try to find one that succeeds
-
-	section *sp;
 
 	*filename = nullptr;
 	*cutPathIndex = 0;
@@ -10659,39 +12719,24 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *
 	*linenumber = 0;
 	*lineptr = nullptr;
 
-	if (codeSectionLst == nullptr) {
-		return 0;
+	rc = findNearestLine(addr,file,line);
+	if (rc != TraceDqr::DQERR_OK) {
+		return TraceDqr::DQERR_ERR;
 	}
 
-	sp = codeSectionLst->getSectionByAddress(addr);
-
-	if (sp == nullptr) {
-		return 0;
-	}
-
-	if (bfd_find_nearest_line_discriminator(abfd,sp->asecptr,symbol_table,addr-sp->startAddr,&file,&function,&line,&discrim) == 0) {
-		return 0;
-	}
-
-	// bfd_find_nearest_line_discriminator() does not always return the correct function name (or at least the one we want). Use
-	// the lookup_symbol_by_address() function and see if we get a hit. If we do, use that. Otherwise, use what
-	// bfd_find_nearest_line_discriminator() returned
-
-	int rc;
-	int index;
-	int offset;
-
-	rc = lookup_symbol_by_address(addr,BSF_FUNCTION | BSF_OBJECT,&index,&offset);
-	if (rc != 0) {
-		// found symbol
-
-		function = sorted_syms[index]->name;
+	if (file == nullptr) {
+		return TraceDqr::DQERR_OK;
 	}
 
 	*linenumber = line;
 
+	rc = getFunctionName(addr,function,offset);
+	if (rc != TraceDqr::DQERR_OK) {
+		return TraceDqr::DQERR_ERR;
+	}
+
 	if (file == nullptr) {
-		return 0;
+		return TraceDqr::DQERR_OK;
 	}
 
 	char fprime[2048];
@@ -10715,7 +12760,7 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *
 		printf("Error: Disassembler::getSrcLines(): fileReader failed\n");
 
 		status = TraceDqr::DQERR_ERR;
-		return 0;
+		return TraceDqr::DQERR_ERR;
 	}
 
 	*filename = fl->name;
@@ -10753,7 +12798,7 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *
 
 	// line numbers start at 1
 
-	if ((line >= 1) && (line <= fl->lineCount)) {
+	if ((line >= 1) && (line <= (int)fl->lineCount)) {
 		*lineptr = fl->lines[line-1];
 	}
 
@@ -10762,120 +12807,87 @@ int Disassembler::getSrcLines(TraceDqr::ADDRESS addr,const char **filename,int *
 		sane = nullptr;
 	}
 
-	{
-		// check for garbage in path/file name
-
-		if (*filename != nullptr) {
-			const char *cp = *filename;
-			for (int i = 0; cp[i] != 0; i++) {
-				switch (cp[i]) {
-				case 'a':
-				case 'b':
-				case 'c':
-				case 'd':
-				case 'e':
-				case 'f':
-				case 'g':
-				case 'h':
-				case 'i':
-				case 'j':
-				case 'k':
-				case 'l':
-				case 'm':
-				case 'n':
-				case 'o':
-				case 'p':
-				case 'q':
-				case 'r':
-				case 's':
-				case 't':
-				case 'u':
-				case 'v':
-				case 'w':
-				case 'x':
-				case 'y':
-				case 'z':
-				case 'A':
-				case 'B':
-				case 'C':
-				case 'D':
-				case 'E':
-				case 'F':
-				case 'G':
-				case 'H':
-				case 'I':
-				case 'J':
-				case 'K':
-				case 'L':
-				case 'M':
-				case 'N':
-				case 'O':
-				case 'P':
-				case 'Q':
-				case 'R':
-				case 'S':
-				case 'T':
-				case 'U':
-				case 'V':
-				case 'W':
-				case 'X':
-				case 'Y':
-				case 'Z':
-				case '0':
-				case '1':
-				case '2':
-				case '3':
-				case '4':
-				case '5':
-				case '6':
-				case '7':
-				case '8':
-				case '9':
-				case '/':
-				case '\\':
-				case '.':
-				case '_':
-				case '-':
-				case '+':
-				case ':':
-					break;
-				default:
-					printf("Error: getSrcLines(): File name '%s' contains bogus char (0x%02x) in position %d!\n",cp,cp[i],i);
-					break;
-				}
-			}
-		}
-	}
-
-	return 1;
+	return TraceDqr::DQERR_OK;
 }
 
-int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
+TraceDqr::DQErr Disassembler::getInstruction(TraceDqr::ADDRESS addr,Instruction &instruction)
 {
-	if (disassemble_func == nullptr) {
-		printf("Error: Disassembler::Disassemble(): disassemble_func is null\n");
-
-		status = TraceDqr::DQERR_ERR;
-		return 1;
+	if (sectionLst == nullptr) {
+		return TraceDqr::DQERR_ERR;;
 	}
 
-	bfd_vma vma;
-	vma = (bfd_vma)addr;
-
-	if (codeSectionLst == nullptr) {
-		return 1;
-	}
-
-	section *sp = codeSectionLst->getSectionByAddress(addr);
-
+	Section *sp = sectionLst->getSectionByAddress(addr);
 	if (sp == nullptr) {
-		return 1;
+		return TraceDqr::DQERR_ERR;
 	}
 
+	TraceDqr::DQErr rc;
+	int index;
+
+	index = (addr - sp->startAddr) / 2;
+
+	instruction.coreId = 0;
+	instruction.CRFlag = 0;
+	instruction.brFlags = 0;
+	instruction.address = addr;
+
+	int size;
+	uint32_t inst = sp->code[index];
+	rc = decodeInstructionSize(inst, size);
+	if (rc != TraceDqr::DQERR_OK) {
+		status = TraceDqr::DQERR_ERR;
+
+		return rc;
+	}
+
+	instruction.instSize = size;
+
+	if (size > 16) {
+		inst |= sp->code[index+1] << 16;
+	}
+
+	instruction.instruction = inst;
+	instruction.instructionText = sp->diss[index];
+
+	Sym *sym;
+
+	rc = symtab->lookupSymbolByAddress(addr,sym);
+	if (rc != TraceDqr::DQERR_OK) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	if (sym != nullptr) {
+		instruction.addressLabel = sym->name;
+		instruction.addressLabelOffset = addr - sym->address;
+	}
+	else {
+		instruction.addressLabel = nullptr;
+		instruction.addressLabelOffset = 0;
+	}
+
+	instruction.timestamp = 0;
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Disassembler::disassemble(TraceDqr::ADDRESS addr)
+{
+	if (sectionLst == nullptr) {
+		return TraceDqr::DQERR_ERR;;
+	}
+
+	Section *sp = sectionLst->getSectionByAddress(addr);
+	if (sp == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	TraceDqr::DQErr rc;
 	cachedInstInfo *cii;
 
 	cii = sp->getCachedInfo(addr);
 	if (cii != nullptr) {
+		printf("have cached info\n");
+
 		source.sourceFile = cii->filename;
 		source.cutPathIndex = cii->cutPathIndex;
 		source.sourceFunction = cii->functionname;
@@ -10885,49 +12897,48 @@ int Disassembler::Disassemble(TraceDqr::ADDRESS addr)
 		instruction.address = addr;
 		instruction.instruction = cii->instruction;
 		instruction.instSize = cii->instsize;
-		strcpy(instruction.instructionText,cii->instructionText);
+		instruction.instructionText = cii->instructionText;
 
 		instruction.addressLabel = cii->addressLabel;
 		instruction.addressLabelOffset = cii->addressLabelOffset;
-		instruction.haveOperandAddress = cii->haveOperandAddress;
-		instruction.operandAddress = cii->operandAddress;
-		instruction.operandLabel = cii->operandLabel;
-		instruction.operandLabelOffset = cii->operandLabelOffset;
 
 		// instruction.timestamp = 0;
 		// instruction.cycles = 0;
 
-		return 0;
+		return TraceDqr::DQERR_OK;
 	}
 
-	getSrcLines(addr,&source.sourceFile,&source.cutPathIndex,&source.sourceFunction,&source.sourceLineNum,&source.sourceLine);
+	rc = getInstruction(addr,instruction);
+	if (rc != TraceDqr::DQERR_OK) {
+		return TraceDqr::DQERR_ERR;
+	}
 
-	setInstructionAddress(vma);
+	rc = getSrcLines(addr,&source.sourceFile,&source.cutPathIndex,&source.sourceFunction,&source.sourceLineNum,&source.sourceLine);
+	if (rc != TraceDqr::DQERR_OK) {
+		return TraceDqr::DQERR_ERR;
+	}
 
-	int rc;
+	sp->setCachedInfo(addr,source.sourceFile,source.cutPathIndex,source.sourceFunction,source.sourceLineNum,source.sourceLine,instruction.instructionText,instruction.instruction,instruction.instSize,instruction.addressLabel,instruction.addressLabelOffset);
 
-	instruction.instructionText[0] = 0;
-	dis_output = instruction.instructionText;
+	return TraceDqr::DQERR_OK;
+}
 
-	instruction.haveOperandAddress = false;
+TraceDqr::DQErr Disassembler::cacheSrcInfo(TraceDqr::ADDRESS addr)
+{
+	if (sectionLst == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
 
-	// before calling disassemble_func, need to update info struct to point to correct section!
+	Section *sp = sectionLst->getSectionByAddress(addr);
+	if (sp == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
 
-   	info->buffer_vma = sp->startAddr;
-   	info->buffer_length = sp->size;
-   	info->section = sp->asecptr;
+	cachedAddr = addr;
+	cachedSecPtr = sp;
+	cachedIndex = (addr - sp->startAddr) / 2;
 
-   	// potential memory leak below the first time this is done because buffer was initially allocated by bfd
-
-   	info->buffer = (bfd_byte*)sp->code;
-
-	rc = disassemble_func(vma,info);
-
-	// output from disassemble_func is in instruction.instrucitonText
-
-	sp->setCachedInfo(addr,source.sourceFile,source.cutPathIndex,source.sourceFunction,source.sourceLineNum,source.sourceLine,instruction.instructionText,instruction.instruction,instruction.instSize,instruction.addressLabel,instruction.addressLabelOffset,instruction.haveOperandAddress,instruction.operandAddress,instruction.operandLabel,instruction.operandLabelOffset);
-
-	return rc;
+	return TraceDqr::DQERR_OK;
 }
 
 AddrStack::AddrStack(int size)
@@ -10983,78 +12994,7 @@ TraceDqr::ADDRESS AddrStack::pop()
 	return t;
 }
 
-Simulator::Simulator(char *f_name,int arch_size)
-{
-	TraceDqr::DQErr ec;
-
-	vf_name = nullptr;
-	lineBuff = nullptr;
-	lines = nullptr;
-	numLines = 0;
-	nextLine = 0;
-	cutPath = nullptr;
-	newRoot = nullptr;
-
-	elfReader = nullptr;
-	disassembler = nullptr;
-
-	if (f_name == nullptr) {
-		status = TraceDqr::DQERR_ERR;
-		return;
-	}
-
-	ec = readFile(f_name);
-	if (ec != TraceDqr::DQERR_OK) {
-		status = ec;
-		return;
-	}
-
-	// prep the dissasembler
-
-	archSize = arch_size;
-
-	init_disassemble_info(&disasm_info,stdout,(fprintf_ftype)stringify_callback);
-
-	disasm_info.arch = bfd_arch_riscv;
-
-	int mach;
-
-	if (archSize == 64) {
-		disasm_info.mach = bfd_mach_riscv64;
-		mach = bfd_mach_riscv64;
-	}
-	else {
-		disasm_info.mach = bfd_mach_riscv32;
-		mach = bfd_mach_riscv32;
-	}
-
-//	disasm_func = ::disassembler((bfd_architecture)67/*bfd_arch_riscv*/,false,mach,nullptr);
-	disasm_func = ::disassembler((bfd_architecture)bfd_arch_riscv,false,mach,nullptr);
-	if (disasm_func == nullptr) {
-		status = TraceDqr::DQERR_ERR;
-		return;
-	}
-
-	disasm_info.read_memory_func = buffer_read_memory;
-	disasm_info.buffer = (bfd_byte*)instructionBuffer;
-	disasm_info.buffer_vma = 0;
-	disasm_info.buffer_length = sizeof instructionBuffer;
-
-	disassemble_init_for_target(&disasm_info);
-
-	for (int i = 0; (size_t)i < sizeof currentTime / sizeof currentTime[0]; i++) {
-		currentTime[i] = 0;
-	}
-
-	for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
-		enterISR[i] = 0;
-	}
-
-	status = TraceDqr::DQERR_OK;
-	return;
-}
-
-Simulator::Simulator(char *f_name,char *e_name)
+Simulator::Simulator(char *f_name,char *e_name,const char *odExe)
 {
 	TraceDqr::DQErr ec;
 
@@ -11079,8 +13019,7 @@ Simulator::Simulator(char *f_name,char *e_name)
 		return;
 	}
 
-    elfReader = new (std::nothrow) ElfReader(e_name);
-
+    elfReader = new (std::nothrow) ElfReader(e_name,odExe);
 	if (elfReader == nullptr) {
 		printf("Error: Simulator::Simulator(): Could not create ElfReader object\n");
 
@@ -11097,13 +13036,35 @@ Simulator::Simulator(char *f_name,char *e_name)
     	return;
     }
 
-    bfd *abfd;
-    abfd = elfReader->get_bfd();
+	archSize = elfReader->getArchSize();
 
-	disassembler = new (std::nothrow) Disassembler(abfd,true);
+    symtab = elfReader->getSymtab();
+    if (symtab == nullptr) {
+    	delete elfReader;
+    	elfReader = nullptr;
 
+    	status = TraceDqr::DQERR_ERR;
+
+    	return;
+    }
+
+	sections = elfReader->getSections();
+	if (sections == nullptr) {
+		delete elfReader;
+		elfReader = nullptr;
+
+		symtab = nullptr;
+
+		status = TraceDqr::DQERR_ERR;
+		return;
+	}
+
+    disassembler = new (std::nothrow) Disassembler(symtab,sections,archSize);
 	if (disassembler == nullptr) {
 		printf("Error: Simulator::Simulator(): Could not create Disassembler object\n");
+
+		delete elfReader;
+		elfReader = nullptr;
 
 		status = TraceDqr::DQERR_ERR;
 		return;
@@ -11123,8 +13084,6 @@ Simulator::Simulator(char *f_name,char *e_name)
 		return;
 	}
 
-	archSize = elfReader->getArchSize();
-
 	for (int i = 0; (size_t)i < sizeof currentTime / sizeof currentTime[0]; i++) {
 		currentTime[i] = 0;
 	}
@@ -11134,7 +13093,6 @@ Simulator::Simulator(char *f_name,char *e_name)
 	}
 
 	status = TraceDqr::DQERR_OK;
-	return;
 }
 
 Simulator::~Simulator()
@@ -11163,59 +13121,6 @@ void Simulator::cleanUp()
 		delete disassembler;
 		disassembler = nullptr;
 	}
-}
-
-TraceDqr::DQErr Simulator::setLabelMode(bool labelsAreFuncs)
-{
-	if (elfReader == nullptr) {
-		status = TraceDqr::DQERR_ERR;
-		return status;
-	}
-
-	bfd *abfd;
-	abfd = elfReader->get_bfd();
-
-	if (disassembler != nullptr) {
-		delete disassembler;
-		disassembler = nullptr;
-	}
-
-	disassembler = new (std::nothrow) Disassembler(abfd,labelsAreFuncs);
-
-	if (disassembler == nullptr) {
-		printf("Error: Simulator::setLabelMode(): Could not create Disassembler object\n");
-
-		status = TraceDqr::DQERR_ERR;
-		return status;
-	}
-
-	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
-		if (elfReader != nullptr) {
-			delete elfReader;
-			elfReader = nullptr;
-		}
-
-		delete disassembler;
-		disassembler = nullptr;
-
-		status = TraceDqr::DQERR_ERR;
-
-		return status;
-	}
-
-	if ((cutPath != nullptr) || (newRoot != nullptr)) {
-		TraceDqr::DQErr rc;
-
-		rc = disassembler->subSrcPath(cutPath,newRoot);
-		if (rc != TraceDqr::DQERR_OK) {
-			status = rc;
-			return rc;
-		}
-	}
-
-	status = TraceDqr::DQERR_OK;
-
-	return status;
 }
 
 TraceDqr::DQErr Simulator::subSrcPath(const char *cutPath,const char *newRoot)
@@ -12159,10 +14064,10 @@ TraceDqr::DQErr Simulator::buildInstructionFromSrec(SRec *srec,TraceDqr::BranchF
 {
 	// at this point we have two srecs for same core
 
-	int rc;
+	TraceDqr::DQErr rc;
 
 	rc = Disassemble(srec);
-	if (rc != 0) {
+	if (rc != TraceDqr::DQERR_OK) {
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -12188,94 +14093,55 @@ TraceDqr::DQErr Simulator::buildInstructionFromSrec(SRec *srec,TraceDqr::BranchF
 	return TraceDqr::DQERR_OK;
 }
 
-int Simulator::Disassemble(SRec *srec)
+TraceDqr::DQErr Simulator::Disassemble(SRec *srec)
 {
 	TraceDqr::DQErr ec;
 
-	if (disassembler != nullptr) {
-		disassembler->Disassemble(srec->pc);
+	if (disassembler == nullptr) {
+		printf("Error: Simulator::Disassemble(): No disassembler object\n");
 
-		ec = disassembler->getStatus();
-
-		if (ec != TraceDqr::DQERR_OK ) {
-			status = ec;
-			return 0;
-		}
-
-		// the two lines below copy each structure completely. This is probably
-		// pretty inefficient, and just returning pointers and using pointers
-		// would likely be better
-
-		instructionInfo = disassembler->getInstructionInfo();
-		sourceInfo = disassembler->getSourceInfo();
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
 	}
-	else {
-		// hafta do it all ourselves!
 
-		disasm_info.buffer_vma = srec->pc;
-		instructionBuffer[0] = srec->inst;
-
-		instructionInfo.instructionText[0] = 0;
-		dis_output = instructionInfo.instructionText;
-
-		// don't need to use global dis_output to point to where to print. Instead, override stream to point to char
-		// buffer of where to print data to. This will give multi-instance safe code for verilator and trace objects
-
-		// not easy to cache disassembly because we don't know the address range for the program (can't read
-		// the elf file if we don't have one! So can't allocate a block of memory for the code region unless
-		// we read through the verilator file and collect info on pc addresses first
-
-		size_t instSize = disasm_func(srec->pc,&disasm_info)*8;
-
-		if (instSize == 0) {
-			status = TraceDqr::DQERR_ERR;
-			return 1;
-		}
-
-		instructionInfo.haveOperandAddress = false;
-		instructionInfo.operandAddress = 0;
-		instructionInfo.operandLabel = nullptr;
-		instructionInfo.operandLabelOffset = 0;
-		instructionInfo.addressLabel = nullptr;
-		instructionInfo.addressLabelOffset = 0;
-
-		// now turn srec into instrec
-
-		instructionInfo.address = srec->pc;
-		instructionInfo.instruction = srec->inst;
-		instructionInfo.instSize = instSize;
+	ec = disassembler->disassemble(srec->pc);
+	if (ec != TraceDqr::DQERR_OK ) {
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
 	}
+
+	// the two lines below copy each structure completely. This is probably
+	// pretty inefficient, and just returning pointers and using pointers
+	// would likely be better
+
+	instructionInfo = disassembler->getInstructionInfo();
+	sourceInfo = disassembler->getSourceInfo();
 
 	instructionInfo.coreId = srec->coreId;
+	sourceInfo.coreId = srec->coreId;
 
-	return 0;
+	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr Simulator::NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags)
+TraceDqr::DQErr Simulator::NextInstruction(Instruction *instInfo,Source *srcInfo,int *flags)
 {
 	TraceDqr::DQErr ec;
 
 	Instruction  *instInfop = nullptr;
-	NexusMessage *msgInfop  = nullptr;
 	Source       *srcInfop  = nullptr;
 
 	Instruction  **instInfopp = nullptr;
-	NexusMessage **msgInfopp  = nullptr;
 	Source       **srcInfopp  = nullptr;
 
 	if (instInfo != nullptr) {
 		instInfopp = &instInfop;
 	}
 
-	if (msgInfo != nullptr) {
-		msgInfopp = &msgInfop;
-	}
-
 	if (srcInfo != nullptr) {
 		srcInfopp = &srcInfop;
 	}
 
-	ec = NextInstruction(instInfopp, msgInfopp, srcInfopp);
+	ec = NextInstruction(instInfopp,srcInfopp);
 
 	*flags = 0;
 
@@ -12284,13 +14150,6 @@ TraceDqr::DQErr Simulator::NextInstruction(Instruction *instInfo, NexusMessage *
 			if (instInfop != nullptr) {
 				*instInfo = *instInfop;
 				*flags |= TraceDqr::TRACE_HAVE_INSTINFO;
-			}
-		}
-
-		if (msgInfo != nullptr) {
-			if (msgInfop != nullptr) {
-				*msgInfo = *msgInfop;
-				*flags |= TraceDqr::TRACE_HAVE_MSGINFO;
 			}
 		}
 
@@ -12305,7 +14164,7 @@ TraceDqr::DQErr Simulator::NextInstruction(Instruction *instInfo, NexusMessage *
 	return ec;
 }
 
-TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo)
+TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo,Source **srcInfo)
 {
 	TraceDqr::DQErr rc;
 	int crFlag = 0;
@@ -12314,10 +14173,6 @@ TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage 
 
 	if (instInfo != nullptr) {
 		*instInfo = nullptr;
-	}
-
-	if (msgInfo != nullptr) {
-		*msgInfo = nullptr;
 	}
 
 	if (srcInfo != nullptr) {
@@ -12401,7 +14256,6 @@ TraceDqr::DQErr Simulator::NextInstruction(Instruction **instInfo, NexusMessage 
 	// and length to improve performance and allow multithreading (or multi object)
 	// improve disassembly to not print 32 bit literals as 64 bits
 	// this may have been fixed - need to check:
-	//  bfd.h seems outof sync with libbfe. bfd_arch_riskv is wrong! Update bfd.h in lib\xx\bfd.h
 
 	return TraceDqr::DQERR_OK;
 }

@@ -21,14 +21,11 @@ public class sdqr {
 
     Simulator sim = null;
 
-    if (argv.length == 1) {
-	sim = new Simulator(argv[0],32);
-    }
-    else if (argv.length == 2) {
-	sim = new Simulator(argv[0],argv[1]);
+    if (argv.length == 3) {
+	sim = new Simulator(argv[0],argv[1],argv[2]);
     }
     else {
-	    System.out.println("Usage: java sdqr <trace-file-name>");
+	    System.out.println("Usage: java sdqr <trace-file-name> <elf-file_name> <objdump-path>");
 	    System.exit(1);
     }
 
@@ -45,8 +42,6 @@ public class sdqr {
     }
 
     Instruction instInfo = new Instruction();
-
-    NexusMessage msgInfo = new NexusMessage();;
 
     Source srcInfo = new Source();
 
@@ -75,7 +70,7 @@ public class sdqr {
     while (ec == TraceDqr.DQErr.DQERR_OK) {
 	TraceDecoder.intp_assign(flags,0);
 
-      ec = sim.NextInstruction(instInfo,msgInfo,srcInfo,flags);
+      ec = sim.NextInstruction(instInfo,srcInfo,flags);
 
       if (ec == TraceDqr.DQErr.DQERR_OK) {
         if ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_SRCINFO) != 0) {
@@ -215,29 +210,6 @@ public class sdqr {
           System.out.printf("%n");
 
           firstPrint = false;
-        }
-
-	if ((trace_flag || itcPrint_flag) && ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_MSGINFO) != 0)) {
-          String msgStr = msgInfo.messageToString(msgLevel);
-          int core = msgInfo.getCoreId();
-
-          coreMask |= 1 << core;
-          
-          if (trace_flag) {
-            if (!firstPrint) {
-              System.out.printf("%n");
-            }
-
-            if (srcBits > 0) {
-              System.out.printf("[%d] ",core);
-            }
-
-            System.out.printf("Trace: %s",msgStr);
-
-            System.out.printf("%n");
-
-            firstPrint = false;
-          }
         }
       }
     }

@@ -17,8 +17,8 @@ public class subpath {
 
   public static void main(String argv[]) {
     System.out.printf("%d elements in argv[]\n",argv.length);
-    if (argv.length != 4) {
-	    System.out.println("Usage: java subpath <trace-file-name> <elf-file-name> <cutpath> <newrootpath>");
+    if (argv.length != 5) {
+	    System.out.println("Usage: java subpath <trace-file-name> <elf-file-name> <cutpath> <newrootpath> <objdump-path>");
 	    System.exit(1);
     }
 
@@ -26,7 +26,7 @@ public class subpath {
  
     System.out.printf("cut: '%s', new: '%s'\n",argv[2],argv[3]);
 
-    Trace t = new Trace(argv[0],argv[1],32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0);
+    Trace t = new Trace(argv[0],argv[1],32,TraceDqr.AddrDisp.ADDRDISP_WIDTHAUTO.swigValue(),0,argv[4]);
     if (t == null) {
       System.out.println("t is null");
       System.exit(1);

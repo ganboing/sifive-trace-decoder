@@ -18,35 +18,35 @@ Release release all: $(EXECUTABLE) $(SWIGLIB) $(SWTEXECUTABLE)
 $(EXECUTABLE): $(OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	$(CROSSPREFIX)g++ $(PICLIBFLAGS) -L$(LIBPATH) $(LNFLAGS) -o $(EXECUTABLE) $(OBJS) $(USER_OBJS) $(LIBS)
+	$(CROSSPREFIX)g++ $(PICLIBFLAGS) $(LNFLAGS) -o $(EXECUTABLE) $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 
 $(SWIGLIB): $(SWIGLIBOBJS)
 	@echo 'Building swig library: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	$(CROSSPREFIX)g++ -shared $(PICLIBFLAGS) -L$(LIBPATH) $(SWIGLIBOBJS) $(LIBS) -o $(SWIGLIB)
+	$(CROSSPREFIX)g++ -shared $(PICLIBFLAGS) $(SWIGLIBOBJS) $(LIBS) -o $(SWIGLIB)
 	@echo 'Finished building swig library: $@'
 	@echo ' '
 
 $(SWTEXECUTABLE): $(SWTOBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	$(CROSSPREFIX)g++ -L$(LIBPATH) $(LNFLAGS) -o $(SWTEXECUTABLE) $(SWTOBJS) $(SWTLIBS)
+	$(CROSSPREFIX)g++ $(LNFLAGS) -o $(SWTEXECUTABLE) $(SWTOBJS) $(SWTLIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 
 $(SWIGOBJ): $(SWIGCPP)
 	@echo 'Building file $@'
 	@echo 'Invoking: GCC C++ Compiler'
-	$(CROSSPREFIX)g++ $(CFLAGS) $(SWIGCFLAGS) -c $< -I"$(LIBPATH)" -I"../include" $(JNIINCLUDEPATHS)
+	$(CROSSPREFIX)g++ $(CFLAGS) $(SWIGCFLAGS) -c $< -I"../include" $(JNIINCLUDEPATHS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
 $(SWIGCPP): $(INCLUDES) $(SWIGINCLUDES)
 	@echo 'Building file $@'
 	@echo 'Invoking: SWIG Compiler'
-	swig -package com.sifive.trace -outdir com/sifive/trace -java -c++ -o dqr_wrap.cpp -I"$(LIBPATH)" -I../include ../include/dqr.i
+	swig -package com.sifive.trace -outdir com/sifive/trace -java -c++ -o dqr_wrap.cpp -I../include ../include/dqr.i
 	javac com/sifive/trace/*.java
 	jar cf TraceDecoder.jar com/sifive/trace/*
 	@echo 'Finished building: $@'

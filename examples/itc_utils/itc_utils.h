@@ -1,4 +1,4 @@
-/* Copyright 2020 SiFive, Inc */
+/* Copyright 2022 SiFive, Inc */
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef ITC_UTILS_H
