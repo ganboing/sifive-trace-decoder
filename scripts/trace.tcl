@@ -56,13 +56,11 @@ set fs_enable_trace "on"
 # local helper functions not intended to be called directly
 
 proc wordhex {addr} {
-    mem2array x 32 $addr 1
-    return [format "0x%08x" [lindex $x 1]]
+    return [format "0x%08x" [read_memory $addr 32 1]]
 }
 
 proc word {addr} {
-    mem2array x 32 $addr 1
-    return [lindex $x 1]
+    return [read_memory $addr 32 1]
 }
 
 proc setAllTeControls {offset val} {
@@ -3230,7 +3228,7 @@ proc writeSBAdataXcs { tb te cs fp } {
         }
 
 
-        mem2array x 32 $i $elems
+        set x [read_memory $1 32 $elems]
         for {set j 0} {$j < $elems} {incr j 1} {
             pack w $x($j) -intle 32
             puts -nonewline $fp $w
