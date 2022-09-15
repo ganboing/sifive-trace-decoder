@@ -3228,9 +3228,9 @@ proc writeSBAdataXcs { tb te cs fp } {
         }
 
 
-        set x [read_memory $1 32 $elems]
+        set x [read_memory $i 32 $elems]
         for {set j 0} {$j < $elems} {incr j 1} {
-            pack w $x($j) -intle 32
+            pack w [lindex $x $j] -intle 32
             puts -nonewline $fp $w
         }
     }
