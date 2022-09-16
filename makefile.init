@@ -201,11 +201,18 @@ else
                     JNIINCLUDE :=
                     JNIINCLUDEPATH :=
                 else
-                    JPATH := $(dir $(realpath $(JAVAC)))
-                    $(info JPATH $(JPATH))
-                    JHOME := $(shell $(JPATH)java_home 2> /dev/null)
+                    # JPATH := $(dir $(realpath $(JAVAC)))
+                    # $(info JPATH $(JPATH))
+                    # JHOME := $(shell $(JPATH)java_home 2> /dev/null)
+                    # $(info JHOME $(JHOME))
+                    # JNIINCLUDE := $(JHOME)/include
+
+                    JHOME := $(shell /usr/libexec/java_home 2> /dev/null)
                     $(info JHOME $(JHOME))
                     JNIINCLUDE := $(JHOME)/include
+                    JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)/darwin"
+                    JNIINCLUDE := $(patsubst %/bin/javac,%/include,$(realpath $(JAVAC)))
+
                 endif
             endif
             ifeq ($(JNIINCLUDE),)
