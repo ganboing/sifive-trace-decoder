@@ -210,8 +210,9 @@ else
                     JHOME := $(shell /usr/libexec/java_home 2> /dev/null)
                     $(info JHOME $(JHOME))
                     JNIINCLUDE := $(JHOME)/include
+                    $(info JNIINCLUDE $(JNIINCLUDE))
                     JNIINCLUDEPATHS := -I"$(JNIINCLUDE)" -I"$(JNIINCLUDE)/darwin"
-                    JNIINCLUDE := $(patsubst %/bin/javac,%/include,$(realpath $(JAVAC)))
+                    $(info JNIINCLUDEPATHS $(JNIINCLUDEPATHS))
 
                 endif
             endif
