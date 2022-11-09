@@ -67,7 +67,7 @@
 static int itc_print_channel = 0;
 static int _trace_config = 0;
 
-int itc_channelEnable(int channel)
+int itc_enable(int channel)
 {
 	if ((channel < -1) || (channel > 31)) {
 		return 1;
