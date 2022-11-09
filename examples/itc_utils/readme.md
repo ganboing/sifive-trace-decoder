@@ -136,7 +136,7 @@ int main() {
     itc_puts("Puts: Foo!\0");
 
     // Print the string "Printf: Foo!\n" using itc_print and a formated string
-    itc_printf("Printf: %s", "Foo!");
+    itc_printf("Printf: %s\n", "Foo!");
 
     // get this CPU's object
     struct metal_cpu *this_cpu =  init_pc();
