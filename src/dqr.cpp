@@ -2808,7 +2808,7 @@ TraceDqr::DQErr ObjDump::parseDisassemblyList(objDumpTokenType &nextType,char *n
           type = getNextLex(lex);
       }
 
-      if (type != odtt_string) {
+      if ((type != odtt_string) && (type != odtt_lt)) {
         nextType = type;
         strcpy(nextLex,lex);
 
@@ -2820,11 +2820,13 @@ TraceDqr::DQErr ObjDump::parseDisassemblyList(objDumpTokenType &nextType,char *n
       uint32_t value;
       uint64_t addr;
 
-	  // have a string
+	  // have a string or '<' (case 2)
 
       // 1  ...									<- string EOL
       //
-      // 2  address '<' label '>' ':'			<- Hstring '<' string '>' ':' EOL
+      // 2  '<' 'unknown' '>' ':' line			<- '<' string '>' ':' Dstring EOL
+      //
+      // 2.1 address '<' label '>' ':'			<- Hstring '<' string '>' ':' EOL
       //
       // 3  address ':' instruction disassembly	<- Hstring ':' Hstring string2end EOL
       //
@@ -2839,7 +2841,55 @@ TraceDqr::DQErr ObjDump::parseDisassemblyList(objDumpTokenType &nextType,char *n
 
       // want to only look ahead one lex!
 
-      if (strcmp("...",lex) == 0) { // case 1
+      if (type == odtt_lt) { // case 2
+          type = getNextLex(lex);
+          if (type != odtt_string) {
+                printf("Error: parseDisassemblyList(): Expected '<' to be followed by unknown\n");
+                return TraceDqr::DQERR_ERR;
+          }
+
+          if (strcmp(lex,"unknown") != 0) {
+                printf("Error: parseDisassemblyList(): Expected '<' to be followed by unknown\n");
+                return TraceDqr::DQERR_ERR;
+          }
+
+          type = getNextLex(lex);
+          if (type != odtt_gt) {
+                printf("Error: parseDisassemblyList(): Expected '<unknown' to be followed by '>'\n");
+                return TraceDqr::DQERR_ERR;
+          }
+
+          type = getNextLex(lex);
+          if (type != odtt_colon) {
+                printf("Error: parseDisassemblyList(): Expected '<unknown>' to be followed by ':'\n");
+                return TraceDqr::DQERR_ERR;
+          }
+
+          type = getNextLex(lex);
+          if (type != odtt_string) {
+                printf("Error: parseDisassemblyList(): Expected '<unknown>:' to be followed by line number\n");
+                return TraceDqr::DQERR_ERR;
+          }
+
+          uint64_t val;
+
+          if (isStringADecNumber(lex,val) == false) {
+                printf("Error: parseDisassemblyList(): Expected '<unknown>:' to be followed by line number\n");
+                return TraceDqr::DQERR_ERR;
+          }
+
+          type = getNextLex(lex);
+          if (type != odtt_eol) {
+                 printf("Error: parseDisassemblyList(): Expected '<unknown>:line' to be followed by EOL\n");
+                 return TraceDqr::DQERR_ERR;
+          }
+
+          fName = nullptr;
+          line = 0;
+
+          // just skip and do next line
+      }
+      else if (strcmp("...",lex) == 0) { // case 1
     	  type = getNextLex(lex);
     	  if (type != odtt_eol) {
     		  printf("Error: parseDisassemblyList(): Expected '...' to be folowed by EOL\n");
@@ -2851,7 +2901,7 @@ TraceDqr::DQErr ObjDump::parseDisassemblyList(objDumpTokenType &nextType,char *n
 
           // just skip and do next line
       }
-      else if (isStringAHexNumber(lex,addr) == true) { // cases 2, 3, and sometimes 4
+      else if (isStringAHexNumber(lex,addr) == true) { // cases 2.1, 3, and sometimes 4
 		  rc = parseFileOrLabelOrDisassembly(lineType,lex,length,value);
           if (rc != TraceDqr::DQERR_OK) {
               printf("Error: parseDisassemblyList(): parseDisassembly() failed\n");

@@ -6353,6 +6353,8 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// plain unconditional jumps use rd -> r0
 		// not inferrable unconditional
 
+//		printf("rd: %d, rs1: %d, reg_1: %d, reg_5: %d\n",rd,rs1,TraceDqr::REG_1,TraceDqr::REG_5);
+
 		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
 			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
 				counts->push(core,addr+inst_size/8);
