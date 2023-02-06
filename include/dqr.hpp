@@ -474,7 +474,7 @@ public:
 
     union {
     	struct {
-    		int i_cnt;
+    		int	i_cnt;
     	} directBranch;
     	struct {
     		int          i_cnt;
@@ -510,8 +510,8 @@ public:
     		union {
     			int i_cnt;
     			uint64_t history;
-    			int takenCount;
-    			int notTakenCount;
+    			uint32_t takenCount;
+    			uint32_t notTakenCount;
     		};
     	} resourceFull;
     	struct {

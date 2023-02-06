@@ -4940,11 +4940,11 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 
 			// compute avg/max/min not taken count
 
-			if (nm.resourceFull.notTakenCount > (int32_t)core[nm.coreId].max_notTakenCount) {
+			if (nm.resourceFull.notTakenCount > (uint32_t)core[nm.coreId].max_notTakenCount) {
 				core[nm.coreId].max_notTakenCount = nm.resourceFull.notTakenCount;
 			}
 
-			if ((core[nm.coreId].min_notTakenCount == 0) || (nm.resourceFull.notTakenCount < (int32_t)core[nm.coreId].min_notTakenCount)) {
+			if ((core[nm.coreId].min_notTakenCount == 0) || (nm.resourceFull.notTakenCount < (uint32_t)core[nm.coreId].min_notTakenCount)) {
 				core[nm.coreId].min_notTakenCount = nm.resourceFull.notTakenCount;
 			}
 			break;
@@ -4954,11 +4954,11 @@ TraceDqr::DQErr Analytics::updateTraceInfo(NexusMessage &nm,uint32_t bits,uint32
 
 			// compute avg/max/min taken count
 
-			if (nm.resourceFull.takenCount > (int32_t)core[nm.coreId].max_takenCount) {
+			if (nm.resourceFull.takenCount > (uint32_t)core[nm.coreId].max_takenCount) {
 				core[nm.coreId].max_takenCount = nm.resourceFull.takenCount;
 			}
 
-			if ((core[nm.coreId].min_takenCount == 0) || (nm.resourceFull.takenCount < (int32_t)core[nm.coreId].min_takenCount)) {
+			if ((core[nm.coreId].min_takenCount == 0) || (nm.resourceFull.takenCount < (uint32_t)core[nm.coreId].min_takenCount)) {
 				core[nm.coreId].min_takenCount = nm.resourceFull.takenCount;
 			}
 			break;
@@ -7715,7 +7715,7 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 			n += snprintf(dst+n,dst_len-n,"time: %0.8f, ",((double)time)/NexusMessage::targetFrequency);
 		}
 		else {
-			n += snprintf(dst+n,dst_len-n,"Tics: %lld, ",time);
+			n += snprintf(dst+n,dst_len-n,"Tics: %llu, ",time);
 		}
 	}
 
@@ -8025,10 +8025,10 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 				snprintf(dst+n,dst_len-n," History: 0x%08llx",resourceFull.history);
 				break;
 			case 8:
-				snprintf(dst+n,dst_len-n," Not Taken Count: %d",resourceFull.notTakenCount);
+				snprintf(dst+n,dst_len-n," Not Taken Count: %u",resourceFull.notTakenCount);
 				break;
 			case 9:
-				snprintf(dst+n,dst_len-n," Taken Count: %d",resourceFull.takenCount);
+				snprintf(dst+n,dst_len-n," Taken Count: %u",resourceFull.takenCount);
 				break;
 			default:
 				snprintf(dst+n,dst_len-n," Invalid rCode");
@@ -10153,7 +10153,7 @@ TraceDqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics
 	bits += width;
 
 	nm.sync.i_cnt    = (int)tmp;
-
+	
 	rc = parseVarField(&tmp,&width);
 	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
@@ -10773,12 +10773,13 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 
 	w = 6-b;
 
-//	printf("parseVarField(): bitIndex:%d, i:%d, b:%d, width: %d\n",bitIndex,i,b,width);
+//	printf("parseVarField(): bitIndex:%d, (byte index)i:%d, (bit index)b:%d, width: %d, slices: %d\n",bitIndex,i,b,w,msgSlices);
 
 	v = ((uint64_t)msg[i]) >> (b+2);
 
 	while ((msg[i] & 0x03) == TraceDqr::MSEO_NORMAL) {
 		i += 1;
+
 		if (i >= msgSlices) {
 			// read past end of message
 
@@ -10791,7 +10792,12 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 		w += 6;
 	}
 
-	if (w > (int)sizeof(v)*8) {
+	// The check for overflow is a bit tricky. A 64 bit number will be encoded as a 66 bit number
+	// because each slice holds 6 bits of data. So a 64 bit number will take 11 slices, and
+	// at first this looks like a 66 bit number, not 64. Bit if the upper two bits of the last slice
+	// are 0, it is a 66 bit number.
+
+	if ((w > (int)sizeof(v)*8) && ((msg[i] & 0xc0) != 0)) {
 		// variable field overflowed size of v
 
 		status = TraceDqr::DQERR_ERR;
