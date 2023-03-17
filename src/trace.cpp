@@ -5060,6 +5060,8 @@ TraceDqr::DQErr propertiesParser::getNextProperty(char **name,char **value)
 
 Trace::Trace(char *mf_name)
 {
+	status = TraceDqr::DQERR_OK;
+
 	sfp          = nullptr;
 	elfReader    = nullptr;
 	disassembler = nullptr;
@@ -5114,6 +5116,8 @@ Trace::Trace(char *mf_name)
 
 	rc = configure(settings);
 	if (rc != TraceDqr::DQERR_OK) {
+		printf("Error: Trace::Trace: configure() failed\n");
+
 		status = rc;
 
 		cleanUp();
@@ -5128,6 +5132,8 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 {
 	TraceDqr::DQErr rc;
 	TraceSettings ts;
+
+	status = TraceDqr::DQERR_OK;
 
 	sfp          = nullptr;
 	elfReader    = nullptr;
@@ -5157,6 +5163,8 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 	rc = configure(ts);
 
 	if (rc != TraceDqr::DQERR_OK) {
+		printf("Error: Trace::Trace(): configure() failed\n");
+
 		cleanUp();
 	}
 
@@ -5213,8 +5221,8 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 	if (settings.tfName == nullptr) {
 		printf("Error: Trace::configure(): No trace file name specified\n");
-		status = TraceDqr::DQERR_ERR;
 
+		status = TraceDqr::DQERR_ERR;
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -5239,7 +5247,6 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		printf("Error: Trace::configure(): Could not create SliceFileParser object\n");
 
 		status = TraceDqr::DQERR_ERR;
-
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -5250,7 +5257,6 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		sfp = nullptr;
 
 		status = TraceDqr::DQERR_ERR;
-
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -5267,11 +5273,12 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 			printf("Error: Trace::Configure(): Could not create ElfReader object\n");
 
 			status = TraceDqr::DQERR_ERR;
-
 			return TraceDqr::DQERR_ERR;
 		}
 
 	    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
+		printf("Error: Trace::configure(): Could not create elfReader object\n");
+
 	    	status = TraceDqr::DQERR_ERR;
 	    	return TraceDqr::DQERR_ERR;
 	    }
@@ -5283,12 +5290,16 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 	    symtab = elfReader->getSymtab();
 	    if (symtab == nullptr) {
+		printf("Error: Trace::configure(): elfReader object has no symbol table\n");
+
 	    	status = TraceDqr::DQERR_ERR;
 	    	return TraceDqr::DQERR_ERR;
 	    }
 
 	    sections = elfReader->getSections();
 	    if (sections == nullptr) {
+		printf("Error: Trace::configure(): elfReader object has no sections\n");
+
 	    	status = TraceDqr::DQERR_ERR;
 	    	return TraceDqr::DQERR_ERR;
 	    }
@@ -5297,22 +5308,25 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		disassembler = new (std::nothrow) Disassembler(symtab,sections,elfReader->getArchSize());
 		if (disassembler == nullptr) {
-			printf("Error: Trace::Configure(): Could not creat disassembler object\n");
+			printf("Error: Trace::configure(): Could not create disassembler object\n");
 
 			status = TraceDqr::DQERR_ERR;
-
 			return TraceDqr::DQERR_ERR;
 		}
 
 		if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+			printf("Error: Trace::configure(): Failed to create disassembler object\n");
+
 			status = TraceDqr::DQERR_ERR;
 			return TraceDqr::DQERR_ERR;
 		}
 
 		rc = disassembler->setPathType(settings.pathType);
 		if (rc != TraceDqr::DQERR_OK) {
-			status = rc;
-			return rc;
+			printf("Error: Trace::configure(): setPathtype() failed\n");
+
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
 		}
 	}
 	else {
@@ -5399,6 +5413,8 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	if (settings.itcPrintOpts != TraceDqr::ITC_OPT_NONE) {
 		rc = setITCPrintOptions(settings.itcPrintOpts,settings.itcPrintBufferSize,settings.itcPrintChannel);
 		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: Trace::configure(): setITCPrintOptions() failed\n");
+
 			status = rc;
 			return status;
 		}
@@ -5407,6 +5423,8 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	if ((settings.caName != nullptr) && (settings.caType != TraceDqr::CATRACE_NONE)) {
 		rc = setCATraceFile(settings.caName,settings.caType);
 		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: Trace::configure(): setCATraceFile() failed\n");
+
 			status = rc;
 			return status;
 		}
@@ -5418,6 +5436,8 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		rc = enableCTFConverter(settings.startTime,settings.hostName);
 		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: Trace::configure(): enableCTFConverter() failed\n");
+
 			status = rc;
 			return status;
 		}
@@ -5429,6 +5449,8 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		rc = enableEventConverter();
 		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: Trace::configure(): enableEventConverter() failed\n");
+
 			status = rc;
 			return status;
 		}
@@ -5439,7 +5461,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		// verify itc print (if enabled) and perf are not using the same channel
 
 		if ((settings.itcPrintChannel == settings.itcPerfChannel) && (settings.itcPrintOpts != TraceDqr::ITC_OPT_NONE) && (settings.itcPrintOpts != TraceDqr::ITC_OPT_NLS)) {
-			printf("ITC Print Channel and ITC PerfChannel cannot be the same (%d)\n",settings.itcPrintChannel);
+			printf("Error: Trace::configure(): ITC Print Channel and ITC PerfChannel cannot be the same (%d)\n",settings.itcPrintChannel);
 
 			status = TraceDqr::DQERR_ERR;
 			return status;
@@ -5455,6 +5477,8 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		rc = enablePerfConverter(perfChannel,markerValue);
 		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: Trace::configure(): enablePerfConverter() failed\n");
+
 			status = rc;
 			return status;
 		}
@@ -5463,8 +5487,9 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	if ((settings.cutPath != nullptr) || (settings.srcRoot != nullptr)) {
 		rc = subSrcPath(settings.cutPath,settings.srcRoot);
 		if (rc != TraceDqr::DQERR_OK) {
-			status = rc;
+			printf("Error: Trace::configure(): subSrcPath() failed\n");
 
+			status = rc;
 			return status;
 		}
 	}
