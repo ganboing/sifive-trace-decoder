@@ -3694,7 +3694,13 @@ TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 	}
 
 	if (!found) {
-		return TraceDqr::DQERR_ERR;
+		for (int i = 0; i < 32; i++) {
+                        nlsStrings[i].nf = 0;
+                        nlsStrings[i].signedMask = 0;
+                        nlsStrings[i].format = nullptr;
+                }
+
+                return TraceDqr::DQERR_OK;
 	}
 
 	int size = sp->size;
@@ -3729,6 +3735,7 @@ TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 	rc = read(fd,data,size);
 	if (rc != size) {
 		printf("Error: ElfReader::parseNLSStrings(): Error reading .comment section\n");
+
 		close(fd);
 		fd = -1;
 		delete [] data;
@@ -3823,6 +3830,8 @@ TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 
 				if (data[e] != 0) {
 					// invalid format string - not null terminated
+
+					printf("Error: ElfReader::parseNLSStrings(): Invalid format string\n");
 
 					//should we delete here?
 
@@ -11561,6 +11570,8 @@ TraceDqr::DQErr ObjFile::setPathType(TraceDqr::pathType pt)
 TraceDqr::DQErr ObjFile::parseNLSStrings(TraceDqr::nlStrings (&nlsStrings)[32])
 {
 	if (elfReader == nullptr) {
+		printf("Error: ObjFile::parseNLSStrings(): No ElfReader object\n");
+
 		status = TraceDqr::DQERR_ERR;
 		return TraceDqr::DQERR_ERR;
 	}

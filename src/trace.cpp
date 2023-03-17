@@ -5408,15 +5408,13 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		enterISR[i] = TraceDqr::isNone;
 	}
 
-	status = setITCPrintOptions(TraceDqr::ITC_OPT_NLS,4096,0);
-
 	if (settings.itcPrintOpts != TraceDqr::ITC_OPT_NONE) {
 		rc = setITCPrintOptions(settings.itcPrintOpts,settings.itcPrintBufferSize,settings.itcPrintChannel);
 		if (rc != TraceDqr::DQERR_OK) {
 			printf("Error: Trace::configure(): setITCPrintOptions() failed\n");
 
-			status = rc;
-			return status;
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
 		}
 	}
 
@@ -5425,8 +5423,8 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		if (rc != TraceDqr::DQERR_OK) {
 			printf("Error: Trace::configure(): setCATraceFile() failed\n");
 
-			status = rc;
-			return status;
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
 		}
 	}
 
@@ -5938,19 +5936,35 @@ TraceDqr::DQErr Trace::setITCPrintOptions(int itcFlags,int buffSize,int channel)
 			TraceDqr::DQErr rc;
 
 			nlsStrings = new TraceDqr::nlStrings[32];
+			if (nlsStrings == nullptr) {
+				printf("Error: Trace::setITCPrintOptions(): Could not allocate nlsStrings\n");
+
+				status = TraceDqr::DQERR_ERR;
+				return TraceDqr::DQERR_ERR;
+			}
 
 			rc = elfReader->parseNLSStrings(nlsStrings);
 			if (rc != TraceDqr::DQERR_OK) {
-				status = rc;
+				printf("Error: Trace::setITCPrintOptions(): ElfReader::parseNLSStrings() failed\n");
 
 				delete [] nlsStrings;
 				nlsStrings = nullptr;
 
+				status = rc;
 				return rc;
 			}
 		}
 
 		itcPrint = new ITCPrint(itcFlags,1 << srcbits,buffSize,channel,nlsStrings);
+
+		// itcPrint has no status member to check
+
+		if (itcPrint == nullptr) {
+			printf("Error: Trace::setITCPrintOptions(): Could not allocate ITCPrint object\n");
+
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
+		}
 	}
 
 	return TraceDqr::DQERR_OK;
