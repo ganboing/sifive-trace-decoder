@@ -78,8 +78,9 @@ public:
 		et_callRetIndex,
 		et_exceptionIndex,
 		et_interruptIndex,
-		et_mContextIndex,
+		et_hContextIndex,
 		et_sContextIndex,
+		et_privContextIndex,
 		et_watchpointIndex,
 		et_periodicIndex,
 		et_numEventTypes
@@ -176,14 +177,14 @@ public:
   } SyncReason;
 
   typedef enum {
-	ICT_CONTROL = 0,
-	ICT_EXT_TRIG   = 8,
+	ICT_CONTROL       = 0,
+	ICT_EXT_TRIG      = 8,
 	ICT_INFERABLECALL = 9,
-	ICT_EXCEPTION = 10,
-	ICT_INTERRUPT = 11,
-	ICT_CONTEXT = 13,
-	ICT_WATCHPOINT = 14,
-	ICT_PC_SAMPLE  = 15,
+	ICT_EXCEPTION     = 10,
+	ICT_INTERRUPT     = 11,
+	ICT_CONTEXT       = 13,
+	ICT_WATCHPOINT    = 14,
+	ICT_PC_SAMPLE     = 15,
 	ICT_NONE
   } ICTReason;
 
@@ -296,6 +297,9 @@ public:
 		TRACETYPE_unknown = 0,
 		TRACETYPE_BTM,
 		TRACETYPE_HTM,
+		TRACETYPE_HTMNOOPT,
+		TRACETYPE_EVENT,
+		TRACETYPE_PATH,
 		TRACETYPE_VCD,
 	};
 
@@ -358,6 +362,23 @@ public:
 		int signedMask;
 		char *format;
 	};
+
+	enum elfType {
+	  elfType_unknown,
+	  elfType_64_little,
+	  elfType_32_little,
+	  elfType_32_binary,
+	  elfType_64_binary,
+	};
+
+	enum prvType {
+	  prv_U_mode  = (0 << 4) | 0,
+	  prv_S_mode  = (0 << 4) | 1,
+	  prv_M_mode  = (0 << 4) | 3,
+	  prv_VU_mode = (1 << 4) | 0,
+	  prv_VS_mode = (1 << 4) | 1,
+	  prv_unknown = 0xff
+	};
 };
 
 // class Instruction: work with an instruction
@@ -382,6 +403,8 @@ public:
 	static int        addrPrintWidth;
 
 	uint8_t           coreId;
+        uint8_t           prv;
+	uint32_t          pid;
 
 	int               CRFlag;
 	int               brFlags; // this is an int instead of TraceDqr::BancheFlags because it is easier to work with in java
@@ -429,6 +452,8 @@ public:
 	std::string  sourceLineToString();
 	std::string  sourceFunctionToString();
 	uint8_t      coreId;
+        uint8_t      prv;
+	uint32_t     pid;
 #ifdef SWIG
 	%immutable sourceFile;
 	%immutable sourceFunction;
@@ -471,10 +496,12 @@ public:
     TraceDqr::TIMESTAMP time;
 
     uint8_t             coreId;
+    uint8_t		prv;
+    uint32_t		pid;
 
     union {
     	struct {
-    		int	i_cnt;
+    		int i_cnt;
     	} directBranch;
     	struct {
     		int          i_cnt;
@@ -537,7 +564,10 @@ public:
     		uint32_t data;
     	} dataAcquisition;
     	struct {
-    		uint32_t process;
+		int pid;
+		uint8_t v;
+		uint8_t prv;
+		uint8_t tag;
     	} ownership;
     	struct {
     		TraceDqr::ICTReason cksrc;
@@ -570,10 +600,10 @@ public:
 	uint32_t getData();
 	uint32_t getAddr();
 	uint32_t getIdTag();
-	uint32_t getProcess();
 	uint32_t getRCode();
 	uint64_t getRData();
 	uint64_t getHistory();
+	uint32_t getProcessId();
 };
 
 #ifdef SWIG
@@ -789,6 +819,16 @@ private:
 	class Disassembler    *disassembler;
 };
 
+class pidMap {
+public:
+	pidMap();
+	~pidMap();
+
+	uint32_t pid;
+	char *name;
+	int shortNameIndex;
+};
+
 // class Trace: high level class that performs the raw trace data to dissasemble and decorated instruction trace
 
 #ifdef SWIG
@@ -803,7 +843,7 @@ private:
 class Trace {
 public:
     Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,int srcBits,const char *odExe,uint32_t freq = 0);
-    Trace(char *mf_ame);
+    Trace(char *pf_name);
     ~Trace();
     void cleanUp();
     static const char *version();
@@ -813,7 +853,7 @@ public:
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
 	TraceDqr::DQErr setCATraceFile(char *caf_name,TraceDqr::CATraceType catype);
 	TraceDqr::DQErr enableCTFConverter(int64_t startTime,char *hostName);
-	TraceDqr::DQErr enableEventConverter();
+	TraceDqr::DQErr enableEventConverter(int pIndex);
 	TraceDqr::DQErr enablePerfConverter(int perfChannel,uint32_t markerValue);
 
 	TraceDqr::DQErr subSrcPath(const char *cutPath,const char *newRoot);
@@ -840,16 +880,21 @@ public:
 	std::string getITCPrintStr(int core, bool &haveData,double &startTime,double &endTime);
 	std::string flushITCPrintStr(int core, bool &haveData,double &startTime,double &endTime);
 
+	pidMap *getPidMap(int &num_pids);
+
 //	const char *getSymbolByAddress(TraceDqr::ADDRESS addr);
 	TraceDqr::DQErr Disassemble(TraceDqr::ADDRESS addr);
-	int         getArchSize();
-	int         getAddressSize();
+	int	    getSrcBits();
+	int         getArchSize(int pid);
+	int         getAddressSize(int pid);
+	bool        isLinuxTrace();
 	void        analyticsToText(char *dst,int dst_len,int detailLevel) {analytics.toText(dst,dst_len,detailLevel); }
 	std::string analyticsToString(int detailLevel) { return analytics.toString(detailLevel); }
 	TraceDqr::TIMESTAMP processTS(TraceDqr::tsType tstype, TraceDqr::TIMESTAMP lastTs, TraceDqr::TIMESTAMP newTs);
 	int         getITCPrintMask();
 	int         getITCFlushMask();
 	TraceDqr::DQErr getInstructionByAddress(TraceDqr::ADDRESS addr, Instruction *instInfo,Source *srcInfo,int *flags);
+	TraceDqr::DQErr getInstructionByAddress(TraceDqr::ADDRESS addr,TraceDqr::RV_INST &inst);
 
 	TraceDqr::DQErr getNumBytesInSWTQ(int &numBytes);
 
@@ -857,7 +902,6 @@ private:
 	enum state {
 		TRACE_STATE_SYNCCATE,
 		TRACE_STATE_GETFIRSTSYNCMSG,
-		TRACE_STATE_GETMSGWITHCOUNT,
 		TRACE_STATE_RETIREMESSAGE,
 		TRACE_STATE_GETNEXTMSG,
 		TRACE_STATE_GETNEXTINSTRUCTION,
@@ -866,27 +910,39 @@ private:
 	};
 
 	TraceDqr::DQErr        status;
-	TraceDqr::TraceType	   traceType;
+	TraceDqr::TraceType    traceType;
 	class SliceFileParser *sfp;
-	class ElfReader       *elfReader;
-	class Disassembler    *disassembler;
-	class CTFConverter    *ctf;
-	class EventConverter  *eventConverter;
-	class PerfConverter   *perfConverter;
+	bool                   linuxTrace;
+        int                    numProcesses;
+	struct process        *processes;
+	int                    numPids;
+	int                   *pidList;
+	class KMem            *kMem; // all proceses use the same kMem object
 	char                  *objdump;
 	char                  *rtdName;
-	char                  *efName;
+	char                  *vdsoName;
+	char                  *mfNameList;
 	char                  *cutPath;
 	char                  *newRoot;
 	class ITCPrint        *itcPrint;
 	TraceDqr::nlStrings   *nlsStrings;
 	TraceDqr::ADDRESS      currentAddress[DQR_MAXCORES];
-	TraceDqr::ADDRESS	   lastFaddr[DQR_MAXCORES];
+	TraceDqr::ADDRESS      lastFaddr[DQR_MAXCORES];
 	TraceDqr::TIMESTAMP    lastTime[DQR_MAXCORES];
-	class Count           *counts;
-	enum state       state[DQR_MAXCORES];
-	bool             readNewTraceMessage;
-	int              currentCore;
+	class Count            *counts;
+	enum state             state[DQR_MAXCORES];
+	bool                   readNewTraceMessage;
+	int                    currentCore;
+	bool                   eventConvert;
+
+	bool prevMsgWasSync[DQR_MAXCORES];
+
+	int		       currentPid[DQR_MAXCORES];
+	uint8_t                currentPrv[DQR_MAXCORES];
+	int		       currentProcessIndex[DQR_MAXCORES]; // index into process array, not pid array
+	class Disassembler    *currentDisassembler[DQR_MAXCORES];
+	class ElfReader       *currentElfReader[DQR_MAXCORES];
+
 	int              srcbits;
 	bool             bufferItc;
 	int              enterISR[DQR_MAXCORES];
@@ -897,9 +953,11 @@ private:
 	uint32_t         eventFilterMask;
 
 	int              tsSize;
+	int              bitsPerAddress;
 	TraceDqr::pathType pathType;
 
 	uint32_t         freq;
+	int              archSize;
 
 	Analytics        analytics;
 
@@ -918,16 +976,26 @@ private:
 	int               eCycleCount[DQR_MAXCORES];
 
 	TraceDqr::DQErr configure(class TraceSettings &settings);
+	TraceDqr::DQErr resetTrace();
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);
 	TraceDqr::DQErr getCRBRFlags(TraceDqr::ICTReason cksrc,TraceDqr::ADDRESS addr,int &crFlag,int &brFlag);
 	TraceDqr::DQErr nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAddr,int &crFlag);
-	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag);
+	TraceDqr::DQErr nextAddr(int currentCore,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,NexusMessage *nm,int &crFlag,TraceDqr::BranchFlags &brFlag);
 	TraceDqr::DQErr nextCAAddr(TraceDqr::ADDRESS &addr,TraceDqr::ADDRESS &savedAddr);
 
 	TraceDqr::ADDRESS computeAddress();
 	TraceDqr::DQErr processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts,bool &consumed);
+	TraceDqr::DQErr parsePidList(const char *pids);
+	TraceDqr::DQErr buildElfProcess(const char *elfName);
+	TraceDqr::DQErr buildMFProcesses(const char *nameList);
+	TraceDqr::DQErr buildProcess(process *process,int pid,const char *mapFileName);
+	TraceDqr::DQErr parseMappingFile(const char *fName,class addressMap **am,int &codeSections);
+	TraceDqr::DQErr signExtendAddr(TraceDqr::ADDRESS &addr);
+	TraceDqr::DQErr dumpTraceMessage(NexusMessage *tmsg);
+	TraceDqr::DQErr dumpTraceMessages();
+	int processPidPriv(int core,int pid,uint8_t v,uint8_t prv);
 };
 
 class SRec {

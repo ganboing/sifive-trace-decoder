@@ -89,7 +89,7 @@ static void stop_cntrs(void *info)
 			ret = sbi_ecall(SBI_EXT_PMU,SBI_EXT_PMU_COUNTER_STOP,i,1,SBI_PMU_STOP_FLAG_RESET,0,0,0);
 
 			if (ret.error) {
-				printk("stop_cntrs: error: %ld, cntr: %d, mask: 0x%08lx\n",ret.error,i,cntr_mask);
+				printk("stop_cntrs: Error: %ld, cntr: %d, mask: 0x%08lx\n",ret.error,i,cntr_mask);
 			}
 		}
 		cntr_mask >>= 1;
@@ -196,7 +196,8 @@ static uint32_t sba_dma_buffer_size;
 #define PERF_IOCTL_GET_SBA_BUFFER_PHYS_ADDR	108
 #define PERF_IOCTL_GET_SBA_BUFFER_SIZE		109
 #define PERF_IOCTL_READ_SBA_BUFFER		110
-#define PERF_IOCTL_GET_EVENT_CNTR_INFO		111
+#define PERF_IOCTL_READ_KMEM_PAGE               111
+#define PERF_IOCTL_GET_EVENT_CNTR_INFO		112
 
 static long tp_ioctl(struct file *filp,unsigned int cmd,unsigned long arg)
 {
@@ -390,7 +391,7 @@ static long tp_ioctl(struct file *filp,unsigned int cmd,unsigned long arg)
 	case PERF_IOCTL_READ_SBA_BUFFER:
 		void *ksrc;
 
-		struct addrnsize {
+		struct {
 			unsigned long addr;
 			uint32_t size;
 		} udst;
@@ -409,9 +410,33 @@ static long tp_ioctl(struct file *filp,unsigned int cmd,unsigned long arg)
 
 		c = copy_to_user((void*)udst.addr,ksrc,udst.size);
 
-//printk("READ_SBA_BUFFER: copyied %u bytes\n",udst.size);
+//printk("READ_SBA_BUFFER: copied %u bytes\n",udst.size);
 
 		c = copy_to_user((void*)arg,&udst,sizeof udst);
+		break;
+	case PERF_IOCTL_READ_KMEM_PAGE:
+
+		struct {
+			unsigned long srcAddr;
+			unsigned long dstAddr;
+		} srcdst;
+
+//		printk("IOCTL_READ_KMEM_PAGE\n");
+
+		c = copy_from_user(&srcdst,(void*)arg,sizeof srcdst);
+
+printk("READ_KMEM_PAGE: requesting %u bytes from 0x%08lx to 0x%08lx\n",4096U,srcdst.srcAddr,srcdst.dstAddr);
+
+		c = copy_to_user((void*)srcdst.dstAddr,(void*)srcdst.srcAddr,4096UL);
+
+//printk("READ_KMEM_PAGE: copied %u bytes\n",4096UL - c);
+
+//		c = copy_to_user((void*)arg,&srcdst,sizeof srcdst);
+
+		if (c != 0) {
+			printk("Error: only read %lu bytes\n",4096-c);
+			return -EFAULT;
+		}
 		break;
 	case PERF_IOCTL_GET_EVENT_CNTR_INFO:
 		struct perfCtrInfo cinfo;
@@ -461,6 +486,8 @@ static int tp_remap_mmap(struct file *filp,struct vm_area_struct *vma)
 {
 //	 printk("tp_remap_mmap()\n");
 
+//printk("start: %08lx, length: %08x\n",vma->vm_start,vma->vm_end - vma->vm_start);
+
         // should this be io_remap????
         // or maybe ioremap_pfn_range(), and also request_mem_region()???
 
@@ -479,7 +506,7 @@ static int tp_remap_mmap(struct file *filp,struct vm_area_struct *vma)
         // if needed, check asm/cacheflush.h for possible ways to flush the cache
 
 	if (remap_pfn_range(vma,vma->vm_start,vma->vm_pgoff,vma->vm_end - vma->vm_start,vma->vm_page_prot)) {
-		printk("remap_pfn_rang(): failed. start: 0x%08lx end: 0x%08lx\n",(unsigned long)vma->vm_start,(unsigned long)vma->vm_end);
+		printk("remap_pfn_range(): failed. start: 0x%08lx end: 0x%08lx\n",(unsigned long)vma->vm_start,(unsigned long)vma->vm_end);
 		return -EAGAIN;
 	}
 

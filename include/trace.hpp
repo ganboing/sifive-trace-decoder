@@ -76,6 +76,17 @@ private:
 	SrcFile *fileRoot;
 };
 
+//class spSym {
+//public:
+//	spSym(name,address);
+//	~spSym();
+//
+//	class SpSyms *next;
+//	char *name;
+//	uint16_t flags; label, func
+//boink
+//};
+
 class Section {
 public:
 
@@ -106,14 +117,25 @@ public:
 	char         name[256];
 	TraceDqr::ADDRESS startAddr;
 	TraceDqr::ADDRESS endAddr;
+	TraceDqr::ADDRESS vmaOffset;
 	uint32_t     flags;
-	uint32_t     size;	// size of section
-	uint32_t     offset; // offset of section in elf file
+	uint32_t     size;   // size of section
+	uint32_t     offset; // offset of section in elf file - not sure it is really used anywhere
 	uint32_t     align;
+//	spSym       *spSymsRoot;
+//	spSyms     **spSymIndex; sorted array of pointer to spSyms for this section
 	uint16_t    *code;
-	char       **fName; // file name - array of pointers
-	uint32_t    *line;  // line number
-	char       **diss;  // disassembly text - array of pointers
+	char       **fName;  // file name - array of pointers
+	uint32_t    *line;   // line number array
+	char       **diss;   // disassembly text - array of pointers
+//	uint8_t     *dissFlags; // only needed for linux dynamic lib decode - maybe don't need
+
+//if static-linked file, vma-offset = 0, objdump vma-offset - not used
+//if dynamic-linked file, vma-offset = start addr from map file, objdump vma-offset = not used
+//if binary-blob (vdso, kmem), vma-offset = 0, objdump vma-offset = start addr from map file
+//
+//control transfer instruciton need address modified for destination when doing vma-offset and dissed at offset 0
+//also, lds and stores need stuff modified??
 
 	cachedInstInfo **cachedInfo; // array of pointers
 };
@@ -173,6 +195,7 @@ struct Sym {
 	char *name;
 	uint32_t flags;
 	class Section *section;
+	uint64_t vmaOffset;
 	uint64_t address;
 	uint64_t size;
 	struct Sym *srcFile;
@@ -180,10 +203,10 @@ struct Sym {
 
 class Symtab {
 public:
-	             Symtab(Sym *syms);
-	            ~Symtab();
+	Symtab(Sym *syms);
+	~Symtab();
 	TraceDqr::DQErr lookupSymbolByAddress(TraceDqr::ADDRESS addr,Sym *&sym);
-	void         dump();
+	void dump();
 
 	TraceDqr::DQErr getStatus() { return status; }
 
@@ -193,109 +216,139 @@ private:
 	TraceDqr::ADDRESS cachedSymAddr;
 	int cachedSymSize;
 	int cachedSymIndex;
-
 	long      numSyms;
-    Sym      *symLst;
-    Sym     **symPtrArray;
+	Sym      *symLst;
+	Sym     **symPtrArray;
 
-    TraceDqr::DQErr fixupFunctionSizes();
+	TraceDqr::DQErr fixupFunctionSizes();
 };
-
-// find : Interface class between dqr and bfd
 
 class ObjDump {
 public:
-		ObjDump(const char *elfName,const char *objDumpPath,int &archSize,Section *&codeSectionLst,Sym *&syms,SrcFileRoot &srcFileRoot);
-		~ObjDump();
+	ObjDump(const char *elfName,const char* objdumpPath,uint64_t vmaOffset,int &archSize,Section *&codeSectionLst,Sym *&syms,SrcFileRoot &srcFileRoot);
+	ObjDump(const char *blobName,const char* objdumpPath,TraceDqr::ADDRESS startAddr,TraceDqr::ADDRESS endAddr,int archSize,Section *&codeSectionLst);
 
-		TraceDqr::DQErr getStatus() {return status;}
+	~ObjDump();
+
+	TraceDqr::DQErr getStatus() {return status;}
 
 private:
-		enum objDumpTokenType {
-		    odtt_error,
-		    odtt_eol,
-		    odtt_eof,
-		    odtt_colon,
-		    odtt_lt,
-		    odtt_gt,
-		    odtt_lp,
-		    odtt_rp,
-		    odtt_comma,
-		    odtt_string,
-		    odtt_number,
-		};
+	enum objDumpTokenType {
+	    odtt_error,
+	    odtt_eol,
+	    odtt_eof,
+	    odtt_colon,
+	    odtt_lt,
+	    odtt_gt,
+	    odtt_lp,
+	    odtt_rp,
+	    odtt_comma,
+	    odtt_string,
+	    odtt_number,
+	};
 
-		enum elfType {
-			elfType_unknown,
-		    elfType_64_little,
-		    elfType_32_little,
-		};
+	enum line_t {
+		line_t_label,
+		line_t_diss,
+		line_t_path,
+		line_t_func,
+	};
 
-		enum line_t {
-			line_t_label,
-			line_t_diss,
-			line_t_path,
-			line_t_func,
-		};
+	TraceDqr::DQErr status;
 
-		TraceDqr::DQErr status;
+	int stdoutPipe;
+	FILE *fpipe;
 
-		int stdoutPipe;
-		FILE *fpipe;
+	bool pipeEOF;
+	char pipeBuffer[2048];
+	int  pipeIndex = 0;
+	int  endOfBuffer = 0;
 
-		bool pipeEOF;
-		char pipeBuffer[2048];
-		int  pipeIndex = 0;
-		int  endOfBuffer = 0;
+	pid_t objdumpPid;
+//	TraceDqr::ADDRESS startAddr;
+	TraceDqr::elfType eType;
 
-		pid_t objdumpPid;
+	TraceDqr::DQErr execObjDump(const char *elfName,TraceDqr::elfType eType,uint64_t vmaOffset,const char *objdumpPath);
+	TraceDqr::DQErr fillPipeBuffer();
+	objDumpTokenType getNextLex(char *lex);
+	bool isWSLookahead();
+	bool isStringAHexNumber(char *s,uint64_t &n);
+	bool isStringADecNumber(char *s,uint64_t &n);
+	objDumpTokenType getRestOfLine(char *lex);
+	TraceDqr::DQErr parseSection(objDumpTokenType &nextType,char *nextLex,Section *&codeSection,uint64_t vmaOffset);
+	TraceDqr::DQErr parseSectionList(objDumpTokenType &nextType,char *nextLex,Section *&codeSectionLst,uint64_t vmaOffset);
+	TraceDqr::DQErr parseFileLine(uint32_t &line);
+	TraceDqr::DQErr parseFuncName();
+	TraceDqr::DQErr parseFileOrLabelOrDisassembly(line_t &lineType,char *text,int &length,uint32_t &value);
+	TraceDqr::DQErr parseDisassembly(bool &isLabel,int &instSize,uint32_t &inst,char *disassembly);
+	TraceDqr::DQErr parseDisassemblyList(objDumpTokenType &nextType,char *nextLex,Section *codeSectionLst,SrcFileRoot &srcFileRoot,uint64_t startAddr);
+	TraceDqr::DQErr parseFixedField(uint32_t &flags);
+	TraceDqr::DQErr parseSymbol(bool &haveSym,char *secName,char *symName,uint32_t &symFlags,uint64_t &symSize);
+	TraceDqr::DQErr parseSymbolTable(objDumpTokenType &nextType,char *nextLex,Sym *&syms,Section *&codeSectionLst,uint64_t vmaOffset);
+	TraceDqr::DQErr parseElfName(char *elfName,TraceDqr::elfType &et);
+	TraceDqr::DQErr parseObjDump(int &archSize,Section *&codeSectionLst,Sym *&symLst,SrcFileRoot &srcFileRoot,uint64_t vmaOffset,uint64_t startAddr,uint64_t endAddr);
+};
 
-		TraceDqr::DQErr execObjDump(const char *elfName,const char *objdumpPath);
-		TraceDqr::DQErr fillPipeBuffer();
-		objDumpTokenType getNextLex(char *lex);
-		bool isWSLookahead();
-		bool isStringAHexNumber(char *s,uint64_t &n);
-		bool isStringADecNumber(char *s,uint64_t &n);
-		objDumpTokenType getRestOfLine(char *lex);
-		TraceDqr::DQErr parseSection(objDumpTokenType &nextType,char *nextLex,Section *&codeSection);
-		TraceDqr::DQErr parseSectionList(objDumpTokenType &nextType,char *nextLex,Section *&codeSectionLst);
-		TraceDqr::DQErr parseFileLine(uint32_t &line);
-		TraceDqr::DQErr parseFuncName();
-		TraceDqr::DQErr parseFileOrLabelOrDisassembly(line_t &lineType,char *text,int &length,uint32_t &value);
-		TraceDqr::DQErr parseDisassembly(bool &isLabel,int &instSize,uint32_t &inst,char *disassembly);
-		TraceDqr::DQErr parseDisassemblyList(objDumpTokenType &nextType,char *nextLex,Section *codeSectionLst,SrcFileRoot &srcFileRoot);
-		TraceDqr::DQErr parseFixedField(uint32_t &flags);
-		TraceDqr::DQErr parseSymbol(bool &haveSym,char *secName,char *symName,uint32_t &symFlags,uint64_t &symSize);
-		TraceDqr::DQErr parseSymbolTable(objDumpTokenType &nextType,char *nextLex,Sym *&syms,Section *&codeSectionLst);
-		TraceDqr::DQErr parseElfName(char *elfName,enum elfType &et);
-		TraceDqr::DQErr parseObjdump(int &archSize,Section *&codeSectionLst,Sym *&syms,SrcFileRoot &srcFileRoot);
+class process {
+public:
+  process();
+  ~process();
+
+  int pid;
+  char *elfName;
+  class ElfReader *elfReader;
+  class Disassembler *disassembler;
+  class EventConverter  *eventConverter;
+  class CTFConverter *ctf;
+  class PerfConverter *perfConverter;
+};
+
+class addressMap {
+public:
+  addressMap(const char *name,TraceDqr::elfType e_type,bool is_blob,uint64_t start,uint64_t end);
+  ~addressMap();
+  class addressMap *next;
+  TraceDqr::elfType eType;
+  char *efName;
+  bool isBlob;
+  uint64_t startAddr;
+  uint64_t endAddr;
 };
 
 class ElfReader {
 public:
-        	   ElfReader(const char *elfname,const char *odExe);
-	          ~ElfReader();
+	ElfReader(const char *elfname,const char *odExe,uint64_t vma_offset);
+	TraceDqr::DQErr addElfFile(const char *elfname,addressMap *addrMap,const char *odExe);
+
+	~ElfReader();
 	TraceDqr::DQErr getStatus() { return status; }
+        TraceDqr::DQErr addElfFile(const char *elfname,const char *odExe);
 	TraceDqr::DQErr getInstructionByAddress(TraceDqr::ADDRESS addr, TraceDqr::RV_INST &inst);
 	Symtab    *getSymtab();
 	Section   *getSections() { return codeSectionLst; }
 	int        getArchSize() { return archSize; }
 	int        getBitsPerAddress() { return bitsPerAddress; }
+	const char *getElfName();
 
 	TraceDqr::DQErr parseNLSStrings(TraceDqr::nlStrings *nlsStrings);
+
+	TraceDqr::DQErr seal();
 
 	TraceDqr::DQErr dumpSyms();
 
 private:
 	TraceDqr::DQErr  status;
+	bool        sealed;
 	char       *elfName;
 	int         archSize;
 	int         bitsPerAddress;
 	Section	   *codeSectionLst;
+	Sym        *symLst;
 	Symtab     *symtab;
 	SrcFileRoot srcFileRoot;
 
-	TraceDqr::DQErr fixupSourceFiles(Section *sections,Sym *syms);
+//	TraceDqr::DQErr addSections(Section *sections);
+	TraceDqr::DQErr fixupSourceFiles(Sym *syms);
 };
 
 class TsList {
@@ -438,7 +491,10 @@ public:
 
 	TraceDqr::DQErr propertyToTFName(const char *value);
 	TraceDqr::DQErr propertyToEFName(const char *value);
+	TraceDqr::DQErr propertyToVDSOName(const char *value);
 	TraceDqr::DQErr propertyToPFName(const char *value);
+	TraceDqr::DQErr propertyToMFName(const char *value);
+	TraceDqr::DQErr propertyToPids(const char *value);
 	TraceDqr::DQErr propertyToSrcBits(const char *value);
 	TraceDqr::DQErr propertyToNumAddrBits(const char *value);
 	TraceDqr::DQErr propertyToITCPrintOpts(const char *value);
@@ -460,14 +516,22 @@ public:
 	TraceDqr::DQErr propertyToStartTime(const char *value);
 	TraceDqr::DQErr propertyToHostName(const char *value);
 	TraceDqr::DQErr propertyToObjdumpName(const char *value);
+	TraceDqr::DQErr propertyToKMemPath(const char *value);
+	TraceDqr::DQErr propertyToArchSize(const char *value);
+	TraceDqr::DQErr propertyToTraceType(const char *value);
 
 	char *odName;
 	char *tfName;
 	char *efName;
+	char *vdsoName;
 	char *caName;
 	char *pfName;
+        char *mfNameList;
+	char *pids;
+        TraceDqr::TraceType tType;
 	TraceDqr::CATraceType caType;
 	int srcBits;
+	int archSize;
 	int numAddrBits;
 	int itcPrintOpts;
 	int itcPrintBufferSize;
@@ -483,6 +547,7 @@ public:
 	bool eventConversionEnable;
 	char *hostName;
 	bool filterControlEvents;
+	char *kmemPath;
 
 	bool itcPerfEnable;
 	int itcPerfChannel;
@@ -708,14 +773,15 @@ public:
 
 	TraceDqr::DQErr getStatus() { return status; }
 
-	TraceDqr::DQErr emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id);
-	TraceDqr::DQErr emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id);
-	TraceDqr::DQErr emitCallRet(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags);
-	TraceDqr::DQErr emitException(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause);
-	TraceDqr::DQErr emitInterrupt(int coe,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause);
-	TraceDqr::DQErr emitContext(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context);
-	TraceDqr::DQErr emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc);
-	TraceDqr::DQErr emitControl(int core,TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc);
+	TraceDqr::DQErr emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc,int id);
+	TraceDqr::DQErr emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc,int id);
+	TraceDqr::DQErr emitCallRet(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags);
+	TraceDqr::DQErr emitException(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc,int cause);
+	TraceDqr::DQErr emitInterrupt(int coe,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc,int cause);
+	TraceDqr::DQErr emitContext(int core,TraceDqr::TIMESTAMP ts,int prevPid,int ckdf,TraceDqr::ADDRESS pc,uint32_t pid,uint8_t tag);
+
+	TraceDqr::DQErr emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc);
+	TraceDqr::DQErr emitControl(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,int control,TraceDqr::ADDRESS pc);
 
 private:
 
@@ -735,11 +801,40 @@ private:
 	const char *getControlText(int control);
 };
 
+class KMem {
+public:
+	KMem(const char *kmem_path,TraceDqr::ADDRESS start_address,int archsize,const char *obj_dump);
+	~KMem();
+
+	TraceDqr::DQErr getStatus() { return status; }
+	TraceDqr::ADDRESS getKStart() { return startAddr; }
+        TraceDqr::DQErr disassemble(TraceDqr::ADDRESS addr);
+	TraceDqr::DQErr getInstructionByAddress(TraceDqr::ADDRESS addr, TraceDqr::RV_INST &inst);
+	Source getSrcInfo() { return sourceInfo; };
+	Instruction getInstructionInfo() { return instructionInfo; };
+private:
+	TraceDqr::DQErr status;
+
+	char *kMemPath;
+        char *objDump;
+	TraceDqr::ADDRESS startAddr;
+	int archSize;
+
+        Instruction      instructionInfo;
+        Source           sourceInfo;
+
+	Section *sectionLst;
+	Section *cachedSection;
+
+	Section *findSection(TraceDqr::ADDRESS addr);
+};
+
 // class Disassembler: class to help in the dissasemblhy of instrucitons
 
 class Disassembler {
 public:
 	 Disassembler(Symtab *stp,Section *sp,int archsize);
+	 Disassembler(int archsize);
 	~Disassembler();
 
     TraceDqr::DQErr disassemble(TraceDqr::ADDRESS addr);
@@ -856,6 +951,7 @@ public:
 //	bool takenHistory(int core);
 
 private:
+
 	int i_cnt[DQR_MAXCORES];
     uint64_t history[DQR_MAXCORES];
     int histBit[DQR_MAXCORES];

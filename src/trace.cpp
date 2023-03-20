@@ -1338,10 +1338,10 @@ static const char * const CTFMetadataStructs[] = {
 
 // class CTFConverter methods
 
-// baseNameIn: abs or rel path and name of base file
-// fileBaseName: name of file without extention (no path info)
-// fileName: just the name of the file at baseNameIn (no path info)
-// absPath: abs path to baseNameIn without the file (just the abs path)
+// baseNameIn: (input) abs or rel path and name of base file
+// fileBaseName: (output) name of file without extention (no path info)
+// fileName: (output) just the name of the file at baseNameIn with any extention (no path info)
+// absPath: (output) abs path to baseNameIn without the file (just the abs path)
 
 static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,char *absPath)
 {
@@ -1378,12 +1378,12 @@ static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,cha
 		else if (baseNameIn[i] == '\\') {
 			sepIndex = i;
 		}
-		else if ((extIndex == -1) && (baseNameIn[i] == '.')) {
+		else if ((extIndex == -1) && (sepIndex == -1) && (baseNameIn[i] == '.')) {
 			extIndex = i;
 		}
 	}
 
-	char en[256];
+	char en[256]; // full name with no path
 	char ebn[256];
 	char fullPath[512];
 
@@ -1391,11 +1391,16 @@ static void getPathsNames(char *baseNameIn,char *fileBaseName,char *fileName,cha
 
 	strcpy(en,&baseNameIn[sepIndex+1]);
 
-	for (i = sepIndex+1; i < extIndex; i++) {
-		ebn[i - (sepIndex+1)] = baseNameIn[i];
+	if (extIndex < 0) {
+		strcpy(ebn,en);
 	}
+	else {
+		for (i = sepIndex+1; i < extIndex; i++) {
+			ebn[i - (sepIndex+1)] = baseNameIn[i];
+		}
 
-	ebn[i - (sepIndex+1)] = 0;
+		ebn[i - (sepIndex+1)] = 0;
+	}
 
 	// figure out if this is an abs path or a rel path in baseNameIn
 
@@ -2644,7 +2649,7 @@ EventConverter::~EventConverter()
 	}
 }
 
-TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
+TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc,int id)
 {
 	char msgBuff[512];
 	int n;
@@ -2684,27 +2689,34 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc != TraceDqr::DQERR_OK) {
-				return TraceDqr::DQERR_ERR;
-			}
+			if (rc == TraceDqr::DQERR_OK) {
 
-			if (functionname == nullptr) {
-				int offset;
+				if (functionname == nullptr) {
+					int offset;
 
-				rc = disassembler->getFunctionName(pc,functionname,offset);
-				if (rc != TraceDqr::DQERR_OK) {
-					return TraceDqr::DQERR_ERR;
+					rc = disassembler->getFunctionName(pc,functionname,offset);
+					if (rc != TraceDqr::DQERR_OK) {
+						return TraceDqr::DQERR_ERR;
+					}
 				}
-			}
 
-			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+			}
+		}
+
+		char pidStr[64];
+		if (pid == -1) {
+			pidStr[0] = 0;
+		}
+		else {
+			snprintf(pidStr,sizeof pidStr,"Pid=%d ",pid);
 		}
 
 		if (ckdf == 0) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [External Trigger] PC=0x%08x ID=[--]",core,ts,pc);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [External Trigger] %sPC=0x%08lx ID=[--]",core,ts,pidStr,pc);
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [External Trigger] PC=0x%08x ID=[%d]",core,ts,pc,id);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [External Trigger] %sPC=0x%08lx ID=[%d]",core,ts,pidStr,pc,id);
 		}
 
 		if (eventFD >= 0) {
@@ -2721,7 +2733,7 @@ TraceDqr::DQErr EventConverter::emitExtTrigEvent(int core,TraceDqr::TIMESTAMP ts
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int id)
+TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc,int id)
 {
 	char msgBuff[512];
 	int n;
@@ -2761,27 +2773,34 @@ TraceDqr::DQErr EventConverter::emitWatchpoint(int core,TraceDqr::TIMESTAMP ts,i
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc != TraceDqr::DQERR_OK) {
-				return TraceDqr::DQERR_ERR;
-			}
+			if (rc == TraceDqr::DQERR_OK) {
 
-			if (functionname == nullptr) {
-				int offset;
+				if (functionname == nullptr) {
+					int offset;
 
-				rc = disassembler->getFunctionName(pc,functionname,offset);
-				if (rc != TraceDqr::DQERR_OK) {
-					return TraceDqr::DQERR_ERR;
+					rc = disassembler->getFunctionName(pc,functionname,offset);
+					if (rc != TraceDqr::DQERR_OK) {
+						return TraceDqr::DQERR_ERR;
+					}
 				}
-			}
 
-			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+			}
+		}
+
+		char pidStr[64];
+		if (pid == -1) {
+			pidStr[0] = 0;
+		}
+		else {
+			snprintf(pidStr,sizeof pidStr,"Pid=%d ",pid);
 		}
 
 		if (ckdf == 0) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Watchpoint] PC=0x%08x ID=[--]",core,ts,pc);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Watchpoint] PC=0x%08lx ID=[--]",core,ts,pidStr,pc);
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Watchpoint] PC=0x%08x ID=[%d]",core,ts,pc,id);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Watchpoint] PC=0x%08lx ID=[%d]",core,ts,pidStr,pc,id);
 		}
 
 		if (eventFD >= 0) {
@@ -2858,7 +2877,7 @@ const char *EventConverter::getInterruptCauseText(int cause)
 	}
 }
 
-TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags)
+TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc,TraceDqr::ADDRESS pcDest,int crFlags)
 {
 	char msgBuff[512];
 	int n;
@@ -2898,39 +2917,46 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc != TraceDqr::DQERR_OK) {
-				return TraceDqr::DQERR_ERR;
-			}
+			if (rc == TraceDqr::DQERR_OK) {
 
-			if (functionname == nullptr) {
-				int offset;
+				if (functionname == nullptr) {
+					int offset;
 
-				rc = disassembler->getFunctionName(pc,functionname,offset);
-				if (rc != TraceDqr::DQERR_OK) {
-					return TraceDqr::DQERR_ERR;
+					rc = disassembler->getFunctionName(pc,functionname,offset);
+					if (rc != TraceDqr::DQERR_OK) {
+						return TraceDqr::DQERR_ERR;
+					}
 				}
-			}
 
-			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+			}
+		}
+
+		char pidStr[64];
+		if (pid == -1) {
+			pidStr[0] = 0;
+		}
+		else {
+			snprintf(pidStr,sizeof pidStr,"Pid=%d ",pid);
 		}
 
 		if (crFlags & TraceDqr::isCall) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call] PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Call] PC=0x%08lx PCDest=[0x%08lx]",core,ts,pidStr,pc,pcDest);
 		}
 		else if (crFlags & TraceDqr::isInterrupt) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Interrupt] PC=0x%08lx PCDest=[0x%08lx]",core,ts,pidStr,pc,pcDest);
 		}
 		else if (crFlags & TraceDqr::isException) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception] PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Exception] PC=0x%0l8x PCDest=[0x%08lx]",core,ts,pidStr,pc,pcDest);
 		}
 		else if (crFlags & TraceDqr::isReturn) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Return] PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Return] PC=0x%08lx PCDest=[0x%08lx]",core,ts,pidStr,pc,pcDest);
 		}
 		else if (crFlags & TraceDqr::isExceptionReturn) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception Return] PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Exception Return] PC=0x%08lx PCDest=[0x%08lx]",core,ts,pidStr,pc,pcDest);
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Call/Return?? PC=0x%08x PCDest=[0x%08x]",core,ts,pc,pcDest);
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Call/Return?? PC=0x%08lx PCDest=[0x%08lx]",core,ts,pidStr,pc,pcDest);
 		}
 
 		if (eventFD >= 0) {
@@ -2947,7 +2973,7 @@ TraceDqr::DQErr EventConverter::emitCallRet(int core,TraceDqr::TIMESTAMP ts,int 
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
+TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc,int cause)
 {
 	char msgBuff[512];
 	int n;
@@ -2987,23 +3013,30 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc != TraceDqr::DQERR_OK) {
-				return TraceDqr::DQERR_ERR;
-			}
+			if (rc == TraceDqr::DQERR_OK) {
 
-			if (functionname == nullptr) {
-				int offset;
+				if (functionname == nullptr) {
+					int offset;
 
-				rc = disassembler->getFunctionName(pc,functionname,offset);
-				if (rc != TraceDqr::DQERR_OK) {
-					return TraceDqr::DQERR_ERR;
+					rc = disassembler->getFunctionName(pc,functionname,offset);
+					if (rc != TraceDqr::DQERR_OK) {
+						return TraceDqr::DQERR_ERR;
+					}
 				}
-			}
 
-			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+			}
 		}
 
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Exception] PC=0x%08x Cause=[%d:%s]",core,ts,pc,cause,getExceptionCauseText(cause));
+		char pidStr[64];
+		if (pid == -1) {
+			pidStr[0] = 0;
+		}
+		else {
+			snprintf(pidStr,sizeof pidStr,"Pid=%d ",pid);
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Exception] PC=0x%08lx Cause=[%d:%s]",core,ts,pidStr,pc,cause,getExceptionCauseText(cause));
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
@@ -3019,7 +3052,7 @@ TraceDqr::DQErr EventConverter::emitException(int core,TraceDqr::TIMESTAMP ts,in
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int cause)
+TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc,int cause)
 {
 	char msgBuff[512];
 	int n;
@@ -3059,23 +3092,30 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc != TraceDqr::DQERR_OK) {
-				return TraceDqr::DQERR_ERR;
-			}
+			if (rc == TraceDqr::DQERR_OK) {
 
-			if (functionname == nullptr) {
-				int offset;
+				if (functionname == nullptr) {
+					int offset;
 
-				rc = disassembler->getFunctionName(pc,functionname,offset);
-				if (rc != TraceDqr::DQERR_OK) {
-					return TraceDqr::DQERR_ERR;
+					rc = disassembler->getFunctionName(pc,functionname,offset);
+					if (rc != TraceDqr::DQERR_OK) {
+						return TraceDqr::DQERR_ERR;
+					}
 				}
-			}
 
-			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+			}
 		}
 
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Interrupt] PC=0x%08x Cause=[%d:%s]",core,ts,pc,cause,getInterruptCauseText(cause));
+		char pidStr[64];
+		if (pid == -1) {
+			pidStr[0] = 0;
+		}
+		else {
+			snprintf(pidStr,sizeof pidStr,"Pid=%d ",pid);
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Interrupt] PC=0x%08lx Cause=[%d:%s]",core,ts,pidStr,pc,cause,getInterruptCauseText(cause));
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
@@ -3091,7 +3131,7 @@ TraceDqr::DQErr EventConverter::emitInterrupt(int core,TraceDqr::TIMESTAMP ts,in
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc,int context)
+TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int prevPid,int ckdf,TraceDqr::ADDRESS pc,uint32_t pid,uint8_t tag)
 {
 	char msgBuff[512];
 	int n;
@@ -3100,19 +3140,24 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 	const char *extention;
 	CTF::event_t ei;
 
-	switch (context & 0x3) {
+	switch (tag) {
+	case 0:
+		ei = CTF::et_privContextIndex;
+		newContext = "PrivContext";
+		extention = "privcontext";
+		break;
 	case 2:
-		ei = CTF::et_mContextIndex;
+		ei = CTF::et_sContextIndex;
 		newContext = "SContext";
 		extention = "scontext";
 		break;
 	case 3:
-		ei = CTF::et_sContextIndex;
-		newContext = "MContext";
-		extention = "mcontext";
+		ei = CTF::et_hContextIndex;
+		newContext = "hContext";
+		extention = "hcontext";
 		break;
 	default:
-		printf("Error: EventConverter::emitContext(): Unknown context type (0x%x)\n",context);
+		printf("Error: EventConverter::emitContext(): Unknown context type (0x%x)\n",tag);
 		return TraceDqr::DQERR_ERR;
 	}
 
@@ -3142,6 +3187,8 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 		strcpy(fileInfoBuff,"\n");
 		f = sizeof "\n" - 1;
 
+		// only do the dissasembly below if in user mode
+
 		if (disassembler != nullptr) {
 			TraceDqr::DQErr rc;
 			const char *filename;
@@ -3151,23 +3198,26 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc != TraceDqr::DQERR_OK) {
-				return TraceDqr::DQERR_ERR;
-			}
+			if (rc == TraceDqr::DQERR_OK) {
+				if (functionname == nullptr) {
+					int offset;
 
-			if (functionname == nullptr) {
-				int offset;
-
-				rc = disassembler->getFunctionName(pc,functionname,offset);
-				if (rc != TraceDqr::DQERR_OK) {
-					return TraceDqr::DQERR_ERR;
+					disassembler->getFunctionName(pc,functionname,offset);
 				}
-			}
 
-			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+			}
 		}
 
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [%s] PC=0x%08x Context=[%d]",core,ts,newContext,pc,context >> 2);
+		char pidStr[64];
+		if (prevPid == -1) {
+			pidStr[0] = 0;
+		}
+		else {
+			snprintf(pidStr,sizeof pidStr,"Pid=%d ",prevPid);
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[%s] PC=0x%08lx Pid=[%d]",core,ts,pidStr,newContext,pc,pid);
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
@@ -3183,7 +3233,7 @@ TraceDqr::DQErr EventConverter::emitContext(int core,TraceDqr::TIMESTAMP ts,int 
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int ckdf,TraceDqr::ADDRESS pc)
+TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,TraceDqr::ADDRESS pc)
 {
 	char msgBuff[512];
 	int n;
@@ -3223,23 +3273,30 @@ TraceDqr::DQErr EventConverter::emitPeriodic(int core,TraceDqr::TIMESTAMP ts,int
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc != TraceDqr::DQERR_OK) {
-				return TraceDqr::DQERR_ERR;
-			}
+			if (rc == TraceDqr::DQERR_OK) {
 
-			if (functionname == nullptr) {
-				int offset;
+				if (functionname == nullptr) {
+					int offset;
 
-				rc = disassembler->getFunctionName(pc,functionname,offset);
-				if (rc != TraceDqr::DQERR_OK) {
-					return TraceDqr::DQERR_ERR;
+					rc = disassembler->getFunctionName(pc,functionname,offset);
+					if (rc != TraceDqr::DQERR_OK) {
+						return TraceDqr::DQERR_ERR;
+					}
 				}
-			}
 
-			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+			}
 		}
 
-		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [PC Sample] PC=0x%08x 0=[0]",core,ts,pc);
+		char pidStr[64];
+		if (pid == -1) {
+			pidStr[0] = 0;
+		}
+		else {
+			snprintf(pidStr,sizeof pidStr,"Pid=%d ",pid);
+		}
+
+		n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[PC Sample] PC=0x%08lx 0=[0]",core,ts,pidStr,pc);
 
 		if (eventFD >= 0) {
 			write(eventFD,msgBuff,n);
@@ -3275,7 +3332,7 @@ const char *EventConverter::getControlText(int control)
 	return "Reserved";
 }
 
-TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int ckdf,int control,TraceDqr::ADDRESS pc)
+TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int pid,int ckdf,int control,TraceDqr::ADDRESS pc)
 {
 	char msgBuff[512];
 	int n;
@@ -3315,27 +3372,34 @@ TraceDqr::DQErr EventConverter::emitControl(int core,TraceDqr::TIMESTAMP ts,int 
 			const char *line;
 
 			rc = disassembler->getSrcLines(pc,&filename,&cutPathIndex,&functionname,&linenumber,&line);
-			if (rc != TraceDqr::DQERR_OK) {
-				return TraceDqr::DQERR_ERR;
-			}
+			if (rc == TraceDqr::DQERR_OK) {
 
-			if (functionname == nullptr) {
-				int offset;
+				if (functionname == nullptr) {
+					int offset;
 
-				rc = disassembler->getFunctionName(pc,functionname,offset);
-				if (rc != TraceDqr::DQERR_OK) {
-					return TraceDqr::DQERR_ERR;
+					rc = disassembler->getFunctionName(pc,functionname,offset);
+					if (rc != TraceDqr::DQERR_OK) {
+						return TraceDqr::DQERR_ERR;
+					}
 				}
-			}
 
-			f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+				f = snprintf(fileInfoBuff,sizeof fileInfoBuff," ffl:%s:%s:%d\n",filename?filename:"",functionname?functionname:"",linenumber);
+			}
+		}
+
+		char pidStr[64];
+		if (pid == -1) {
+			pidStr[0] = 0;
+		}
+		else {
+			snprintf(pidStr,sizeof pidStr,"Pid=%d ",pid);
 		}
 
 		if (ckdf == 0) {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x0 Control=[%d:%s]",core,ts,control,getControlText(control));
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Control] PC=0x0 Control=[%d:%s]",core,ts,pidStr,control,getControlText(control));
 		}
 		else {
-			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d [Control] PC=0x%08x Control=[%d:%s]",core,ts,pc,control,getControlText(control));
+			n = snprintf(msgBuff,sizeof msgBuff,"[%d] %d %s[Control] PC=0x%08lx Control=[%d:%s]",core,ts,pidStr,pc,control,getControlText(control));
 		}
 
 		if (eventFD >= 0) {
@@ -3801,7 +3865,7 @@ TraceDqr::DQErr CTFConverter::writeBinInfo(int core,uint64_t timestamp)
 
 	// now write bininfo event
 
-//	printf("need to get memory base address and size from symtab sections\n");fflush(stdout);
+//	printf("need to get memory base address and size from symtab sections\n");
 
 	e.binInfo._baddr = 0x40000000;
 
@@ -4030,11 +4094,15 @@ TraceSettings::TraceSettings()
 	odName = nullptr;
 	tfName = nullptr;
 	efName = nullptr;
+	vdsoName = nullptr;
+        mfNameList = nullptr;
+	pids = nullptr;
 	caName = nullptr;
 	pfName = nullptr;
 	caType = TraceDqr::CATRACE_NONE;
 	srcBits = 0;
 	numAddrBits = 0;
+	archSize = 0;
 	itcPrintOpts = TraceDqr::ITC_OPT_NLS;
 	itcPrintBufferSize = 4096;
 	itcPrintChannel = 0;
@@ -4052,6 +4120,8 @@ TraceSettings::TraceSettings()
 	startTime = -1;
 	hostName = nullptr;
 	filterControlEvents = false;
+	kmemPath = nullptr;
+	tType = TraceDqr::TRACETYPE_unknown;
 }
 
 TraceSettings::~TraceSettings()
@@ -4064,6 +4134,21 @@ TraceSettings::~TraceSettings()
 	if (efName != nullptr) {
 		delete [] efName;
 		efName = nullptr;
+	}
+
+	if (vdsoName != nullptr) {
+		delete [] vdsoName;
+		vdsoName = nullptr;
+	}
+
+	if (mfNameList != nullptr) {
+		delete [] mfNameList;
+		mfNameList = nullptr;
+	}
+
+	if (pids != nullptr) {
+		delete [] pids;
+		pids = nullptr;
 	}
 
 	if (caName != nullptr) {
@@ -4089,6 +4174,11 @@ TraceSettings::~TraceSettings()
 	if (odName != nullptr) {
 		delete [] odName;
 		odName = nullptr;
+	}
+
+	if (kmemPath != nullptr) {
+		delete [] kmemPath;
+		kmemPath = nullptr;
 	}
 }
 
@@ -4119,6 +4209,13 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
+			else if (strcasecmp("vdso",name) == 0) {
+				rc = propertyToVDSOName(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set VDSO file name in settings\n");
+					return rc;
+				}
+			}
 			else if (strcasecmp("pcd",name) == 0) {
 				rc = propertyToPFName(value);
 				if (rc != TraceDqr::DQERR_OK) {
@@ -4126,6 +4223,20 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
+			else if (strcasecmp("pids",name) == 0) {
+				rc = propertyToPids(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could net set pids in settings\n");
+					return rc;
+				}
+			}
+                        else if (strcasecmp("map",name) == 0) {
+				rc = propertyToMFName(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could net set mapping file name in settings\n");
+					return rc;
+				}
+                        }
 			else if (strcasecmp("srcbits",name) == 0) {
 				rc = propertyToSrcBits(value);
 				if (rc != TraceDqr::DQERR_OK) {
@@ -4133,7 +4244,7 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
-			else if (strcasecmp("bits",name) == 0) {
+			else if (strcasecmp("addrbits",name) == 0) {
 				rc = propertyToNumAddrBits(value);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: TraceSettings::addSettings(): Could not set numAddrBits in settings\n");
@@ -4273,6 +4384,27 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 					return rc;
 				}
 			}
+			else if (strcasecmp("kmempath",name) == 0) {
+				rc = propertyToKMemPath(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set kmemPath in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("archsize",name) == 0) {
+				rc = propertyToArchSize(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set archSize in settings\n");
+					return rc;
+				}
+			}
+			else if (strcasecmp("teinstruction",name) == 0) {
+				rc = propertyToTraceType(value);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: TraceSettings::addSettings(): Could not set tracetype in settings\n");
+					return rc;
+				}
+			}
 		}
 	} while (rc == TraceDqr::DQERR_OK);
 
@@ -4286,12 +4418,13 @@ TraceDqr::DQErr TraceSettings::addSettings(propertiesParser *properties)
 	}
 
 	if (rc != TraceDqr::DQERR_EOF) {
-		printf("Error: TraceSettings::addSettings(): problem parsing properties file: %d\n",rc);
+		printf("Error: TraceSettings::addSettings(): problem parsing properties file\n");
 		return TraceDqr::DQERR_ERR;
 	}
 
 	return TraceDqr::DQERR_OK;
 }
+
 
 TraceDqr::DQErr TraceSettings::propertyToObjdumpName(const char *value)
 {
@@ -4306,6 +4439,68 @@ TraceDqr::DQErr TraceSettings::propertyToObjdumpName(const char *value)
 
 		odName = new char [l];
 		strcpy(odName,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToKMemPath(const char *value)
+{
+	if (value != nullptr) {
+		if (kmemPath != nullptr) {
+			delete [] kmemPath;
+			kmemPath = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		kmemPath = new char [l];
+		strcpy(kmemPath,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToArchSize(const char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		char *endp;
+
+		archSize = strtol(value,&endp,0);
+
+		if (endp == value) {
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToTraceType(const char *value)
+{
+	if ((value != nullptr) && (value[0] != '\0')) {
+		if (strcasecmp(value,"teInstNone") == 0) {
+			tType = TraceDqr::TRACETYPE_unknown;
+		}
+		else if (strcasecmp(value,"teInstEvent") == 0) {
+			tType = TraceDqr::TRACETYPE_EVENT;
+		}
+		else if (strcasecmp(value,"teInstPath") == 0) {
+			tType = TraceDqr::TRACETYPE_PATH;
+		}
+		else if (strcasecmp(value,"teInstBTMSync") == 0) {
+			tType = TraceDqr::TRACETYPE_BTM;
+		}
+		else if (strcasecmp(value,"teInstHTMSyncNoOpt") == 0) {
+			tType = TraceDqr::TRACETYPE_HTMNOOPT;
+		}
+		else if (strcasecmp(value,"teInstHTMSync") == 0) {
+			tType = TraceDqr::TRACETYPE_HTM;
+		}
+		else {
+			tType = TraceDqr::TRACETYPE_unknown;
+                }
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -4331,7 +4526,12 @@ TraceDqr::DQErr TraceSettings::propertyToTFName(const char *value)
 
 TraceDqr::DQErr TraceSettings::propertyToEFName(const char *value)
 {
-	if (value != nullptr) {
+	if ((value != nullptr) && (value[0] != 0)) {
+		if (mfNameList != nullptr) {
+			printf("Error: propertyToEFName(): Cann't specify both an elf file name and a mappings file\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
 		if (efName != nullptr) {
 			delete [] efName;
 			efName = nullptr;
@@ -4342,6 +4542,24 @@ TraceDqr::DQErr TraceSettings::propertyToEFName(const char *value)
 
 		efName = new char [l];
 		strcpy(efName,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToVDSOName(const char *value)
+{
+	if ((value != nullptr) && (value[0] != 0)) {
+		if (vdsoName != nullptr) {
+			delete [] vdsoName;
+			vdsoName = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		vdsoName = new char [l];
+		strcpy(vdsoName,value);
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -4360,6 +4578,49 @@ TraceDqr::DQErr TraceSettings::propertyToPFName(const char *value)
 
 		pfName = new char [l];
 		strcpy(pfName,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToPids(const char *value)
+{
+
+	if (value != nullptr) {
+		if (pids != nullptr) {
+			delete [] pids;
+			pids = nullptr;
+		}
+
+		int l;
+		l = strlen(value) + 1;
+
+		pids = new char [l];
+
+		strcpy(pids,value);
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr TraceSettings::propertyToMFName(const char *value)
+{
+	if (value != nullptr) {
+		if (efName != nullptr) {
+			printf("Error: propertyToEFName(): Cann't specify both an elf file name and a mappings file\n");
+			return TraceDqr::DQERR_ERR;
+		}
+
+                if (mfNameList != nullptr) {
+                  delete [] mfNameList;
+                  mfNameList = nullptr;
+                }
+
+		int l;
+		l = strlen(value) + 1;
+
+		mfNameList = new char [l];
+		strcpy(mfNameList,value);
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -5055,31 +5316,108 @@ TraceDqr::DQErr propertiesParser::getNextProperty(char **name,char **value)
 	return TraceDqr::DQERR_OK;
 }
 
+pidMap::pidMap()
+{
+	pid = -1;
+	name = nullptr;
+	shortNameIndex = 0;
+}
+
+pidMap::~pidMap()
+{
+  if (name != nullptr) {
+    delete [] name;
+    name = nullptr;
+  }
+}
+
+process::process()
+{
+  pid = -1;
+  elfName = nullptr;
+  elfReader = nullptr;
+  disassembler = nullptr;
+  eventConverter = nullptr;
+  ctf = nullptr;
+  perfConverter = nullptr;
+}
+
+process::~process()
+{
+  if (elfName != nullptr) {
+    delete [] elfName;
+    elfName = nullptr;
+  }
+
+  if (elfReader != nullptr) {
+    delete elfReader;
+    elfReader = nullptr;
+  }
+
+  if (disassembler != nullptr) {
+    delete disassembler;
+    disassembler = nullptr;
+  }
+
+  if (eventConverter != nullptr) {
+    delete eventConverter;
+    eventConverter = nullptr;
+  }
+
+  if (perfConverter != nullptr) {
+    delete perfConverter;
+    perfConverter = nullptr;
+  }
+
+  if (ctf != nullptr) {
+    delete ctf;
+    ctf = nullptr;
+  }
+}
 
 // class trace methods
 
-Trace::Trace(char *mf_name)
+Trace::Trace(char *pf_name)
 {
 	status = TraceDqr::DQERR_OK;
 
 	sfp          = nullptr;
-	elfReader    = nullptr;
-	disassembler = nullptr;
+        numProcesses = 0;
+	processes    = nullptr;
+	numPids      = 0;
+        pidList      = nullptr;
+	kMem         = nullptr;
 	caTrace      = nullptr;
 	counts       = nullptr;//delete this line if compile error
-	efName       = nullptr;
+	vdsoName     = nullptr;
+	mfNameList   = nullptr;
 	rtdName      = nullptr;
 	cutPath      = nullptr;
 	newRoot      = nullptr;
 	itcPrint     = nullptr;
 	nlsStrings   = nullptr;
-	ctf          = nullptr;
-	eventConverter = nullptr;
-	perfConverter = nullptr;
 	objdump       = nullptr;
+	traceType     = TraceDqr::TRACETYPE_BTM;
+	eventConvert = false;
 
-	if (mf_name == nullptr) {
-		printf("Error: Trace(): mf_name argument null\n");
+	nm.coreId = 0;
+	nm.pid = 0;
+	nm.prv = 0;
+
+	messageInfo.coreId = 0;
+	messageInfo.pid = 0;
+	messageInfo.prv = 0;
+
+	instructionInfo.coreId = 0;
+	instructionInfo.pid = 0;
+	instructionInfo.prv = 0;
+
+	sourceInfo.coreId = 0;
+	sourceInfo.pid = 0;
+	sourceInfo.prv = 0;
+
+	if (pf_name == nullptr) {
+		printf("Error: Trace(): pf_name argument null\n");
 
 		cleanUp();
 
@@ -5089,11 +5427,11 @@ Trace::Trace(char *mf_name)
 
 	TraceDqr::DQErr rc;
 
-	propertiesParser properties(mf_name);
+	propertiesParser properties(pf_name);
 
 	rc = properties.getStatus();
 	if (rc != TraceDqr::DQERR_OK) {
-		printf("Error: Trace(): new propertiesParser(%s) from file failed with %d\n",mf_name,rc);
+		printf("Error: Trace(): new propertiesParser(%s) from file failed with %d\n",pf_name,rc);
 
 		cleanUp();
 
@@ -5110,18 +5448,16 @@ Trace::Trace(char *mf_name)
 		cleanUp();
 
 		status = rc;
-
 		return;
 	}
 
 	rc = configure(settings);
 	if (rc != TraceDqr::DQERR_OK) {
-		printf("Error: Trace::Trace: configure() failed\n");
+		printf("Error: Trace::Trace(): configure() failed\n");
 
 		status = rc;
 
 		cleanUp();
-
 		return;
 	}
 
@@ -5136,20 +5472,39 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 	status = TraceDqr::DQERR_OK;
 
 	sfp          = nullptr;
-	elfReader    = nullptr;
-	disassembler = nullptr;
+        numProcesses = 0;
+	processes    = nullptr;
+	numPids      = 0;
+	pidList      = nullptr;
+	kMem         = nullptr;
 	caTrace      = nullptr;
 	counts       = nullptr;//delete this line if compile error
-	efName       = nullptr;
+	vdsoName     = nullptr;
+        mfNameList   = nullptr;
 	rtdName      = nullptr;
 	cutPath      = nullptr;
 	newRoot      = nullptr;
 	itcPrint     = nullptr;
 	nlsStrings   = nullptr;
-	ctf          = nullptr;
-	eventConverter = nullptr;
-	perfConverter = nullptr;
 	objdump       = nullptr;
+	traceType     = TraceDqr::TRACETYPE_BTM;
+	eventConvert = false;
+
+	nm.coreId = 0;
+	nm.pid = 0;
+	nm.prv = 0;
+
+	messageInfo.coreId = 0;
+	messageInfo.pid = 0;
+	messageInfo.prv = 0;
+
+	instructionInfo.coreId = 0;
+	instructionInfo.pid = 0;
+	instructionInfo.prv = 0;
+
+	sourceInfo.coreId = 0;
+	sourceInfo.pid = 0;
+	sourceInfo.prv = 0;
 
 	ts.propertyToTFName(tf_name);
 	ts.propertyToEFName(ef_name);
@@ -5163,8 +5518,6 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 	rc = configure(ts);
 
 	if (rc != TraceDqr::DQERR_OK) {
-		printf("Error: Trace::Trace(): configure() failed\n");
-
 		cleanUp();
 	}
 
@@ -5174,6 +5527,203 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 Trace::~Trace()
 {
 	cleanUp();
+}
+
+TraceDqr::DQErr Trace::buildElfProcess(const char *elfName)
+{
+  if (processes != nullptr) {
+    printf("Error: Trace::buildElfProcess(): processes array is already created\n");
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (elfName == nullptr) {
+    printf("Error: Trace::buildElfProcess(): elfName argument null\n");
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // fill in the processes array
+
+  numProcesses = 1;
+
+  processes = new process[1];
+
+  processes[0].pid = -1;
+  
+  int l;
+  l = strlen(elfName)+1;
+  processes[0].elfName = new char [l];
+  strcpy(processes[0].elfName,elfName);
+
+  processes[0].elfReader = new ElfReader(elfName,objdump,0);
+  if (processes[0].elfReader->getStatus() != TraceDqr::DQERR_OK) {
+    printf("Error: Trace::buildElfProcess(): Error creating ElfReader object\n");
+  
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // this is a bare metal trace. No more elf files or blobs. Go ahead and seal!
+  // sealing will create the symtable object
+
+  TraceDqr::DQErr rc;
+
+  rc = processes[0].elfReader->seal();
+  if (rc != TraceDqr::DQERR_OK) {
+    printf("Error: Trace::biuldElfProcess(): ElfReader seal failed\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // get symbol table
+
+  Symtab *symtab;
+  Section *sections;
+
+  symtab = processes[0].elfReader->getSymtab();
+  if (symtab == nullptr) {
+    printf("Error: Trace::buildElfProcess(): No symtab for process\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  sections = processes[0].elfReader->getSections();
+  if (sections == nullptr) {
+    printf("Error: Trace::buildElfProcess(): Unable to get sections for elf file\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // create disassembler object
+
+  processes[0].disassembler = new (std::nothrow) Disassembler(symtab,sections,processes[0].elfReader->getArchSize());
+  if (processes[0].disassembler == nullptr) {
+    printf("Error: Trace::buildElfProcess(): Could not create disassembler object\n");
+
+    status = TraceDqr::DQERR_ERR;
+
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (processes[0].disassembler->getStatus() != TraceDqr::DQERR_OK) {
+    printf("Error: Trace::buildElfProcess(): Could not create disassembler object\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Trace::buildMFProcesses(const char *nameList)
+{
+  if (processes != nullptr) {
+    printf("Error: Trace::buildMFProcesses(): Processes array already created\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (nameList == nullptr) {
+    printf("Error: Trace::buildMFProcesses(): Null nameList argument\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  int startIndex;
+
+  // Should be pid,mapping file pairs. Every file must have an associated pid, and files
+  // are mapping files.
+
+  // count pid/mapfile pairs
+
+  numProcesses = 0;
+
+  for (startIndex = 0; nameList[startIndex] != 0; startIndex++) {
+    if (nameList[startIndex] == ',') {
+      numProcesses += 1;
+    }
+  }
+
+  if (numProcesses == 0) {
+    printf("Error: Trace::buildMFProcesses(): Incorrect syntax for pid,name pairs\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  processes = new process[numProcesses];
+
+  for (int i = 0; i < numProcesses; i++) {
+    processes[i].pid = -2;
+    processes[i].elfReader = nullptr;
+    processes[i].disassembler = nullptr;
+  }
+
+  int pid;
+  int endIndex;
+
+  startIndex = 0;
+
+  for (int i = 0; i < numProcesses; i++) {
+    // get pid at startIndex, terminated by ','
+
+    char *endPtr;
+
+    pid = strtoll(&nameList[startIndex],&endPtr,10);
+    if (*endPtr != ',') {
+      printf("Error: Trace::buildMFProcesses(): Incorrect syntax for pid,name pairs\n");
+
+      status = TraceDqr::DQERR_ERR;
+      return TraceDqr::DQERR_ERR;
+    }
+
+    processes[i].pid = pid;
+
+    endIndex = endPtr - &nameList[startIndex];
+    startIndex = endIndex+1;
+
+    char mapFileName[1024];
+    int d = 0;
+
+    for (endIndex = startIndex; (nameList[endIndex] != ';') && (nameList[endIndex] != 0); endIndex++) {
+      mapFileName[d] = nameList[endIndex];
+      d += 1;
+    }
+
+    if (startIndex == endIndex) {
+      printf("Error: Trace::buildMFProcesses(): No mapping file name for pid %d\n",pid);
+
+      status = TraceDqr::DQERR_ERR;
+      return TraceDqr::DQERR_ERR;
+    }
+
+    mapFileName[d] = 0;
+
+    TraceDqr::DQErr rc;
+
+    rc = buildProcess(&processes[i],pid,mapFileName);
+    if (rc != TraceDqr::DQERR_OK) {
+      printf("Error: Trace::buildMFProcesses(): buildProcess() failed\n");
+
+      status = TraceDqr::DQERR_ERR;
+      return TraceDqr::DQERR_ERR;
+    }
+
+    if (nameList[endIndex] != 0) {
+      startIndex = endIndex+1;
+    }
+    else {
+      startIndex = endIndex;
+    }
+  }
+
+  return TraceDqr::DQERR_OK;
 }
 
 // configure should probably take a options object that contains the seetings for all the options. Easier to add
@@ -5186,21 +5736,42 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	status = TraceDqr::DQERR_OK;
 
 	sfp          = nullptr;
-	elfReader    = nullptr;
-	disassembler = nullptr;
+	linuxTrace   = false;
+        numProcesses = 0;
+	processes    = nullptr;
+	numPids      = 0;
+	pidList      = nullptr;
+	kMem         = nullptr;
 	caTrace      = nullptr;
 	counts       = nullptr;//delete this line if compile error
-	efName       = nullptr;
+        mfNameList   = nullptr;
 	rtdName      = nullptr;
 	cutPath      = nullptr;
 	newRoot      = nullptr;
 	itcPrint     = nullptr;
 	nlsStrings   = nullptr;
-	ctf          = nullptr;
-	eventConverter = nullptr;
 	eventFilterMask = 0;
-	perfConverter = nullptr;
 	objdump       = nullptr;
+	bitsPerAddress = 0;
+	archSize      = 0;
+	traceType     = TraceDqr::TRACETYPE_BTM;
+	eventConvert = false;
+
+	nm.coreId = 0;
+	nm.pid = 0;
+	nm.prv = 0;
+
+	messageInfo.coreId = 0;
+	messageInfo.pid = 0;
+	messageInfo.prv = 0;
+
+	instructionInfo.coreId = 0;
+	instructionInfo.pid = 0;
+	instructionInfo.prv = 0;
+
+	sourceInfo.coreId = 0;
+	sourceInfo.pid = 0;
+	sourceInfo.prv = 0;
 
 	syncCount = 0;
 	caSyncAddr = (TraceDqr::ADDRESS)-1;
@@ -5221,16 +5792,36 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 	if (settings.tfName == nullptr) {
 		printf("Error: Trace::configure(): No trace file name specified\n");
-
 		status = TraceDqr::DQERR_ERR;
+
 		return TraceDqr::DQERR_ERR;
 	}
 
-	traceType = TraceDqr::TRACETYPE_BTM;
+	if (settings.vdsoName != nullptr) {
+		int len;
+
+		len = strlen(settings.vdsoName);
+
+		vdsoName = new char[len+1];
+
+		strcpy(vdsoName,settings.vdsoName);
+	}
+
+	if (settings.tType != TraceDqr::TRACETYPE_unknown) {
+		traceType = settings.tType;
+	}
+
 
 	pathType = settings.pathType;
 
 	srcbits = settings.srcBits;
+
+        if (settings.archSize > 0) {
+		archSize = settings.archSize;
+        }
+	else {
+		archSize = 0;
+	}
 
 	if (settings.filterControlEvents) {
 		eventFilterMask = (1 << CTF::et_controlIndex);
@@ -5251,91 +5842,79 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	}
 
 	if (sfp->getErr() != TraceDqr::DQERR_OK) {
-		printf("Error: Trace::Configure(): Could not open trace file '%s' for input\n",settings.tfName);
-
-		delete sfp;
-		sfp = nullptr;
+		printf("Error: Trace::configure(): Could not open trace file '%s' for input\n",settings.tfName);
 
 		status = TraceDqr::DQERR_ERR;
 		return TraceDqr::DQERR_ERR;
 	}
 
-	if (settings.efName != nullptr ) {
-		int l = strlen(settings.efName)+1;
-		efName = new char[l];
-		strcpy(efName,settings.efName);
+	if (settings.pids != nullptr) {
+		// pids is to specify what pids to trace??
 
-		// create elf object - this also forks off objdump and parses the elf file
-
-		elfReader = new (std::nothrow) ElfReader(settings.efName,objdump);
-
-		if (elfReader == nullptr) {
-			printf("Error: Trace::Configure(): Could not create ElfReader object\n");
-
-			status = TraceDqr::DQERR_ERR;
-			return TraceDqr::DQERR_ERR;
-		}
-
-	    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
-		printf("Error: Trace::configure(): Could not create elfReader object\n");
-
-	    	status = TraceDqr::DQERR_ERR;
-	    	return TraceDqr::DQERR_ERR;
-	    }
-
-	    // get symbol table
-
-	    Symtab *symtab;
-	    Section *sections;
-
-	    symtab = elfReader->getSymtab();
-	    if (symtab == nullptr) {
-		printf("Error: Trace::configure(): elfReader object has no symbol table\n");
-
-	    	status = TraceDqr::DQERR_ERR;
-	    	return TraceDqr::DQERR_ERR;
-	    }
-
-	    sections = elfReader->getSections();
-	    if (sections == nullptr) {
-		printf("Error: Trace::configure(): elfReader object has no sections\n");
-
-	    	status = TraceDqr::DQERR_ERR;
-	    	return TraceDqr::DQERR_ERR;
-	    }
-
-	    // create disassembler object
-
-		disassembler = new (std::nothrow) Disassembler(symtab,sections,elfReader->getArchSize());
-		if (disassembler == nullptr) {
-			printf("Error: Trace::configure(): Could not create disassembler object\n");
-
-			status = TraceDqr::DQERR_ERR;
-			return TraceDqr::DQERR_ERR;
-		}
-
-		if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
-			printf("Error: Trace::configure(): Failed to create disassembler object\n");
-
-			status = TraceDqr::DQERR_ERR;
-			return TraceDqr::DQERR_ERR;
-		}
-
-		rc = disassembler->setPathType(settings.pathType);
+		rc = parsePidList(settings.pids);
 		if (rc != TraceDqr::DQERR_OK) {
-			printf("Error: Trace::configure(): setPathtype() failed\n");
+			printf("Error: Trace::Configure(): parsePidList() failed\n");
 
 			status = TraceDqr::DQERR_ERR;
 			return TraceDqr::DQERR_ERR;
 		}
+        }
+	else {
+	  pidList = nullptr;
+          numPids = 0;
+        }
+
+	if (settings.efName != nullptr ) {
+		linuxTrace = false;
+
+		if (settings.mfNameList != nullptr) {
+			printf("Error: Trace::configure(): Cannot set both elf file and mappings file\n");
+
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
+		}
+
+		rc = buildElfProcess(settings.efName);
+        	if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: Trace::configure(): buildElfProcess() failed\n");
+
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
+		}
+	}
+	else if (settings.mfNameList != nullptr) {
+		linuxTrace = true;
+
+		rc = buildMFProcesses(settings.mfNameList);
+        	if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: Trace::configure(): parseMFNames() failed\n");
+
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
+		}
+
+		archSize = processes[0].elfReader->getArchSize();
+
+		kMem = new KMem(settings.kmemPath, (TraceDqr::ADDRESS)0xffffffff80000000,archSize,objdump);
 	}
 	else {
-		elfReader = nullptr;
-		disassembler = nullptr;
-		sfp = nullptr;
+		printf("Error: Trace::configure(): Must specify an elf file or mapping file\n");
+
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
 	}
 
-	for (int i = 0; (size_t)i < sizeof lastFaddr / sizeof lastFaddr[0]; i++ ) {
+        for (int i = 0; i < numProcesses; i++) {
+          rc = processes[i].disassembler->setPathType(settings.pathType);
+          if (rc != TraceDqr::DQERR_OK) {
+            printf("Error: Trace::configure(): setPathType() failed\n");
+
+            status = rc;
+            return rc;
+           }
+        }
+
+	for (int i = 0; (size_t)i < sizeof lastFaddr / sizeof lastFaddr[0]; i++) {
 		lastFaddr[i] = 0;
 	}
 
@@ -5343,14 +5922,54 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 		currentAddress[i] = 0;
 	}
 
-	counts = new Count[DQR_MAXCORES];
+	for (int i = 0; (size_t)i < sizeof currentPrv / sizeof currentPrv[0]; i++) {
+		currentPrv[i] = TraceDqr::prv_unknown;
+        }
+
+	counts = new Count;
 
 	for (int i = 0; (size_t)i < sizeof state / sizeof state[0]; i++ ) {
 		state[i] = TRACE_STATE_GETFIRSTSYNCMSG;
 	}
 
+	for (int i = 0; (size_t)i < sizeof prevMsgWasSync / sizeof prevMsgWasSync[0]; i++) {
+		prevMsgWasSync[i] = false;
+        }
+
 	readNewTraceMessage = true;
-	currentCore = 0;	// as good as eny!
+	currentCore = 0;	// as good as any!
+
+        if (processes[0].pid == -1) {
+          // If doing a bare metal trace, set current pid to 0, otherwise don't know the current pid
+
+          for (int i = 0; (size_t)i < sizeof currentPid / sizeof currentPid[0]; i++) {
+            currentPid[i] = 0;
+          }
+
+          for (int i = 0; (size_t)i < sizeof currentProcessIndex / sizeof currentProcessIndex[0]; i++ ) {
+            currentProcessIndex[i] = 0;
+          }
+        }
+        else {
+          // linux trace
+
+          for (int i = 0; (size_t)i < sizeof currentPid / sizeof currentPid[0]; i++) {
+            currentPid[i] = -1; // -1 means we don't know the pid for the core
+          }
+
+          for (int i = 0; (size_t)i < sizeof currentProcessIndex / sizeof currentProcessIndex[0]; i++ ) {
+            // -1 means we don't know the current pid index (not currently tracing the core
+            currentProcessIndex[i] = -1;
+          }
+        }
+
+	for (int i = 0; (size_t)i < sizeof currentDisassembler / sizeof currentDisassembler[0]; i++ ) {
+          currentDisassembler[i] = processes[0].disassembler;
+        }
+
+	for (int i = 0; (size_t)i < sizeof currentElfReader / sizeof currentElfReader[0]; i++ ) {
+          currentElfReader[i] = processes[0].elfReader;
+        }
 
 	for (int i = 0; (size_t)i < sizeof lastTime / sizeof lastTime[0]; i++) {
 		lastTime[i] = 0;
@@ -5373,12 +5992,15 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 	if (settings.numAddrBits != 0 ) {
 		instructionInfo.addrSize = settings.numAddrBits;
+		bitsPerAddress = settings.numAddrBits;
 	}
-	else if (elfReader == nullptr) {
+	else if (processes[0].elfReader == nullptr) {
 		instructionInfo.addrSize = 0;
+		bitsPerAddress = 0;
 	}
 	else {
-		instructionInfo.addrSize = elfReader->getBitsPerAddress();
+		instructionInfo.addrSize = processes[0].elfReader->getBitsPerAddress();
+		bitsPerAddress = processes[0].elfReader->getBitsPerAddress();
 	}
 
 	instructionInfo.addrDispFlags = settings.addrDispFlags;
@@ -5411,7 +6033,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	if (settings.itcPrintOpts != TraceDqr::ITC_OPT_NONE) {
 		rc = setITCPrintOptions(settings.itcPrintOpts,settings.itcPrintBufferSize,settings.itcPrintChannel);
 		if (rc != TraceDqr::DQERR_OK) {
-			printf("Error: Trace::configure(): setITCPrintOptions() failed\n");
+                  printf("Error: Trace::configure(): setITCPrintOptions() failed\n");
 
 			status = TraceDqr::DQERR_ERR;
 			return TraceDqr::DQERR_ERR;
@@ -5421,7 +6043,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	if ((settings.caName != nullptr) && (settings.caType != TraceDqr::CATRACE_NONE)) {
 		rc = setCATraceFile(settings.caName,settings.caType);
 		if (rc != TraceDqr::DQERR_OK) {
-			printf("Error: Trace::configure(): setCATraceFile() failed\n");
+                  printf("Error: Trace::configure(): setCATraceFile() failed\n");
 
 			status = TraceDqr::DQERR_ERR;
 			return TraceDqr::DQERR_ERR;
@@ -5434,7 +6056,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		rc = enableCTFConverter(settings.startTime,settings.hostName);
 		if (rc != TraceDqr::DQERR_OK) {
-			printf("Error: Trace::configure(): enableCTFConverter() failed\n");
+                  printf("Error: Trace::configure(): enableCTFConverter() failed\n");
 
 			status = rc;
 			return status;
@@ -5445,13 +6067,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		// Do the code below only after setting efName above
 
-		rc = enableEventConverter();
-		if (rc != TraceDqr::DQERR_OK) {
-			printf("Error: Trace::configure(): enableEventConverter() failed\n");
-
-			status = rc;
-			return status;
-		}
+		eventConvert = true;
 	}
 
 	if (settings.itcPerfEnable != false) {
@@ -5475,7 +6091,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 
 		rc = enablePerfConverter(perfChannel,markerValue);
 		if (rc != TraceDqr::DQERR_OK) {
-			printf("Error: Trace::configure(): enablePerfConverter() failed\n");
+                  printf("Error: Trace::configure(): enablePerfConverter() failed\n");
 
 			status = rc;
 			return status;
@@ -5485,9 +6101,10 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	if ((settings.cutPath != nullptr) || (settings.srcRoot != nullptr)) {
 		rc = subSrcPath(settings.cutPath,settings.srcRoot);
 		if (rc != TraceDqr::DQERR_OK) {
-			printf("Error: Trace::configure(): subSrcPath() failed\n");
+                  printf("Error: Trace::configure(): subSrcPath() failed\n");
 
 			status = rc;
+
 			return status;
 		}
 	}
@@ -5511,9 +6128,35 @@ void Trace::cleanUp()
 		sfp = nullptr;
 	}
 
-	if (elfReader != nullptr) {
-		delete elfReader;
-		elfReader = nullptr;
+	if (pidList != nullptr) {
+          delete [] pidList;
+          pidList = nullptr;
+	}
+
+        for (int i = 0; (size_t)i < sizeof currentElfReader / sizeof currentElfReader[0]; i++) {
+          // don't delete! It gets deleted elsewere
+
+          currentElfReader[i] = nullptr;
+        }
+
+        for (int i = 0; (size_t)i < sizeof currentDisassembler / sizeof currentDisassembler[0]; i++) {
+          // don't delete! It gets deleted elsewere
+
+          currentDisassembler[i] = nullptr;
+        }
+
+        numPids = 0;
+
+        if (processes != nullptr) {
+          delete [] processes;
+          processes = nullptr;
+        }
+
+        numProcesses = 0;
+
+	if (kMem != nullptr) {
+		delete kMem;
+		kMem = nullptr;
 	}
 
 	if (cutPath != nullptr) {
@@ -5531,9 +6174,9 @@ void Trace::cleanUp()
 		rtdName = nullptr;
 	}
 
-	if (efName != nullptr) {
-		delete [] efName;
-		efName = nullptr;
+	if (vdsoName != nullptr) {
+		delete [] vdsoName;
+		vdsoName = nullptr;
 	}
 
 	if (itcPrint  != nullptr) {
@@ -5554,33 +6197,13 @@ void Trace::cleanUp()
 	}
 
 	if (counts != nullptr) {
-		delete [] counts;
+		delete counts;
 		counts = nullptr;
-	}
-
-	if (disassembler != nullptr) {
-		delete disassembler;
-		disassembler = nullptr;
 	}
 
 	if (caTrace != nullptr) {
 		delete caTrace;
 		caTrace = nullptr;
-	}
-
-	if (ctf != nullptr) {
-		delete ctf;
-		ctf = nullptr;
-	}
-
-	if (eventConverter != nullptr) {
-		delete eventConverter;
-		eventConverter = nullptr;
-	}
-
-	if (perfConverter != nullptr) {
-		delete perfConverter;
-		perfConverter = nullptr;
 	}
 }
 
@@ -5589,32 +6212,659 @@ const char *Trace::version()
 	return DQR_VERSION;
 }
 
+bool Trace::isLinuxTrace()
+{
+  return linuxTrace;
+}
+
+pidMap *Trace::getPidMap(int &num_pids)
+{
+  num_pids = numProcesses;
+
+  if (numProcesses <= 0) {
+    return nullptr;
+  }
+
+  pidMap *pm;
+  pm = new pidMap[num_pids];
+
+  for (int i = 0; i < num_pids; i++) {
+    pm[i].pid = processes[i].pid;
+
+    if (processes[i].elfReader != nullptr) {
+      int l;
+      const char *en;
+
+      en = processes[i].elfReader->getElfName();
+      if ((en[0] == '.') && (en[1] == '/')) {
+        en += 1;
+      }
+
+      l = strlen(en)+1;
+
+      pm[i].name = new char[l];
+      strcpy(pm[i].name,en);
+
+      int last = 0;
+
+      for (int j = l-1; (j > 0) && (last == 0); j--) {
+        if (pm[i].name[j] == '/') {
+          last = j;
+        }
+      }
+
+      if (pm[i].name[last] == '/') {
+        pm[i].shortNameIndex = last+1;
+      }
+      else {
+        pm[i].shortNameIndex = last;
+      }
+    }
+  }
+
+  return pm;
+}
+
+TraceDqr::DQErr Trace::parsePidList(const char *pids)
+{
+  if (pidList != nullptr) {
+    delete [] pidList;
+    pidList = nullptr;
+  }
+
+  if ((pids == nullptr) || (pids[0] == 0)) {
+    numPids = 0;
+    return TraceDqr::DQERR_OK;
+  }
+
+  int l;
+  l = strlen(pids) + 1;
+
+  // count the number of pids specified
+
+  numPids = 1;
+
+  for (int i = 0; i < l; i++) {
+    if (pids[i] == ',') {
+      numPids += 1;
+    }
+  }
+
+  pidList = new int[numPids];
+
+  const char *start;
+  char *end;
+
+  start = pids;
+
+  for (int i = 0; i < numPids; i++) {
+    pidList[i] = strtol(start,&end,10);
+    if (start == end) {
+      printf("Error: TraceSettings::parsePidList(): pids syntax error\n");
+      return TraceDqr::DQERR_ERR;
+    }
+
+    if ((*end != ',') && (*end != 0)) {
+      printf("Error: TraceSettings::parsePidList(): pids syntax error\n");
+      return TraceDqr::DQERR_ERR;
+    }
+
+    start = end+1;
+  }
+
+  return TraceDqr::DQERR_OK;
+}
+
+addressMap::addressMap(const char *name,TraceDqr::elfType e_type,bool is_blob,uint64_t start,uint64_t end)
+{
+  next = nullptr;
+
+  int l;
+  l = strlen(name) + 1;
+
+  efName = new char[l];
+
+  strcpy(efName,name);
+  startAddr = start;
+  endAddr = end;
+
+  eType = e_type;
+  isBlob = is_blob;
+}
+
+addressMap::~addressMap()
+{
+  next = nullptr;
+  startAddr = 0;
+  endAddr = 0;
+
+  if (efName != nullptr) {
+    delete [] efName;
+    efName = nullptr;
+  }
+}
+
+TraceDqr::DQErr Trace::parseMappingFile(const char *fName,class addressMap **am,int &codeSections)
+{
+  if (fName == nullptr) {
+    printf("Error: parseMappingFile(): Null fName argument\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (am == nullptr) {
+    printf("Error: parseMappingFile(): Null addressMap argument\n");
+    return TraceDqr::DQERR_ERR;
+  }
+
+  *am = nullptr;
+
+  int fd;
+
+  fd = open(fName,O_RDONLY);
+  if (fd == -1) {
+    printf("Error: parseMappingFile(): Could not open maping file %s for reading\n",fName);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // get size of file and read file into memory
+
+  struct stat statBuff;
+
+  int rc;
+
+  rc = fstat(fd,&statBuff);
+  if (rc != 0) {
+    printf("Error: parseMappingFile(): Could not stat file %s\n",fName);
+
+    close(fd);
+    fd = -1;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  int fSize;
+  fSize = statBuff.st_size;
+
+  char fBuff[fSize+1];
+
+  fBuff[fSize] = 0; // put a terminating null on the end
+
+  int bytesRead;
+
+  bytesRead = read(fd,fBuff,fSize);
+  close(fd);
+  fd = -1;
+
+  if (fSize != bytesRead) {
+    printf("Error: parseMappingFile(): Coudld not read file %s\n",fName);
+
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // now parse the file. Format of each line is:
+  // address             perms offset    dev   inode      pathname
+  // startAddr - endAddr rwxp someNumber xx:xx someNumber path/name
+
+  char *start;
+  char *end;
+  uint64_t startAddr;
+  uint64_t endAddr;
+
+  start = fBuff;
+
+  codeSections = 0; // keep track of the number of executable sections in the map file
+
+  // get address range
+
+  addressMap *addrMap = nullptr;
+  addressMap *lastMap = nullptr;
+
+  // strip any leading fluff
+
+  while  ((*start == '\n') || (*start == ' ')) {
+    start += 1;
+  }
+
+  while (*start != 0) {
+    startAddr = strtoll(start,&end,16);
+    if (start == end) {
+      printf("Error: parseMappingFile(): Error parsing start addr\n");
+
+      return TraceDqr::DQERR_ERR;
+    }
+  
+    if (*end != '-') {
+      printf("Error: parseMappingFile(): Error parsing start addr\n");
+
+      return TraceDqr::DQERR_ERR;
+    }
+
+    start = end+1;
+
+    endAddr = strtoll(start,&end,16);
+    if (start == end) {
+      printf("Error: parseMappingFile(): Error parsing end addr\n");
+
+      return TraceDqr::DQERR_ERR;
+    }
+  
+    if (*end != ' ') {
+      printf("Error: parseMappingFile(): Error parsing end addr\n");
+
+      return TraceDqr::DQERR_ERR;
+    }
+
+    // look for permissions
+
+    start = end+1;
+
+    if ((*start != 'r') && (*start != '-')) {
+      printf("Error: parseMappingFile(): Error parsing permissions\n");
+
+      return TraceDqr::DQERR_ERR;
+    }
+
+    start += 1;
+
+    if ((*start != 'w') && (*start != '-')) {
+      printf("Error: parseMappingFile(): Error parsing permissions\n");
+      return TraceDqr::DQERR_ERR;
+    }
+
+    start += 1;
+
+    if (*start == 'x') { // Have an executable memory section (text section)
+      codeSections += 1;
+
+      start += 1;
+
+      // scan until white space
+
+      while ((*start != ' ') && (*start != 0)) {
+        start += 1;
+      }
+
+      // scan till end of white space
+
+      while (*start == ' ') {
+        start += 1;
+      }
+
+      if (*start == 0) {
+        printf("Error: parseMappingFile(): Error parsing permissions\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      // get offset
+
+      (void)strtoll(start,&end,16);
+      if (end == start) {
+        printf("Error: parseMappingFile(): Error parsing offset\n");
+        return TraceDqr::DQERR_ERR;
+      }
+    
+      start = end;
+
+      // white space
+
+      while (*start == ' ') {
+        start += 1;
+      }
+
+      if (*start == 0) {
+        printf("Error: parseMappingFile(): Error parsing offset\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      // device - scan to white space
+
+      while ((*start != ' ') && (*start != 0)) {
+        start += 1;
+      }
+    
+      if (*start == 0) {
+        printf("Error: parseMappingFile(): Error parsing device\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      start += 1;
+
+      // inode
+
+      (void)strtoll(start,&end,10);
+      if (start == end) {
+        printf("Error: parseMappingFile(): Error parsing inode\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      start = end;
+
+      while (*start == ' ') {
+        start += 1;
+      }
+
+      if (*start == 0) {
+        printf("Error: parseMappingFile(): Error parsing pathname\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      // get file pathname
+
+      char pathName[1024];
+
+      end = start;
+
+      int i = 0;
+
+      if (*end == '/') {
+        pathName[i] = '.';
+        i += 1;
+      }
+
+      while ((*end != '\n') && (*end != '0')) {
+        pathName[i] = *end;
+        i += 1;
+        end += 1;
+      }
+
+      pathName[i] = 0;
+
+      TraceDqr::elfType eType;
+
+// need to get vdso elf file (lib)
+//
+// Note that the names below do not seem to be correct!
+//
+//       user ABI   vDSO name
+//       ─────────────────────────────
+//       aarch64    linux-vdso.so.1
+//       arm        linux-vdso.so.1
+//       ia64       linux-gate.so.1
+//       mips       linux-vdso.so.1
+//       ppc/32     linux-vdso32.so.1
+//       ppc/64     linux-vdso64.so.1
+//       riscv      linux-vdso.so.1
+//       s390       linux-vdso32.so.1
+//       s390x      linux-vdso64.so.1
+//       sh         linux-gate.so.1
+//       i386       linux-gate.so.1
+//       x86-64     linux-vdso.so.1
+//       x86/x32    linux-vdso.so.1
+
+
+      bool isBlob;
+
+      if (strcasecmp("[vdso]",pathName) == 0) {
+	if (vdsoName != nullptr) {
+        	strcpy(pathName,vdsoName);
+	}
+	else {
+        	strcpy(pathName,"vdso");
+	}
+
+        isBlob = true;
+
+        switch (archSize) {
+	case 32:
+		eType = TraceDqr::elfType_32_binary;
+		break;
+	case 64:
+		eType = TraceDqr::elfType_64_binary;
+		break;
+	default:
+        	printf("Error: parseMappingFile(): Invalid arch size (%d)\n",archSize);
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
+        }
+      }
+      else {
+        isBlob = false;
+
+	switch (archSize) {
+	case 0:
+		// don't know the arch size, we will choose 32 and it should get fixed later
+		eType = TraceDqr::elfType_32_little;
+		break;
+	case 32:
+		eType = TraceDqr::elfType_32_little;
+		break;
+	case 64:
+		eType = TraceDqr::elfType_64_little;
+		break;
+	default:
+        	printf("Error: parseMappingFile(): Invalid arch size (%d)\n",archSize);
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
+        }
+      }
+
+      // make the addrMap list in the same order as the map file
+
+      addrMap = new addressMap(pathName,eType,isBlob,startAddr,endAddr);
+
+      if (lastMap != nullptr) {
+        lastMap->next = addrMap;
+      }
+      else {
+        *am = addrMap;
+      }
+
+      lastMap = addrMap;
+
+      if (*start != 0) {
+        start += 1;
+      }
+    }
+
+    // scan to beginning of next line
+
+    while ((*start != '\n') && (*start != 0)) {
+      start += 1;
+    }
+
+    while  (*start == '\n') {
+      start += 1;
+    }
+  }
+
+  return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Trace::buildProcess(process *process,int pid,const char *mapFileName)
+{
+  // create a process entry for process
+
+  if (process == nullptr) {
+    printf("Error: Trace::buildProcess(): process argument null\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (mapFileName == nullptr) {
+    printf("Error: Trace::buildProcess(): mapFileName argument null\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (process->elfReader != nullptr) {
+    printf("Error: Trace::buildProcess(): process has already be created\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (pid < 0) {
+    printf("Error: buildProcessArray(): Invalid pid (%d)\n",pid);
+    
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  addressMap *addrMap = nullptr;
+  int codeSections;
+  TraceDqr::DQErr rc;
+
+  rc = parseMappingFile(mapFileName,&addrMap,codeSections);
+  if (rc != TraceDqr::DQERR_OK) {
+    printf("Error: buildProcess(): Error parsing mapping file %s\n",mapFileName);
+    
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // first file will be an executable elf file (app that ran). Build real elfReader object for it
+
+  process->pid = pid;
+
+  int l;
+  l = strlen(addrMap->efName)+1;
+  process->elfName = new char [l];
+  strcpy(process->elfName,addrMap->efName);
+
+//printf("----> elfname: %s\n",process->elfName);
+
+  if (codeSections > 2) { // dynamic linked
+    process->elfReader = new ElfReader(addrMap->efName,objdump,addrMap->startAddr);
+  }
+  else { // static linked
+    process->elfReader = new ElfReader(addrMap->efName,objdump,0);
+  }
+
+  if (process->elfReader->getStatus() != TraceDqr::DQERR_OK) {
+    printf("Error: buildProcess(): Error creating elfReader object\n");
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (archSize == 0) {
+    archSize = process->elfReader->getArchSize();
+  }
+
+  addressMap *tmpAddrMap;
+
+  tmpAddrMap = addrMap->next;
+  delete addrMap;
+  addrMap = tmpAddrMap;
+
+  while (addrMap != nullptr) {
+
+    // all files after the elf file will either be blobs or shared libraries
+
+    rc = process->elfReader->addElfFile(addrMap->efName,addrMap,objdump);
+    if (rc != TraceDqr::DQERR_OK) {
+      printf("Error: buildProcess(): Could not add elf file %s to ElfReader object\n",mapFileName);
+    
+      status = TraceDqr::DQERR_ERR;
+      return TraceDqr::DQERR_ERR;
+    }
+
+    tmpAddrMap = addrMap->next;
+    delete addrMap;
+    addrMap = tmpAddrMap;
+  }
+
+  rc = process->elfReader->seal();
+  if (rc != TraceDqr::DQERR_OK) {
+    printf("Error: buildProcess(): ElfReader seal failed\n");
+    
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // get symbol table
+
+  Symtab *symtab;
+  Section *sections;
+
+  symtab = process->elfReader->getSymtab();
+  if (symtab == nullptr) {
+    printf("Error: buildProcess(): Could not get symbol table\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  sections = process->elfReader->getSections();
+  if (sections == nullptr) {
+    printf("Error: buildProcess(): Could not get sections\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  // create disassembler object
+
+  process->disassembler = new (std::nothrow) Disassembler(symtab,sections,process->elfReader->getArchSize());
+  if (process->disassembler == nullptr) {
+    printf("Error: Trace::buildProcess(): Could not create disassembler object\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (process->disassembler->getStatus() != TraceDqr::DQERR_OK) {
+    printf("Error: Trace::buildProcess(): Could not create disassembler object\n");
+
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  return TraceDqr::DQERR_OK;
+}
+
 int Trace::decodeInstructionSize(uint32_t inst, int &inst_size)
 {
-  return disassembler->decodeInstructionSize(inst,inst_size);
+  return currentDisassembler[currentCore]->decodeInstructionSize(inst,inst_size);
 }
 
 int Trace::decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch)
 {
-	return disassembler->decodeInstruction(instruction,getArchSize(),inst_size,inst_type,rs1,rd,immediate,is_branch);
+	return currentDisassembler[currentCore]->decodeInstruction(instruction,getArchSize(-1),inst_size,inst_type,rs1,rd,immediate,is_branch);
 }
 
-int Trace::getArchSize()
+int Trace::getSrcBits()
 {
-	if (elfReader == nullptr) {
+	return srcbits;
+}
+
+int Trace::getArchSize(int pid)
+{
+
+	if (numProcesses <= 0) {
 		return 0;
 	}
 
-	return elfReader->getArchSize();
+	if (pid == -1) {
+		return processes[0].elfReader->getArchSize();
+	}
+
+	for (int i = 0; i < numProcesses; i++) {
+		if (processes[i].pid == pid) {
+			return processes[i].elfReader->getArchSize();
+		}
+	}
+
+	return 0;
 }
 
-int Trace::getAddressSize()
+int Trace::getAddressSize(int pid)
 {
-	if (elfReader == nullptr) {
+	if (numProcesses <= 0) {
 		return 0;
 	}
 
-	return elfReader->getBitsPerAddress();
+	if (pid == -1) {
+		return processes[0].elfReader->getBitsPerAddress();
+	}
+
+	for (int i = 0; i < numProcesses; i++) {
+		if (processes[i].pid == pid) {
+			return processes[i].elfReader->getBitsPerAddress();
+		}
+	}
+
+	return 0;
 }
 
 TraceDqr::DQErr Trace::setTraceType(TraceDqr::TraceType tType)
@@ -5622,6 +6872,9 @@ TraceDqr::DQErr Trace::setTraceType(TraceDqr::TraceType tType)
 	switch (tType) {
 	case TraceDqr::TRACETYPE_BTM:
 	case TraceDqr::TRACETYPE_HTM:
+	case TraceDqr::TRACETYPE_HTMNOOPT:
+	case TraceDqr::TRACETYPE_EVENT:
+	case TraceDqr::TRACETYPE_PATH:
 		traceType = tType;
 		return TraceDqr::DQERR_OK;
 	default:
@@ -5635,16 +6888,27 @@ TraceDqr::DQErr Trace::setPathType(TraceDqr::pathType pt)
 {
 	pathType = pt;
 
-	if (disassembler != nullptr) {
-		TraceDqr::DQErr rc;
+	TraceDqr::DQErr rc;
 
-		rc = disassembler->setPathType(pt);
+	rc = TraceDqr::DQERR_ERR;
 
-		status = rc;
-		return rc;
+	for (int i = 0; i < numProcesses; i++) {
+		if (processes[i].disassembler != nullptr) {
+
+			rc = processes[i].disassembler->setPathType(pt);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = TraceDqr::DQERR_ERR;
+				return TraceDqr::DQERR_ERR;
+			}
+                }
+        }
+
+	if (rc != TraceDqr::DQERR_OK) {
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
 	}
 
-	return TraceDqr::DQERR_ERR;
+	return TraceDqr::DQERR_OK;
 }
 
 TraceDqr::DQErr Trace::subSrcPath(const char *cutPath,const char *newRoot)
@@ -5673,18 +6937,25 @@ TraceDqr::DQErr Trace::subSrcPath(const char *cutPath,const char *newRoot)
 		strcpy(this->newRoot,newRoot);
 	}
 
-	if (disassembler != nullptr) {
-		TraceDqr::DQErr rc;
+	TraceDqr::DQErr rc;
+	rc = TraceDqr::DQERR_ERR;
 
-		rc = disassembler->subSrcPath(cutPath,newRoot);
-
-		status = rc;
-		return rc;
+	for (int i = 0; i < numProcesses; i++) {
+		if (processes[i].disassembler != nullptr) {
+			rc = processes[i].disassembler->subSrcPath(cutPath,newRoot);
+			if (rc != TraceDqr::DQERR_OK) {
+				status = TraceDqr::DQERR_ERR;
+				return TraceDqr::DQERR_ERR;
+			}
+		}
 	}
 
-	status = TraceDqr::DQERR_ERR;
+	if (rc != TraceDqr::DQERR_OK) {
+		status = TraceDqr::DQERR_ERR;
+		return TraceDqr::DQERR_ERR;
+	}
 
-	return TraceDqr::DQERR_ERR;
+	return TraceDqr::DQERR_OK;
 }
 
 TraceDqr::DQErr Trace::setCATraceFile( char *caf_name,TraceDqr::CATraceType catype)
@@ -5709,18 +6980,27 @@ TraceDqr::DQErr Trace::setCATraceFile( char *caf_name,TraceDqr::CATraceType caty
 
 TraceDqr::DQErr Trace::enableCTFConverter(int64_t startTime,char *hostName)
 {
-	if (ctf != nullptr) {
-		delete ctf;
-		ctf = nullptr;
+	int processIndex;
+
+	processIndex = currentProcessIndex[currentCore];
+
+	if (processIndex < 0) {
+		printf("Error: Trace::enablCTFConverter(): Invalid process\n");
+		return TraceDqr::DQERR_ERR;
+        }
+
+	if (processes[processIndex].ctf != nullptr) {
+		delete processes[processIndex].ctf;
+		processes[processIndex].ctf = nullptr;
 	}
 
-	if (efName == nullptr) {
+	if (processes[processIndex].elfName == nullptr) {
 		return TraceDqr::DQERR_ERR;
 	}
 
-	ctf = new CTFConverter(efName,rtdName,1 << srcbits,getArchSize(),freq,startTime,hostName);
+	processes[processIndex].ctf = new CTFConverter(processes[processIndex].elfName,rtdName,1 << srcbits,getArchSize(-1),freq,startTime,hostName);
 
-	status = ctf->getStatus();
+	status = processes[processIndex].ctf->getStatus();
 	if (status != TraceDqr::DQERR_OK) {
 		return status;
 	}
@@ -5730,18 +7010,27 @@ TraceDqr::DQErr Trace::enableCTFConverter(int64_t startTime,char *hostName)
 
 TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel,uint32_t markerValue)
 {
-	if (perfConverter != nullptr) {
-		delete perfConverter;
-		perfConverter = nullptr;
+	int processIndex;
+
+	processIndex = currentProcessIndex[currentCore];
+
+	if (processIndex < 0) {
+		printf("Error: Trace::enablePerfConverter(): Invalid process\n");
+		return TraceDqr::DQERR_ERR;
+        }
+
+	if (processes[processIndex].perfConverter != nullptr) {
+		delete processes[processIndex].perfConverter;
+		processes[processIndex].perfConverter = nullptr;
 	}
 
-	if (efName == nullptr) {
+	if (processes[processIndex].elfName == nullptr) {
 		return TraceDqr::DQERR_ERR;
 	}
 
-	perfConverter = new PerfConverter(efName,rtdName,disassembler,1 << srcbits,perfChannel,markerValue,freq);
+	processes[processIndex].perfConverter = new PerfConverter(processes[processIndex].elfName,rtdName,processes[processIndex].disassembler,1 << srcbits,perfChannel,markerValue,freq);
 
-	status = perfConverter->getStatus();
+	status = processes[processIndex].perfConverter->getStatus();
 	if (status != TraceDqr::DQERR_OK) {
 		return status;
 	}
@@ -5749,21 +7038,30 @@ TraceDqr::DQErr Trace::enablePerfConverter(int perfChannel,uint32_t markerValue)
 	return status;
 }
 
-TraceDqr::DQErr Trace::enableEventConverter()
+TraceDqr::DQErr Trace::enableEventConverter(int pIndex)
 {
-	if (eventConverter != nullptr) {
-		delete eventConverter;
-		eventConverter = nullptr;
+	if (pIndex < 0) {
+		printf("Error: Trace::enableEventconverter(): Invalid process\n");
+		return TraceDqr::DQERR_ERR;
+        }
+
+	if (processes[pIndex].eventConverter != nullptr) {
+		delete processes[pIndex].eventConverter;
+		processes[pIndex].eventConverter = nullptr;
 	}
 
-	if (efName == nullptr) {
+	if (processes[pIndex].elfName == nullptr) {
+		printf("Error: Trace::enableEventConverter(): Null elfName\n");
+
 		return TraceDqr::DQERR_ERR;
 	}
 
-	eventConverter = new EventConverter(efName,rtdName,disassembler,1 << srcbits,freq);
+	processes[pIndex].eventConverter = new EventConverter(processes[pIndex].elfName,rtdName,processes[pIndex].disassembler,1 << srcbits,freq);
 
-	status = eventConverter->getStatus();
+	status = processes[pIndex].eventConverter->getStatus();
 	if (status != TraceDqr::DQERR_OK) {
+		printf("Error: Trace::EnableEventConverter(): Could not create EventConverter object\n");
+
 		return status;
 	}
 
@@ -5891,30 +7189,62 @@ TraceDqr::ADDRESS Trace::computeAddress()
 	return currentAddress[currentCore];
 }
 
+TraceDqr::DQErr Trace::getInstructionByAddress(TraceDqr::ADDRESS addr,TraceDqr::RV_INST &inst)
+{
+  TraceDqr::DQErr rc;
+
+  if ((kMem != nullptr) && (addr >= kMem->getKStart())) {
+    rc = kMem->getInstructionByAddress(addr,inst);
+    if (rc != TraceDqr::DQERR_OK) {
+      status = rc;
+      return TraceDqr::DQERR_ERR;
+    }
+  }
+  else {
+    rc = currentElfReader[currentCore]->getInstructionByAddress(addr,inst);
+    if (rc != TraceDqr::DQERR_OK) {
+      return TraceDqr::DQERR_ERR;
+    }
+  }
+
+  return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::DQErr Trace::Disassemble(TraceDqr::ADDRESS addr)
 {
-	if (disassembler == nullptr) {
-		printf("Error: Trace::Disassemble(): No disassembler object\n");
+	TraceDqr::DQErr rc;
+
+	if ((kMem != nullptr) && (addr >= kMem->getKStart())) {
+		rc = kMem->disassemble(addr);
+		if (rc != TraceDqr::DQERR_OK) {
+		  status = rc;
+		  return TraceDqr::DQERR_ERR;
+		}
+
+		instructionInfo = kMem->getInstructionInfo();
+		sourceInfo = kMem->getSrcInfo();
+	}
+	else if (currentDisassembler[currentCore] == nullptr) {
+		printf("Error: Trace::Disassemble(): No disassembler object for core %d\n",currentCore);
 
 		status = TraceDqr::DQERR_ERR;
 
 		return TraceDqr::DQERR_ERR;
 	}
+	else {
+		rc = currentDisassembler[currentCore]->disassemble(addr);
+		if (rc != TraceDqr::DQERR_OK) {
+		  status = rc;
+		  return TraceDqr::DQERR_ERR;
+		}
 
-	TraceDqr::DQErr rc;
+		// the two lines below copy each structure completely. This is probably
+		// pretty inefficient, and just returning pointers and using pointers
+		// would likely be better
 
-	rc = disassembler->disassemble(addr);
-	if (rc != TraceDqr::DQERR_OK) {
-	  status = rc;
-	  return TraceDqr::DQERR_ERR;
+		instructionInfo = currentDisassembler[currentCore]->getInstructionInfo();
+		sourceInfo = currentDisassembler[currentCore]->getSourceInfo();
 	}
-
-	// the two lines below copy each structure completely. This is probably
-	// pretty inefficient, and just returning pointers and using pointers
-	// would likely be better
-
-	instructionInfo = disassembler->getInstructionInfo();
-	sourceInfo = disassembler->getSourceInfo();
 
 	return TraceDqr::DQERR_OK;
 }
@@ -5932,18 +7262,23 @@ TraceDqr::DQErr Trace::setITCPrintOptions(int itcFlags,int buffSize,int channel)
 	}
 
 	if (itcFlags != TraceDqr::ITC_OPT_NONE) {
-		if ((nlsStrings == nullptr) && (elfReader != nullptr)) {
+		if ((nlsStrings == nullptr) && (currentElfReader[currentCore] != nullptr)) {
 			TraceDqr::DQErr rc;
 
 			nlsStrings = new TraceDqr::nlStrings[32];
 			if (nlsStrings == nullptr) {
-				printf("Error: Trace::setITCPrintOptions(): Could not allocate nlsStrings\n");
-
+				printf("Error: Trace::setITCPrintOptions(): Could not alloacte nslStrings\n");
 				status = TraceDqr::DQERR_ERR;
 				return TraceDqr::DQERR_ERR;
 			}
 
-			rc = elfReader->parseNLSStrings(nlsStrings);
+       			for (int i = 0; i < 32; i++) {
+		                nlsStrings[i].nf = 0;
+				nlsStrings[i].signedMask = 0;
+				nlsStrings[i].format = nullptr;
+			}
+
+			rc = currentElfReader[currentCore]->parseNLSStrings(nlsStrings);
 			if (rc != TraceDqr::DQERR_OK) {
 				printf("Error: Trace::setITCPrintOptions(): ElfReader::parseNLSStrings() failed\n");
 
@@ -5957,7 +7292,7 @@ TraceDqr::DQErr Trace::setITCPrintOptions(int itcFlags,int buffSize,int channel)
 
 		itcPrint = new ITCPrint(itcFlags,1 << srcbits,buffSize,channel,nlsStrings);
 
-		// itcPrint has no status member to check
+		// itcPrint has not status member to check
 
 		if (itcPrint == nullptr) {
 			printf("Error: Trace::setITCPrintOptions(): Could not allocate ITCPrint object\n");
@@ -6106,7 +7441,7 @@ TraceDqr::DQErr Trace::getCRBRFlags(TraceDqr::ICTReason cksrc,TraceDqr::ADDRESS 
 	case TraceDqr::ICT_PC_SAMPLE:
 		break;
 	case TraceDqr::ICT_INFERABLECALL:
-		ec = elfReader->getInstructionByAddress(addr,inst);
+		ec = getInstructionByAddress(addr,inst);
 		if (ec != TraceDqr::DQERR_OK) {
 			printf("Error: getCRBRFlags() failed\n");
 
@@ -6211,7 +7546,7 @@ TraceDqr::DQErr Trace::nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAd
 	TraceDqr::Reg rs1;
 	TraceDqr::Reg rd;
 
-	ec = elfReader->getInstructionByAddress(addr,inst);
+	ec = getInstructionByAddress(addr,inst);
 	if (ec != TraceDqr::DQERR_OK) {
 		printf("Error: nextAddr() failed\n");
 
@@ -6291,30 +7626,6 @@ TraceDqr::DQErr Trace::nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAd
 	default:
 		printf("Error: Trace::nextAddr(): Instruction at 0x%08x is not a JAL, JALR, C_JAL, C_JR, C_JALR, EBREAK, ECALL, MRET, SRET, or URET\n",addr);
 
-#ifdef foodog
-		printf("Instruction type: %d\n",inst_type);
-
-		// disassemble and display instruction
-
-		Disassemble(addr);
-
-		char dst[256];
-		instructionInfo.addressToText(dst,sizeof dst,0);
-
-		if (instructionInfo.addressLabel != nullptr) {
-			printf("<%s",instructionInfo.addressLabel);
-			if (instructionInfo.addressLabelOffset != 0) {
-				printf("+%x",instructionInfo.addressLabelOffset);
-			}
-			printf(">\n");
-		}
-
-		printf("    %s:    ",dst);
-
-		instructionInfo.instructionToText(dst,sizeof dst,2);
-		printf("  %s\n",dst);
-#endif // foodog
-
 		status = TraceDqr::DQERR_ERR;
 		return TraceDqr::DQERR_ERR;
 	}
@@ -6326,7 +7637,7 @@ TraceDqr::DQErr Trace::nextAddr(TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &nextAd
 // The result is the address it stops at. It also consumes the counts (i-cnt,
 // history, taken, not-taken) when appropriate!
 
-TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,TraceDqr::TCode tcode,int &crFlag,TraceDqr::BranchFlags &brFlag)
+TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRESS &pc,NexusMessage *nm,int &crFlag,TraceDqr::BranchFlags &brFlag)
 {
 	TraceDqr::CountType ct;
 	uint32_t inst;
@@ -6339,7 +7650,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	TraceDqr::Reg rd;
 	bool isTaken;
 
-	status = elfReader->getInstructionByAddress(addr,inst);
+	status = getInstructionByAddress(addr,inst);
 	if (status != TraceDqr::DQERR_OK) {
 		printf("Error: nextAddr(): getInstructionByAddress() failed\n");
 
@@ -6392,8 +7703,6 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 		// plain unconditional jumps use rd -> r0
 		// not inferrable unconditional
 
-//		printf("rd: %d, rs1: %d, reg_1: %d, reg_5: %d\n",rd,rs1,TraceDqr::REG_1,TraceDqr::REG_5);
-
 		if ((rd == TraceDqr::REG_1) || (rd == TraceDqr::REG_5)) { // rd == link
 			if ((rs1 != TraceDqr::REG_1) && (rs1 != TraceDqr::REG_5)) { // rd == link; rs1 != link
 				counts->push(core,addr+inst_size/8);
@@ -6403,6 +7712,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			}
 			else if (rd != rs1) { // rd == link; rs1 == link; rd != rs1
 				pc = counts->pop(core);
+				if (globalDebugFlag) printf("Debug: return: core %d, new address %08llx, %d item now on stack\n",core,pc,counts->getNumOnStack(core));
 				counts->push(core,addr+inst_size/8);
 				if (globalDebugFlag) printf("Debug: indirect call: core %d, pushing address %08llx, %d item now on stack\n",core,addr+inst_size/8,counts->getNumOnStack(core));
 				crFlag |= TraceDqr::isSwap;
@@ -6434,7 +7744,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			}
 		}
 
-		if (traceType == TraceDqr::TRACETYPE_BTM) {
+		if ((traceType == TraceDqr::TRACETYPE_BTM) || (traceType == TraceDqr::TRACETYPE_HTMNOOPT)) {
 			if (counts->consumeICnt(core,0) > inst_size / 16) {
 				// this handles the case of jumping to the instruction following the jump!
 
@@ -6455,14 +7765,18 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 	case TraceDqr::INST_C_BNEZ:
 		// htm: follow history bits
 		// btm: there will only be a trace record following this for taken branch. not taken branches are not
-		// reported. If btm mode, we can look at i-count. If it is going to go to 0, branch was taken (direct branch message
-		// will follow). If not going to 0, not taken
+		// reported. If btm mode, we can look at i-count. If it is going to go to 0, branch was taken (direct
+		// branch message will follow). If not going to 0, not taken
 
 		// pc = pc + (sign extend immediate offset) (BLTU and BGEU are not sign extended)
 		// inferrable conditional
 
-		if (traceType == TraceDqr::TRACETYPE_HTM) {
+		switch (traceType) {
+		case TraceDqr::TRACETYPE_HTM:
+		case TraceDqr::TRACETYPE_HTMNOOPT:
+		case TraceDqr::TRACETYPE_EVENT:
 			// htm mode
+
 			ct = counts->getCurrentCountType(core);
 			switch (ct) {
 			case TraceDqr::COUNTTYPE_none:
@@ -6472,22 +7786,60 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			case TraceDqr::COUNTTYPE_i_cnt:
 				if (globalDebugFlag) printf("Debug: Conditional branch: No history. I-cnt: %d\n",counts->getICnt(core));
 
-				// don't know if the branch is taken or not, so we don't know the next addr
+				int icnt;
+				icnt = counts->consumeICnt(core,0);
 
-				// This can happen with resource full messages where an i-cnt type resource full
-				// may be emitted by the encoder due to i-cnt overflow, and it still have non-emitted
-				// history bits. We will need to keep reading trace messages until we get a some
-				// history. The current trace message should be retired.
+				if ((icnt == inst_size/16) && (nm->tcode == TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS)) { // if icnt == size of instruction in 16 bit chunks
+					// here, the trace message FADDR will tell us if it was taken or not
+					// may need to add other trace message types
 
-				// this is not an error. Just keep retrying until we get a trace message that
-				// kicks things loose again
+					uint64_t takenAddr;
+					uint64_t notTakenAddr;
 
-				pc = -1;
+					takenAddr = addr + immediate;
+					notTakenAddr = addr + inst_size / 8;
 
-				// The caller can detect this has happened and read a new trace message and retry, by
-				// checking the brFlag for BRFLAG_unkown
+					if (takenAddr == notTakenAddr) {
+						brFlag = TraceDqr::BRFLAG_notTaken;
+						pc = notTakenAddr;
+					}
+					else {
+						uint64_t nxtAddr;
 
-				brFlag = TraceDqr::BRFLAG_unknown;
+						nxtAddr = nm->indirectHistoryWS.f_addr << 1;
+
+						if (nxtAddr == takenAddr) {
+							brFlag = TraceDqr::BRFLAG_taken;
+							pc = nxtAddr;
+						}
+						else if (nxtAddr == notTakenAddr) {
+							brFlag = TraceDqr::BRFLAG_notTaken;
+							pc = nxtAddr;
+						}
+						else {
+							brFlag = TraceDqr::BRFLAG_unknown;
+							pc = nxtAddr;
+						}
+					}
+				}
+				else {
+					// don't know if the branch is taken or not, so we don't know the next addr
+
+					// This can happen with resource full messages where an i-cnt type resource
+					// full may be emitted by the encoder due to i-cnt overflow, and it still
+					// have non-emitted history bits. We will need to keep reading trace messages
+					// until we get a some history. The current trace message should be retired.
+
+					// this is not an error. Just keep retrying until we get a trace message that
+					// kicks things loose again
+
+					pc = -1;
+
+					// The caller can detect this has happened and read a new trace message and
+					// retry, by checking the brFlag for BRFLAG_unkown
+
+					brFlag = TraceDqr::BRFLAG_unknown;
+				}
 				break;
 			case TraceDqr::COUNTTYPE_history:
 				//consume history bit here and set pc accordingly
@@ -6543,8 +7895,8 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 				brFlag = TraceDqr::BRFLAG_notTaken;
 				break;
 			}
-		}
-		else {
+			break;
+		case TraceDqr::TRACETYPE_BTM:
 			// btm mode
 
 			// if i-cnts don't go to zero for this instruction, this branch is not taken in btmmode.
@@ -6560,7 +7912,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 				brFlag = TraceDqr::BRFLAG_notTaken;
 			}
-			else if ((tcode == TraceDqr::TCODE_DIRECT_BRANCH) || (tcode == TraceDqr::TCODE_DIRECT_BRANCH_WS)) {
+			else if ((nm->tcode == TraceDqr::TCODE_DIRECT_BRANCH) || (nm->tcode == TraceDqr::TCODE_DIRECT_BRANCH_WS)) {
 				// taken
 
 				pc = addr + immediate;
@@ -6574,6 +7926,11 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 
 				brFlag = TraceDqr::BRFLAG_notTaken;
 			}
+			break;
+		default:
+			printf("Error: nextAddr(): Unhandled trace type %d\n",traceType);
+
+			return TraceDqr::DQERR_ERR;
 		}
 		break;
 	case TraceDqr::INST_C_J:
@@ -6623,7 +7980,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			}
 		}
 
-		if (traceType == TraceDqr::TRACETYPE_BTM) {
+		if ((traceType == TraceDqr::TRACETYPE_BTM)|| (traceType == TraceDqr::TRACETYPE_HTMNOOPT))  {
 			if (counts->consumeICnt(core,0) > inst_size / 16) {
 				// this handles the case of jumping to the instruction following the jump!
 
@@ -6663,7 +8020,7 @@ TraceDqr::DQErr Trace::nextAddr(int core,TraceDqr::ADDRESS addr,TraceDqr::ADDRES
 			}
 		}
 
-		if (traceType == TraceDqr::TRACETYPE_BTM) {
+		if ((traceType == TraceDqr::TRACETYPE_BTM) || (traceType == TraceDqr::TRACETYPE_HTMNOOPT)) {
 			if (counts->consumeICnt(core,0) > inst_size / 16) {
 				// this handles the case of jumping to the instruction following the jump!
 
@@ -6714,7 +8071,7 @@ TraceDqr::DQErr Trace::nextCAAddr(TraceDqr::ADDRESS &addr,TraceDqr::ADDRESS &sav
 
 	// note: since saveAddr is a single address, we are only implementing a one address stack (not much of a stack)
 
-	status = elfReader->getInstructionByAddress(addr,inst);
+	status = currentElfReader[currentCore]->getInstructionByAddress(addr,inst);
 	if (status != TraceDqr::DQERR_OK) {
 		printf("Error: nextCAAddr(): getInstructionByAddress() failed\n");
 
@@ -6836,12 +8193,86 @@ TraceDqr::DQErr Trace::nextCAAddr(TraceDqr::ADDRESS &addr,TraceDqr::ADDRESS &sav
 	return TraceDqr::DQERR_OK;
 }
 
+int Trace::processPidPriv(int core,int pid,uint8_t v,uint8_t prv)
+{
+	currentPid[core] = pid;
+	currentPrv[core] = (v << 4) | prv;
+
+	int pidIndex;
+
+	if (numPids == 0) {
+		// if numPids == 0, tracing all pids
+
+		pidIndex = 0;
+	}
+	else {
+		pidIndex = -1;
+
+		for (int i = 0; (i < numPids) && (pidIndex == -1); i++) {
+			if (pidList[i] == pid) {
+				pidIndex = i;
+			}
+		}
+	}
+
+	int processIndex;
+
+	processIndex = -1;
+
+	if (pidIndex >= 0) { // want to decode this pid
+		// see if we have process info for this pid
+
+		if (processes[0].pid == -1) {
+			// bare metal trace
+			processIndex = 0;
+		}
+		else {
+			for (int i = 0; (i < numProcesses) && (processIndex == -1); i++) {
+				if (processes[i].pid == pid) {
+					processIndex = i;
+				}
+			}
+		}
+
+		if (processIndex >= 0) { // have process info for this pid. Use it
+			currentProcessIndex[core] = processIndex;
+			currentDisassembler[core] = processes[processIndex].disassembler;
+			currentElfReader[core] = processes[processIndex].elfReader;
+		}
+		else { // no process info for this pid. Don't decode
+			currentProcessIndex[core] = -1;
+			currentDisassembler[core] = nullptr;
+			currentElfReader[core] = nullptr;
+		}
+	}
+	else { // not decoding this pid
+		currentProcessIndex[core] = -1;
+		currentDisassembler[core] = nullptr;
+		currentElfReader[core] = nullptr;
+	}
+
+	return processIndex;
+}
+
 // adjust pc, faddr, timestamp based on faddr, uaddr, timestamp, and message type.
 // Do not adjust counts! They are handled elsewhere
 
 TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &pc,TraceDqr::ADDRESS &faddr,TraceDqr::TIMESTAMP &ts,bool &consumed)
 {
 	consumed = false;
+
+	TraceDqr::DQErr rc;
+	int pIndex;
+	int pid;
+
+	pIndex = currentProcessIndex[nm.coreId];
+	if (pIndex >= 0) {
+		pid = processes[pIndex].pid;
+	}
+	else {
+		pid = -1;
+	}
+
 
 	switch (nm.tcode) {
 	case TraceDqr::TCODE_ERROR:
@@ -6851,30 +8282,74 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 
 		// set addrs to 0 because we have dropped some messages and don't know what is going on
 
+//should we reset counts here?
+//reset trace?
+
 		faddr = 0;
 		pc = 0;
+		prevMsgWasSync[nm.coreId] = false;
 		break;
 	case TraceDqr::TCODE_DATA_ACQUISITION:
 		if (nm.haveTimestamp) {
 			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 
-		if (perfConverter != nullptr) { // or should this be a general itc process thing?? could we process all itc messages here?
-			TraceDqr::DQErr rc;
-			rc = perfConverter->processITCPerf(nm.coreId,ts,nm.dataAcquisition.idTag,nm.dataAcquisition.data,consumed);
+		if ((pIndex >= 0) && (processes[pIndex].perfConverter != nullptr)) {
+			rc = processes[pIndex].perfConverter->processITCPerf(nm.coreId,ts,nm.dataAcquisition.idTag,nm.dataAcquisition.data,consumed);
 			if (rc != TraceDqr::DQERR_OK) {
 				return rc;
 			}
 		}
 		break;
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
+		if (nm.haveTimestamp) {
+			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
+		}
+
+		switch(nm.ownership.tag) {
+		case 0x0: // v or prv change
+			currentPrv[nm.coreId] = (nm.ownership.v << 4) | nm.ownership.prv;
+			break;
+		case 0x2: // scontext change
+			pIndex = processPidPriv(nm.coreId,nm.ownership.pid,nm.ownership.v,nm.ownership.prv);
+			break;
+		case 0x3: // hcontext change
+			// currently we don't care about hcontext, except for priv
+
+			currentPrv[nm.coreId] = (nm.ownership.v << 4) | nm.ownership.prv;
+			break;
+		default:
+			printf("Error: processTraceMessage(): Bad tag (0x%x)\n",nm.ownership.tag);
+			return TraceDqr::DQERR_ERR;
+		}
+		break;
+	case TraceDqr::TCODE_RESOURCEFULL:
+		// Make sure we aren't doubling up on any counts except i-cnts
+		if (nm.resourceFull.rCode != 0) { // 0 is i-cnt, and we don't need to check
+			switch (counts->getCurrentCountType(currentCore)) {
+			case TraceDqr::COUNTTYPE_history:
+			case TraceDqr::COUNTTYPE_taken:
+			case TraceDqr::COUNTTYPE_notTaken:
+				printf("Error: processTraceMessage(): TCODE_INDIRECTBRANCHHSITORY_WS: Counts not exhausted\n");
+				return TraceDqr::DQERR_ERR;
+			case TraceDqr::COUNTTYPE_i_cnt:
+			case TraceDqr::COUNTTYPE_none:
+				break;
+			}
+		}
+
+		if (nm.haveTimestamp) {
+			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
+		}
+		prevMsgWasSync[nm.coreId] = false;
+		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH:
 	case TraceDqr::TCODE_AUXACCESS_WRITE:
-	case TraceDqr::TCODE_RESOURCEFULL:
 	case TraceDqr::TCODE_CORRELATION:
 		if (nm.haveTimestamp) {
 			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
+		prevMsgWasSync[nm.coreId] = false;
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH:
 		if (nm.haveTimestamp) {
@@ -6882,8 +8357,13 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		}
 		faddr = faddr ^ (nm.indirectBranch.u_addr << 1);
 		pc = faddr;
+		prevMsgWasSync[nm.coreId] = false;
 		break;
 	case TraceDqr::TCODE_SYNC:
+		if (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
+			printf("Error: processTraceMessage(): TCODE_SYNC: Counts not exhausted\n");
+			return TraceDqr::DQERR_ERR;
+		}
 		if (nm.haveTimestamp) {
 			ts = processTS(TraceDqr::TS_full,ts,nm.timestamp);
 		}
@@ -6891,8 +8371,13 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		pc = faddr;
 		counts->resetStack(nm.coreId);
 		counts->resetCounts(nm.coreId);
+		prevMsgWasSync[nm.coreId] = true;
 		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+		if (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
+			printf("Error: processTraceMessage(): TCODE_DIRECT_BRANCH_WS: Counts not exhausted\n");
+			return TraceDqr::DQERR_ERR;
+		}
 		if (nm.haveTimestamp) {
 			ts = processTS(TraceDqr::TS_full,ts,nm.timestamp);
 		}
@@ -6900,8 +8385,14 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		pc = faddr;
 		counts->resetStack(nm.coreId);
 		counts->resetCounts(nm.coreId);
+		prevMsgWasSync[nm.coreId] = true;
 		break;
 	case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+		if (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
+			printf("Error: processTraceMessage(): TCODE_INDIRECT_BRANCH_WS: Counts not exhausted\n");
+			counts->dumpCounts(nm.coreId);
+			return TraceDqr::DQERR_ERR;
+		}
 		if (nm.haveTimestamp) {
 			ts = processTS(TraceDqr::TS_full,ts,nm.timestamp);
 		}
@@ -6909,15 +8400,35 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		pc = faddr;
 		counts->resetStack(nm.coreId);
 		counts->resetCounts(nm.coreId);
+		prevMsgWasSync[nm.coreId] = true;
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+		// i-cnts or no counts are allowed. Error if still have history, taken, or not taken counts
+
+		switch (counts->getCurrentCountType(currentCore)) {
+		case TraceDqr::COUNTTYPE_history:
+		case TraceDqr::COUNTTYPE_taken:
+		case TraceDqr::COUNTTYPE_notTaken:
+			printf("Error: processTraceMessage(): TCODE_INDIRECTBRANCHHSITORY_WS: Counts not exhausted\n");
+			return TraceDqr::DQERR_ERR;
+		case TraceDqr::COUNTTYPE_i_cnt:
+		case TraceDqr::COUNTTYPE_none:
+			break;
+		}
+
 		if (nm.haveTimestamp) {
 			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
+
 		faddr = faddr ^ (nm.indirectHistory.u_addr << 1);
 		pc = faddr;
+		prevMsgWasSync[nm.coreId] = false;
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+		if (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
+			printf("Error: processTraceMessage(): TCODE_INDIRECTBRANCHHSITORY_WS: Counts not exhausted\n");
+			return TraceDqr::DQERR_ERR;
+		}
 		if (nm.haveTimestamp) {
 			ts = processTS(TraceDqr::TS_full,ts,nm.timestamp);
 		}
@@ -6925,6 +8436,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		pc = faddr;
 		counts->resetStack(nm.coreId);
 		counts->resetCounts(nm.coreId);
+		prevMsgWasSync[nm.coreId] = true;
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE:
 		// for 8, 0; 14, 0 do not update pc, only faddr. 0, 0 has no address, so it never updates
@@ -6935,22 +8447,40 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			ts = processTS(TraceDqr::TS_rel,ts,nm.timestamp);
 		}
 
+		prevMsgWasSync[nm.coreId] = false;
+
 		switch (nm.ict.cksrc) {
 		case TraceDqr::ICT_EXT_TRIG:
 			if (nm.ict.ckdf == 0) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				// don't update pc
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ict.ckdf,faddr,0);
+				if ((pIndex >= 0) && eventConvert) {
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
+					}
+
+					processes[pIndex].eventConverter->emitExtTrigEvent(nm.coreId,ts,pid,nm.ict.ckdf,faddr,0);
 				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				pc = faddr;
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ict.ckdf,faddr,nm.ict.ckdata[1]);
+				if ((pIndex >= 0) && eventConvert) {
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
+					}
+
+					processes[pIndex].eventConverter->emitExtTrigEvent(nm.coreId,ts,pid,nm.ict.ckdf,faddr,nm.ict.ckdata[1]);
 				}
 			}
 			else {
@@ -6963,16 +8493,32 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				// don't update pc
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ict.ckdf,faddr,0);
+				if ((pIndex >= 0) && eventConvert) {
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
+					}
+
+					processes[pIndex].eventConverter->emitWatchpoint(nm.coreId,ts,pid,nm.ict.ckdf,faddr,0);
 				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				pc = faddr;
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ict.ckdf,faddr,nm.ict.ckdata[1]);
+				if ((pIndex >= 0) && eventConvert) {
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
+					}
+
+					processes[pIndex].eventConverter->emitWatchpoint(nm.coreId,ts,pid,nm.ict.ckdf,faddr,0);
 				}
 			}
 			else {
@@ -6985,34 +8531,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = faddr ^ (nm.ict.ckdata[0] << 1);
 				faddr = pc;
 
-				TraceDqr::DQErr rc;
-				TraceDqr::ADDRESS nextPC;
-				int crFlags;
-
-				rc = nextAddr(pc,nextPC,crFlags);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
-					return TraceDqr::DQERR_ERR;
-				}
-
-				// we will store the target address back in ckdata[1] in case it is needed later
-
-				nm.ict.ckdata[1] = nextPC;
-
-				if (ctf != nullptr) {
-					ctf->addCall(nm.coreId,pc,nextPC,ts);
-				}
-
-				if (eventConverter != nullptr) {
-					eventConverter->emitCallRet(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1],TraceDqr::isCall);
-				}
-			}
-			else if (nm.ict.ckdf == 1) {
-				pc = faddr ^ (nm.ict.ckdata[0] << 1);
-				faddr = pc ^ (nm.ict.ckdata[1] << 1);
-
-				if ((ctf != nullptr) || (eventConverter != nullptr)) {
-					TraceDqr::DQErr rc;
+				if ((pIndex >= 0) && (eventConvert || (processes[pIndex].ctf != nullptr))) {
 					TraceDqr::ADDRESS nextPC;
 					int crFlags;
 
@@ -7022,12 +8541,47 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 						return TraceDqr::DQERR_ERR;
 					}
 
-					if (ctf != nullptr) {
+					// we will store the target address back in ckdata[1] in case it is needed later
+
+					nm.ict.ckdata[1] = nextPC;
+
+					if (processes[pIndex].ctf != nullptr) {
+						processes[pIndex].ctf->addCall(nm.coreId,pc,nextPC,ts);
+					}
+
+					if (eventConvert) {
+						if (processes[pIndex].eventConverter == nullptr) {
+							rc = enableEventConverter(pIndex);
+							if (rc != TraceDqr::DQERR_OK) {
+								printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+								return TraceDqr::DQERR_ERR;
+							}
+						}
+
+						processes[pIndex].eventConverter->emitCallRet(nm.coreId,ts,pid,nm.ict.ckdf,pc,nm.ict.ckdata[1],TraceDqr::isCall);
+					}
+				}
+			}
+			else if (nm.ict.ckdf == 1) {
+				pc = faddr ^ (nm.ict.ckdata[0] << 1);
+				faddr = pc ^ (nm.ict.ckdata[1] << 1);
+
+				if ((pIndex >= 0) && (eventConvert || (processes[pIndex].ctf != nullptr))) {
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					if (processes[pIndex].ctf != nullptr) {
 						if (crFlags & TraceDqr::isCall) {
-							ctf->addCall(nm.coreId,pc,faddr,ts);
+							processes[pIndex].ctf->addCall(nm.coreId,pc,faddr,ts);
 						}
 						else if ((crFlags & TraceDqr::isReturn) || (crFlags & TraceDqr::isExceptionReturn)) {
-							ctf->addRet(nm.coreId,pc,faddr,ts);
+							processes[pIndex].ctf->addRet(nm.coreId,pc,faddr,ts);
 						}
 						else {
 							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
@@ -7035,9 +8589,15 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 						}
 					}
 
-					if (eventConverter != nullptr) {
-						eventConverter->emitCallRet(nm.coreId,ts,nm.ict.ckdf,pc,faddr,crFlags);
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
 					}
+
+					processes[pIndex].eventConverter->emitCallRet(nm.coreId,ts,pid,nm.ict.ckdf,pc,faddr,crFlags);
 				}
 			}
 			else {
@@ -7055,8 +8615,16 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				return TraceDqr::DQERR_ERR;
 			}
 
-			if (eventConverter != nullptr) {
-				eventConverter->emitException(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
+			if ((pIndex >= 0) && eventConvert) {
+				if (processes[pIndex].eventConverter == nullptr) {
+					rc = enableEventConverter(pIndex);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+						return TraceDqr::DQERR_ERR;
+					}
+				}
+
+				processes[pIndex].eventConverter->emitException(nm.coreId,ts,pid,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_INTERRUPT:
@@ -7069,8 +8637,16 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				return TraceDqr::DQERR_ERR;
 			}
 
-			if (eventConverter != nullptr) {
-				eventConverter->emitInterrupt(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
+			if ((pIndex >= 0) && eventConvert) {
+				if (processes[pIndex].eventConverter == nullptr) {
+					rc = enableEventConverter(pIndex);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+						return TraceDqr::DQERR_ERR;
+					}
+				}
+
+				processes[pIndex].eventConverter->emitInterrupt(nm.coreId,ts,pid,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_CONTEXT:
@@ -7083,8 +8659,34 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				return TraceDqr::DQERR_ERR;
 			}
 
-			if (eventConverter != nullptr) {
-				eventConverter->emitContext(nm.coreId,ts,nm.ict.ckdf,pc,nm.ict.ckdata[1]);
+			uint32_t newPid;
+			uint8_t tag;
+
+			tag = nm.ict.ckdata[1] & 0x3;
+			newPid = nm.ict.ckdata[1] >> 2;
+
+			switch (tag) {
+			case 0:	// v or prv
+				currentPrv[nm.coreId] = -1;
+				break;
+			case 2: // scontext
+				pIndex = processPidPriv(nm.coreId,newPid,0xf,0xf);
+				break;
+			case 3:	// hcontext
+				currentPrv[nm.coreId] = -1;
+				break;
+			}
+
+			if ((pIndex >= 0) && eventConvert) {
+				if (processes[pIndex].eventConverter == nullptr) {
+					rc = enableEventConverter(pIndex);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+						return TraceDqr::DQERR_ERR;
+					}
+				}
+
+				processes[pIndex].eventConverter->emitContext(nm.coreId,ts,pid,nm.ict.ckdf,pc,newPid,tag);
 			}
 			break;
 		case TraceDqr::ICT_PC_SAMPLE:
@@ -7097,8 +8699,16 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				return TraceDqr::DQERR_ERR;
 			}
 
-			if (eventConverter != nullptr) {
-				eventConverter->emitPeriodic(nm.coreId,ts,nm.ict.ckdf,pc);
+			if ((pIndex >= 0) && eventConvert) {
+				if (processes[pIndex].eventConverter == nullptr) {
+					rc = enableEventConverter(pIndex);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+						return TraceDqr::DQERR_ERR;
+					}
+				}
+
+				processes[pIndex].eventConverter->emitPeriodic(nm.coreId,ts,pid,nm.ict.ckdf,pc);
 			}
 			break;
 		case TraceDqr::ICT_CONTROL:
@@ -7106,16 +8716,24 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				// nothing to do - no address
 				// does not update faddr or pc!
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitControl(nm.coreId,ts,nm.ict.ckdf,nm.ict.ckdata[0],0);
+				if ((pIndex >= 0) && (processes[pIndex].eventConverter != nullptr)) {
+					processes[pIndex].eventConverter->emitControl(nm.coreId,ts,pid,nm.ict.ckdf,nm.ict.ckdata[0],0);
 				}
 			}
 			else if (nm.ict.ckdf == 1) {
 				faddr = faddr ^ (nm.ict.ckdata[0] << 1);
 				pc = faddr;
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitControl(nm.coreId,ts,nm.ict.ckdf,nm.ict.ckdata[1],pc);
+				if ((pIndex >= 0) && eventConvert) {
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
+					}
+
+					processes[pIndex].eventConverter->emitControl(nm.coreId,ts,pid,nm.ict.ckdf,nm.ict.ckdata[1],pc);
 				}
 			}
 			else {
@@ -7129,6 +8747,8 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 		}
 		break;
 	case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+		// We don't check for counts here because this message has no counts
+
 		// for 8, 0; 14, 0 do not update pc, only faddr. 0, 0 has no address, so it never updates
 		// this is because those message types all apprear in instruction traces (non-event) and
 		// do not want to update the current address because they have no icnt to say when to do it
@@ -7137,22 +8757,40 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 			ts = processTS(TraceDqr::TS_full,ts,nm.timestamp);
 		}
 
+		prevMsgWasSync[nm.coreId] = true;
+
 		switch (nm.ictWS.cksrc) {
 		case TraceDqr::ICT_EXT_TRIG:
 			if (nm.ictWS.ckdf == 0) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				// don't update pc
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ictWS.ckdf,faddr,0);
+				if ((pIndex >= 0) && eventConvert) {
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
+					}
+
+					processes[pIndex].eventConverter->emitExtTrigEvent(nm.coreId,ts,pid,nm.ictWS.ckdf,faddr,0);
 				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitExtTrigEvent(nm.coreId,ts,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
+				if ((pIndex >= 0) && eventConvert) {
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
+					}
+
+					processes[pIndex].eventConverter->emitExtTrigEvent(nm.coreId,ts,pid,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
 				}
 			}
 			else {
@@ -7165,16 +8803,32 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				faddr = nm.ictWS.ckdata[0] << 1;
 				// don'tupdate pc
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ictWS.ckdf,faddr,0);
+				if ((pIndex >= 0) && eventConvert) {
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
+					}
+
+					processes[pIndex].eventConverter->emitWatchpoint(nm.coreId,ts,pid,nm.ictWS.ckdf,faddr,0);
 				}
 			}
 			else if (nm.ictWS.ckdf <= 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitWatchpoint(nm.coreId,ts,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
+				if ((pIndex >= 0) && eventConvert) {
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
+					}
+
+					processes[pIndex].eventConverter->emitWatchpoint(nm.coreId,ts,pid,nm.ictWS.ckdf,faddr,nm.ictWS.ckdata[1]);
 				}
 			}
 			else {
@@ -7187,34 +8841,7 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				pc = nm.ictWS.ckdata[0] << 1;
 				faddr = pc;
 
-				TraceDqr::DQErr rc;
-				TraceDqr::ADDRESS nextPC;
-				int crFlags;
-
-				rc = nextAddr(pc,nextPC,crFlags);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
-					return TraceDqr::DQERR_ERR;
-				}
-
-				// we will store the target address back in ckdata[1] in case it is needed later
-
-				nm.ict.ckdata[1] = nextPC;
-
-				if (ctf != nullptr) {
-					ctf->addCall(nm.coreId,pc,nextPC,ts);
-				}
-
-				if (eventConverter != nullptr) {
-					eventConverter->emitCallRet(nm.coreId,ts,nm.ictWS.ckdf,pc,faddr,TraceDqr::isCall);
-				}
-			}
-			else if (nm.ictWS.ckdf == 1) {
-				pc = nm.ictWS.ckdata[0] << 1;
-				faddr = pc ^ (nm.ictWS.ckdata[1] << 1);
-
-				if ((ctf != nullptr) || (eventConverter != nullptr)) {
-					TraceDqr::DQErr rc;
+				if ((pIndex >= 0) && (eventConvert || (processes[pIndex].ctf != nullptr))) {
 					TraceDqr::ADDRESS nextPC;
 					int crFlags;
 
@@ -7224,21 +8851,64 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 						return TraceDqr::DQERR_ERR;
 					}
 
-					if (ctf != nullptr) {
+					// we will store the target address back in ckdata[1] in case it is needed later
+
+					nm.ict.ckdata[1] = nextPC;
+
+					if (processes[pIndex].ctf != nullptr) {
+						processes[pIndex].ctf->addCall(nm.coreId,pc,nextPC,ts);
+					}
+
+					if (eventConvert) {
+						if (processes[pIndex].eventConverter == nullptr) {
+							rc = enableEventConverter(pIndex);
+							if (rc != TraceDqr::DQERR_OK) {
+								printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+								return TraceDqr::DQERR_ERR;
+							}
+						}
+
+						processes[pIndex].eventConverter->emitCallRet(nm.coreId,ts,pid,nm.ictWS.ckdf,pc,faddr,TraceDqr::isCall);
+					}
+				}
+			}
+			else if (nm.ictWS.ckdf == 1) {
+				pc = nm.ictWS.ckdata[0] << 1;
+				faddr = pc ^ (nm.ictWS.ckdata[1] << 1);
+
+				if ((pIndex >= 0) && (eventConvert || (processes[pIndex].ctf != nullptr))) {
+					TraceDqr::ADDRESS nextPC;
+					int crFlags;
+
+					rc = nextAddr(pc,nextPC,crFlags);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: processTraceMessage(): Could not compute next address for CTF conversion\n");
+						return TraceDqr::DQERR_ERR;
+					}
+
+					if (processes[pIndex].ctf != nullptr) {
 						if (crFlags & TraceDqr::isCall) {
-							ctf->addCall(nm.coreId,pc,faddr,ts);
+							processes[pIndex].ctf->addCall(nm.coreId,pc,faddr,ts);
 						}
 						else if ((crFlags & TraceDqr::isReturn) || (crFlags & TraceDqr::isExceptionReturn)) {
-							ctf->addRet(nm.coreId,pc,faddr,ts);
+							processes[pIndex].ctf->addRet(nm.coreId,pc,faddr,ts);
 						}
 						else {
 							printf("Error: processTraceMEssage(): Unsupported crFlags in CTF conversion\n");
 							return TraceDqr::DQERR_ERR;
 						}
-					}
 
-					if (eventConverter != nullptr) {
-						eventConverter->emitCallRet(nm.coreId,ts,nm.ictWS.ckdf,pc,faddr,crFlags);
+						if (eventConvert) {
+							if (processes[pIndex].eventConverter == nullptr) {
+								rc = enableEventConverter(pIndex);
+								if (rc != TraceDqr::DQERR_OK) {
+									printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+									return TraceDqr::DQERR_ERR;
+								}
+							}
+
+							processes[pIndex].eventConverter->emitCallRet(nm.coreId,ts,pid,nm.ictWS.ckdf,pc,faddr,crFlags);
+						}
 					}
 				}
 			}
@@ -7257,8 +8927,16 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				return TraceDqr::DQERR_ERR;
 			}
 
-			if (eventConverter != nullptr) {
-				eventConverter->emitException(nm.coreId,ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
+			if ((pIndex >= 0) && eventConvert) {
+				if (processes[pIndex].eventConverter == nullptr) {
+					rc = enableEventConverter(pIndex);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+						return TraceDqr::DQERR_ERR;
+					}
+				}
+
+				processes[pIndex].eventConverter->emitException(nm.coreId,ts,pid,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_INTERRUPT:
@@ -7271,8 +8949,16 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				return TraceDqr::DQERR_ERR;
 			}
 
-			if (eventConverter != nullptr) {
-				eventConverter->emitInterrupt(nm.coreId,ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
+			if ((pIndex >= 0) && eventConvert) {
+				if (processes[pIndex].eventConverter == nullptr) {
+					rc = enableEventConverter(pIndex);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+						return TraceDqr::DQERR_ERR;
+					}
+				}
+
+				processes[pIndex].eventConverter->emitInterrupt(nm.coreId,ts,pid,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
 			}
 			break;
 		case TraceDqr::ICT_CONTEXT:
@@ -7285,8 +8971,34 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				return TraceDqr::DQERR_ERR;
 			}
 
-			if (eventConverter != nullptr) {
-				eventConverter->emitContext(nm.coreId,ts,nm.ictWS.ckdf,pc,nm.ictWS.ckdata[1]);
+			int newPid;
+			uint8_t tag;
+
+			tag = nm.ict.ckdata[1] & 0x3;
+			newPid = nm.ict.ckdata[1] >> 2;
+
+			switch (tag) {
+			case 0:	// v or prv
+				currentPrv[nm.coreId] = -1;
+				break;
+			case 2: // scontext
+				pIndex = processPidPriv(nm.coreId,newPid,0xf,0xf);
+				break;
+			case 3:	// hcontext
+				currentPrv[nm.coreId] = -1;
+				break;
+			}
+
+			if ((pIndex >= 0) && eventConvert) {
+				if (processes[pIndex].eventConverter == nullptr) {
+					rc = enableEventConverter(pIndex);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+						return TraceDqr::DQERR_ERR;
+					}
+				}
+
+				processes[pIndex].eventConverter->emitContext(nm.coreId,ts,pid,nm.ictWS.ckdf,pc,newPid,tag);
 			}
 			break;
 		case TraceDqr::ICT_PC_SAMPLE:
@@ -7299,8 +9011,16 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				return TraceDqr::DQERR_ERR;
 			}
 
-			if (eventConverter != nullptr) {
-				eventConverter->emitPeriodic(nm.coreId,ts,nm.ictWS.ckdf,pc);
+			if ((pIndex >= 0) && eventConvert) {
+				if (processes[pIndex].eventConverter == nullptr) {
+					rc = enableEventConverter(pIndex);
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+						return TraceDqr::DQERR_ERR;
+					}
+				}
+
+				processes[pIndex].eventConverter->emitPeriodic(nm.coreId,ts,pid,nm.ictWS.ckdf,pc);
 			}
 			break;
 		case TraceDqr::ICT_CONTROL:
@@ -7308,16 +9028,32 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 				// nothing to do
 				// does not update faddr or pc!
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitControl(nm.coreId,ts,nm.ictWS.ckdf,nm.ictWS.ckdata[0],0);
+				if ((pIndex >= 0) && eventConvert) {
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
+					}
+
+					processes[pIndex].eventConverter->emitControl(nm.coreId,ts,pid,nm.ictWS.ckdf,nm.ictWS.ckdata[0],0);
 				}
 			}
 			else if (nm.ictWS.ckdf == 1) {
 				faddr = nm.ictWS.ckdata[0] << 1;
 				pc = faddr;
 
-				if (eventConverter != nullptr) {
-					eventConverter->emitControl(nm.coreId,ts,nm.ictWS.ckdf,nm.ictWS.ckdata[1],pc);
+				if ((pIndex >= 0) && eventConvert) {
+					if (processes[pIndex].eventConverter == nullptr) {
+						rc = enableEventConverter(pIndex);
+						if (rc != TraceDqr::DQERR_OK) {
+							printf("Error:Trace:processTraceMessage(): Could not enable event converter for process %d\n",processes[pIndex].pid);
+							return TraceDqr::DQERR_ERR;
+						}
+					}
+
+					processes[pIndex].eventConverter->emitControl(nm.coreId,ts,pid,nm.ictWS.ckdf,nm.ictWS.ckdata[1],pc);
 				}
 			}
 			else {
@@ -7357,11 +9093,79 @@ TraceDqr::DQErr Trace::processTraceMessage(NexusMessage &nm,TraceDqr::ADDRESS &p
 	return TraceDqr::DQERR_OK;
 }
 
+TraceDqr::DQErr Trace::resetTrace()
+{
+	for (int i = 0; (size_t)i < sizeof lastTime / sizeof lastTime[0]; i++) {
+		lastTime[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof lastFaddr / sizeof lastFaddr[0]; i++ ) {
+		lastFaddr[i] = 0;
+	}
+
+	for (int i = 0; (size_t)i < sizeof currentAddress / sizeof currentAddress[0]; i++ ) {
+		currentAddress[i] = 0;
+	}
+
+	for (int i = 0; i < DQR_MAXCORES; i++) {
+		counts->resetCounts(i);
+	}
+
+	for (int i = 0; (size_t)i < sizeof state / sizeof state[0]; i++ ) {
+		state[i] = TRACE_STATE_GETFIRSTSYNCMSG;
+	}
+
+	for (int i = 0; (size_t)i < sizeof prevMsgWasSync / sizeof prevMsgWasSync[0]; i++) {
+		prevMsgWasSync[i] = false;
+        }
+
+	readNewTraceMessage = true;
+	currentCore = 0;	// as good as any!
+
+        if (processes[0].pid == -1) {
+          // If doing a bare metal trace, set current pid to 0
+
+          for (int i = 0; (size_t)i < sizeof currentPid / sizeof currentPid[0]; i++) {
+            currentPid[i] = 0;
+          }
+
+          for (int i = 0; (size_t)i < sizeof currentProcessIndex / sizeof currentProcessIndex[0]; i++ ) {
+            currentProcessIndex[i] = 0;
+          }
+        }
+        else {
+          // linux trace
+
+          for (int i = 0; (size_t)i < sizeof currentPrv / sizeof currentPrv[0]; i++) {
+            currentPrv[i] = TraceDqr::prv_unknown;
+          }
+
+          for (int i = 0; (size_t)i < sizeof currentPid / sizeof currentPid[0]; i++) {
+            currentPid[i] = -1; // -1 means we don't know the pid for the core
+          }
+
+          for (int i = 0; (size_t)i < sizeof currentProcessIndex / sizeof currentProcessIndex[0]; i++ ) {
+            // -1 means we don't know the current pid index (not currently tracing the core
+            currentProcessIndex[i] = -1;
+          }
+        }
+
+	for (int i = 0; (size_t)i < sizeof currentElfReader / sizeof currentElfReader[0]; i++ ) {
+	  currentElfReader[i] = processes[0].elfReader;
+	}
+
+	for (int i = 0; (size_t)i < sizeof currentDisassembler / sizeof currentDisassembler[0]; i++ ) {
+	  currentDisassembler[i] = processes[0].disassembler;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 TraceDqr::DQErr Trace::getInstructionByAddress(TraceDqr::ADDRESS addr, Instruction *instInfo,Source *srcInfo,int *flags)
 {
 	TraceDqr::DQErr rc;
 
-	rc = Disassemble(addr); // should error check disassembl() call!
+	rc = Disassemble(addr);
 	if (rc != TraceDqr::DQERR_OK) {
 		return TraceDqr::DQERR_ERR;
 	}
@@ -7388,6 +9192,15 @@ TraceDqr::DQErr Trace::getInstructionByAddress(TraceDqr::ADDRESS addr, Instructi
 		sourceInfo.coreId = 0;
 		*srcInfo = sourceInfo;
 		*flags |= TraceDqr::TRACE_HAVE_SRCINFO;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr Trace::signExtendAddr(TraceDqr::ADDRESS &addr)
+{
+	if (addr & ((uint64_t)1) << (bitsPerAddress-1)) {
+		addr |= ((uint64_t)0xffffffffffffffff) << (bitsPerAddress-1);
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -7453,7 +9266,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgIn
 	return ec;
 }
 
-//NextInstruction() want to return address, instruction, trace message if any, label+offset for instruction, target of instruciton
+// NextInstruction() want to return address, instruction, trace message if any, label+offset for instruction, target of instruciton
 //		source code for instruction (file, function, line)
 //
 //		return instruction object (include label informatioon)
@@ -7463,6 +9276,54 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgIn
 //				if instruction object ptr is null, don't return any instruction info
 //				if message object ptr is null, don't return any message info
 //				if source code object is null, don't return source code info
+
+TraceDqr::DQErr Trace::dumpTraceMessage(NexusMessage *msgInfo)
+{
+  switch (msgInfo->tcode) {
+  case TraceDqr::TCODE_DEBUG_STATUS:
+  case TraceDqr::TCODE_DEVICE_ID:
+  case TraceDqr::TCODE_OWNERSHIP_TRACE:
+  case TraceDqr::TCODE_DIRECT_BRANCH:
+  case TraceDqr::TCODE_INDIRECT_BRANCH:
+  case TraceDqr::TCODE_DATA_WRITE:
+  case TraceDqr::TCODE_DATA_READ:
+  case TraceDqr::TCODE_DATA_ACQUISITION:
+  case TraceDqr::TCODE_ERROR:
+  case TraceDqr::TCODE_SYNC:
+  case TraceDqr::TCODE_CORRECTION:
+  case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+  case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+  case TraceDqr::TCODE_DATA_WRITE_WS:
+  case TraceDqr::TCODE_DATA_READ_WS:
+  case TraceDqr::TCODE_WATCHPOINT:
+  case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+  case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+  case TraceDqr::TCODE_AUXACCESS_READ:
+  case TraceDqr::TCODE_AUXACCESS_WRITE:
+  case TraceDqr::TCODE_AUXACCESS_READNEXT:
+  case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+  case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+  case TraceDqr::TCODE_RESOURCEFULL:
+  case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+  case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+  case TraceDqr::TCODE_REPEATBRANCH:
+  case TraceDqr::TCODE_REPEATINSTRUCTION:
+  case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+  case TraceDqr::TCODE_CORRELATION:
+  case TraceDqr::TCODE_INCIRCUITTRACE:
+  case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+    break;
+  default:
+    break;
+  }
+
+  return TraceDqr::DQERR_ERR;
+}
+
+TraceDqr::DQErr Trace::dumpTraceMessages()
+{
+  return TraceDqr::DQERR_ERR;
+}
 
 TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo)
 {
@@ -7552,22 +9413,130 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 
 				if (haveMsg == false) {
-					lastTime[currentCore] = 0;
-					currentAddress[currentCore] = 0;
-	                lastFaddr[currentCore] = 0;
+					// if we skip a message (because of errors in trace file), we need to
+					// reset the trace because we cannot know what me missed and how it might
+					//  have changed things
 
-					state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
+					rc = resetTrace();
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: Could not reset trace to resolve errors in trace file\n");
+						state[currentCore] = TRACE_STATE_ERROR;
+						return TraceDqr::DQERR_ERR;
+					}
 				}
 			} while (haveMsg == false);
 
 			readNewTraceMessage = false;
 			currentCore = nm.coreId;
 
+			// if linux trace (virtual memory addresses), need to sign extend addr for messages with an addr
+			if (linuxTrace) {
+				switch (nm.tcode) {
+				case TraceDqr::TCODE_INDIRECT_BRANCH:
+					signExtendAddr(nm.indirectBranch.u_addr);
+					break;
+				case TraceDqr::TCODE_SYNC:
+					signExtendAddr(nm.sync.f_addr);
+					break;
+				case TraceDqr::TCODE_DIRECT_BRANCH_WS:
+					signExtendAddr(nm.directBranchWS.f_addr);
+					break;
+				case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+					signExtendAddr(nm.indirectBranchWS.f_addr);
+					break;
+				case TraceDqr::TCODE_INCIRCUITTRACE:
+					switch (nm.ict.cksrc) {
+					case TraceDqr::ICT_EXT_TRIG:
+					case TraceDqr::ICT_WATCHPOINT:
+					case TraceDqr::ICT_EXCEPTION:
+					case TraceDqr::ICT_INTERRUPT:
+					case TraceDqr::ICT_CONTEXT:
+					case TraceDqr::ICT_PC_SAMPLE:
+						signExtendAddr(nm.ict.ckdata[0]);
+						break;
+					case TraceDqr::ICT_INFERABLECALL:
+						signExtendAddr(nm.ict.ckdata[0]);
+						if (nm.ict.ckdf == 1) {
+							signExtendAddr(nm.ict.ckdata[1]);
+						}
+						break;
+					case TraceDqr::ICT_CONTROL:
+					default:
+						break;
+					}
+					break;
+				case TraceDqr::TCODE_INCIRCUITTRACE_WS:
+					switch (nm.ictWS.cksrc) {
+					case TraceDqr::ICT_EXT_TRIG:
+					case TraceDqr::ICT_WATCHPOINT:
+					case TraceDqr::ICT_EXCEPTION:
+					case TraceDqr::ICT_INTERRUPT:
+					case TraceDqr::ICT_CONTEXT:
+					case TraceDqr::ICT_PC_SAMPLE:
+						signExtendAddr(nm.ictWS.ckdata[0]);
+						break;
+					case TraceDqr::ICT_INFERABLECALL:
+						signExtendAddr(nm.ictWS.ckdata[0]);
+						if (nm.ict.ckdf == 1) {
+							signExtendAddr(nm.ictWS.ckdata[1]);
+						}
+						break;
+					case TraceDqr::ICT_CONTROL:
+					default:
+						break;
+					}
+					break;
+				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+					signExtendAddr(nm.indirectHistory.u_addr);
+					break;
+				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
+					signExtendAddr(nm.indirectHistoryWS.f_addr);
+					break;
+
+				case TraceDqr::TCODE_DIRECT_BRANCH:
+				case TraceDqr::TCODE_DATA_ACQUISITION:
+				case TraceDqr::TCODE_ERROR:
+				case TraceDqr::TCODE_AUXACCESS_WRITE:
+				case TraceDqr::TCODE_CORRELATION:
+				case TraceDqr::TCODE_OWNERSHIP_TRACE:
+				case TraceDqr::TCODE_RESOURCEFULL:
+					break;
+
+				case TraceDqr::TCODE_REPEATBRANCH:
+				case TraceDqr::TCODE_REPEATINSTRUCTION:
+				case TraceDqr::TCODE_REPEATINSTRUCTION_WS:
+				case TraceDqr::TCODE_AUXACCESS_READNEXT:
+				case TraceDqr::TCODE_AUXACCESS_WRITENEXT:
+				case TraceDqr::TCODE_AUXACCESS_RESPONSE:
+				case TraceDqr::TCODE_OUTPUT_PORTREPLACEMENT:
+				case TraceDqr::TCODE_INPUT_PORTREPLACEMENT:
+				case TraceDqr::TCODE_AUXACCESS_READ:
+				case TraceDqr::TCODE_DATA_WRITE_WS:
+				case TraceDqr::TCODE_DATA_READ_WS:
+				case TraceDqr::TCODE_WATCHPOINT:
+				case TraceDqr::TCODE_CORRECTION:
+				case TraceDqr::TCODE_DATA_WRITE:
+				case TraceDqr::TCODE_DATA_READ:
+				case TraceDqr::TCODE_DEBUG_STATUS:
+				case TraceDqr::TCODE_DEVICE_ID:
+					printf("Error: NextInstruction(): Unsupported tcode type (%d)\n",nm.tcode);
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				case TraceDqr::TCODE_UNDEFINED:
+					printf("Error: NextInstruction(): Undefined tcode type (%d)\n",nm.tcode);
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+			}
+
 			// if set see if HTM trace message, switch to HTM mode
 
-			if (traceType != TraceDqr::TRACETYPE_HTM) {
+			if (traceType == TraceDqr::TRACETYPE_BTM) {
 				switch (nm.tcode) {
-				case TraceDqr::TCODE_OWNERSHIP_TRACE:
 				case TraceDqr::TCODE_DIRECT_BRANCH:
 				case TraceDqr::TCODE_INDIRECT_BRANCH:
 				case TraceDqr::TCODE_DATA_ACQUISITION:
@@ -7585,11 +9554,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						if (globalDebugFlag) printf("TCODE_CORRELATION, cdf == 1: switching to HTM mode\n");
 					}
 					break;
+				case TraceDqr::TCODE_OWNERSHIP_TRACE:
 				case TraceDqr::TCODE_RESOURCEFULL:
 				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
 				case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 					traceType = TraceDqr::TRACETYPE_HTM;
-					if (globalDebugFlag) printf("History/taken/not taken count TCODE: switching to HTM mode\n");
+					if (globalDebugFlag) printf("Ownership/history/taken/not taken count TCODE: switching to HTM mode\n");
 					break;
 				case TraceDqr::TCODE_REPEATBRANCH:
 				case TraceDqr::TCODE_REPEATINSTRUCTION:
@@ -7660,12 +9630,14 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			switch (nm.tcode) {
 			case TraceDqr::TCODE_ERROR:
-				// reset time. Messages have been missed. Address may not still be 0 if we have seen a sync
-                // message without an exit debug or start trace sync reason, so reset address
+				// could be lost trace messages. Reset everything. Nothing is valid anymore
 
-				lastTime[currentCore] = 0;
-				currentAddress[currentCore] = 0;
-                lastFaddr[currentCore] = 0;
+				rc = resetTrace();
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Could not reset trace to resolve errors in trace file\n");
+					state[currentCore] = TRACE_STATE_ERROR;
+					return TraceDqr::DQERR_ERR;
+				}
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
@@ -7685,7 +9657,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				status = TraceDqr::DQERR_OK;
 
 				return status;
-			case TraceDqr::TCODE_OWNERSHIP_TRACE:
+			case TraceDqr::TCODE_OWNERSHIP_TRACE: // ca traces do not support ownership messages. Just return it. Should never happen
 			case TraceDqr::TCODE_DIRECT_BRANCH:
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
 			case TraceDqr::TCODE_DATA_ACQUISITION:
@@ -7993,10 +9965,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// start here for normal traces
 
 			// read trace messages until a sync is found. Should be the first message normally
-			// unless the wrapped buffer
+			// unless the buffer wrapped
 
 			// only exit this state when sync type message is found or EOF or error
-			// Event messages will cause state to change to TRACE_STATE_EVENT
 
 			switch (nm.tcode) {
 			case TraceDqr::TCODE_SYNC:
@@ -8014,13 +9985,22 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 
 				if (srcInfo != nullptr) {
-					Disassemble(currentAddress[currentCore]);
+					if (currentProcessIndex[currentCore] >= 0) {
+						Disassemble(currentAddress[currentCore]);
 
-					sourceInfo.coreId = currentCore;
-					*srcInfo = &sourceInfo;
+						sourceInfo.coreId = currentCore;
+						sourceInfo.pid = currentPid[currentCore];
+						sourceInfo.prv = currentPrv[currentCore];
+
+						*srcInfo = &sourceInfo;
+					}
 				}
 
-				state[currentCore] = TRACE_STATE_GETMSGWITHCOUNT;
+				// don't want any counts from first sync
+
+				counts->resetCounts(currentCore);
+
+				state[currentCore] = TRACE_STATE_GETNEXTMSG;
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
 				// this may set the timestamp, and and may set the address
@@ -8055,32 +10035,50 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						// no dasm or src for ext trigger in HTM instruction traces
 					}
 					else if ((instInfo != nullptr) || (srcInfo != nullptr)) {
-						Disassemble(currentAddress[currentCore]);
+						if (currentProcessIndex[currentCore] >= 0) {
+							Disassemble(currentAddress[currentCore]);
 
-						if (instInfo != nullptr) {
-							instructionInfo.qDepth = 0;
-							instructionInfo.arithInProcess = 0;
-							instructionInfo.loadInProcess = 0;
-							instructionInfo.storeInProcess = 0;
+							if (instInfo != nullptr) {
+								instructionInfo.qDepth = 0;
+								instructionInfo.arithInProcess = 0;
+								instructionInfo.loadInProcess = 0;
+								instructionInfo.storeInProcess = 0;
 
-							instructionInfo.coreId = currentCore;
-							*instInfo = &instructionInfo;
-//							(*instInfo)->CRFlag = TraceDqr::isNone;
-//							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
-							getCRBRFlags(nm.getCKSRC(),currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
+								instructionInfo.coreId = currentCore;
+								instructionInfo.pid = currentPid[currentCore];
+								instructionInfo.prv = currentPrv[currentCore];
 
-							(*instInfo)->timestamp = lastTime[currentCore];
-						}
+								*instInfo = &instructionInfo;
+								getCRBRFlags(nm.getCKSRC(),currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
 
-						if (srcInfo != nullptr) {
-							sourceInfo.coreId = currentCore;
-							*srcInfo = &sourceInfo;
+								(*instInfo)->timestamp = lastTime[currentCore];
+							}
+
+							if (srcInfo != nullptr) {
+								sourceInfo.coreId = currentCore;
+								sourceInfo.pid = currentPid[currentCore];
+								sourceInfo.prv = currentPrv[currentCore];
+
+								*srcInfo = &sourceInfo;
+							}
 						}
 					}
-					state[currentCore] = TRACE_STATE_GETMSGWITHCOUNT;
+
+					// don't want any counts from first sync
+
+					counts->resetCounts(currentCore);
+
+					state[currentCore] = TRACE_STATE_GETNEXTMSG;
 				}
 				break;
 			case TraceDqr::TCODE_DATA_ACQUISITION:
+			case TraceDqr::TCODE_OWNERSHIP_TRACE:
+			case TraceDqr::TCODE_INCIRCUITTRACE:
+			case TraceDqr::TCODE_DIRECT_BRANCH:
+			case TraceDqr::TCODE_INDIRECT_BRANCH:
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+			case TraceDqr::TCODE_RESOURCEFULL:
+			case TraceDqr::TCODE_CORRELATION:
 				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
@@ -8091,20 +10089,26 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					return status;
 				}
 				break;
-			case TraceDqr::TCODE_INCIRCUITTRACE:
-			case TraceDqr::TCODE_OWNERSHIP_TRACE:
-			case TraceDqr::TCODE_DIRECT_BRANCH:
-			case TraceDqr::TCODE_INDIRECT_BRANCH:
-			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
-			case TraceDqr::TCODE_RESOURCEFULL:
-			case TraceDqr::TCODE_CORRELATION:
-				if (nm.timestamp) {
-					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
-				}
-				break;
 			case TraceDqr::TCODE_ERROR:
-				// reset time. Messages have been missed.
-				lastTime[currentCore] = 0;
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
+				}
+
+				// Messages have been missed. Reset all state
+
+				rc = resetTrace();
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace::nextInstruction(): resetTrace() failed\n");
+					state[currentCore] = TRACE_STATE_ERROR;
+					status = TraceDqr::DQERR_ERR;
+					return TraceDqr::DQERR_ERR;
+				}
 				break;
 			case TraceDqr::TCODE_DEBUG_STATUS:
 			case TraceDqr::TCODE_DEVICE_ID:
@@ -8123,8 +10127,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				return status;
 			}
 
-			// INCIRCUITTRACE or INCIRCUITTRACE_WS will have set state to TRACE_STATE_EVENT
-
 			readNewTraceMessage = true;
 
 			// here we return the trace messages before we have actually started tracing
@@ -8133,6 +10135,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			if (msgInfo != nullptr) {
 				messageInfo = nm;
+
+				messageInfo.pid = currentPid[currentCore];
+				messageInfo.prv = currentPrv[currentCore];
 
 				messageInfo.currentAddress = currentAddress[currentCore];
 
@@ -8145,211 +10150,11 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			status = TraceDqr::DQERR_OK;
 			return status;
-		case TRACE_STATE_GETMSGWITHCOUNT:
-
-			// think GETMSGWITHCOUNT and GETNEXTMSG state are the same!! If so, combine them!
-
-//			printf("TRACE_STATE_GETMSGWITHCOUNT %08x\n",lastFaddr[currentCore]);
-			// only message with i-cnt/hist/taken/notTaken will release from this state
-
-			// return any message without a count (i-cnt or hist, taken/not taken)
-
-			// do not return message with i-cnt/hist/taken/not taken; process them when counts expires
-
-			switch (nm.tcode) {
-			case TraceDqr::TCODE_SYNC:
-			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
-			case TraceDqr::TCODE_DIRECT_BRANCH:
-			case TraceDqr::TCODE_INDIRECT_BRANCH:
-			case TraceDqr::TCODE_CORRELATION:
-			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
-			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
-			case TraceDqr::TCODE_RESOURCEFULL:
-				// don't update timestamp until messages are retired!
-
-				// reset all counts before setting them. We have no valid counts before the second message.
-				// first message is a sync-type message. Counts are for up to that message, nothing after.
-
-				counts->resetCounts(currentCore);
-
-				rc = counts->setCounts(&nm);
-				if (rc != TraceDqr::DQERR_OK) {
-					state[currentCore] = TRACE_STATE_ERROR;
-					status = rc;
-
-					return status;
-				}
-
-				// only these TCODEs have counts and release from this state
-
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
-				break;
-			case TraceDqr::TCODE_INCIRCUITTRACE:
-			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-				// these message have no counts so they will be retired immediately
-
-				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: NextInstruction(): state TRACE_STATE_GETMSGWITHCOUNT: processTraceMessage()\n");
-
-					status = TraceDqr::DQERR_ERR;
-					state[currentCore] = TRACE_STATE_ERROR;
-
-					return status;
-				}
-
-				if ((nm.getCKSRC() == TraceDqr::ICT_CONTROL) && (nm.getCKDF() == 0)) {
-					// ICT_WS Control(0,0) only updates TS (if present). Does not change state or anything else
-					addr = currentAddress[currentCore];
-				}
-				else {
-					if ((nm.getCKSRC() == TraceDqr::ICT_EXT_TRIG) && (nm.getCKDF() == 0)) {
-						// no dasm or src for ext trigger in HTM instruction traces
-						addr = lastFaddr[currentCore];
-					}
-					else if ((nm.getCKSRC() == TraceDqr::ICT_WATCHPOINT) && (nm.getCKDF() == 0)) {
-						// no dasm or src for ext trigger in HTM instruction tracaes
-						addr = lastFaddr[currentCore];
-					}
-					else if ((instInfo != nullptr) || (srcInfo != nullptr)) {
-						addr = currentAddress[currentCore];
-
-						Disassemble(addr);
-
-						if (instInfo != nullptr) {
-							instructionInfo.qDepth = 0;
-							instructionInfo.arithInProcess = 0;
-							instructionInfo.loadInProcess = 0;
-							instructionInfo.storeInProcess = 0;
-
-							instructionInfo.coreId = currentCore;
-							*instInfo = &instructionInfo;
-//							(*instInfo)->CRFlag = TraceDqr::isNone;
-//							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
-							getCRBRFlags(nm.getCKSRC(),currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
-							(*instInfo)->timestamp = lastTime[currentCore];
-						}
-
-						if (srcInfo != nullptr) {
-							sourceInfo.coreId = currentCore;
-							*srcInfo = &sourceInfo;
-						}
-					}
-					state[currentCore] = TRACE_STATE_GETMSGWITHCOUNT;
-				}
-
-				if (msgInfo != nullptr) {
-					messageInfo = nm;
-					messageInfo.time = lastTime[currentCore];
-					messageInfo.currentAddress = addr;
-
-					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
-						*msgInfo = &messageInfo;
-					}
-				}
-
-				readNewTraceMessage = true;
-
-				return status;
-			case TraceDqr::TCODE_ERROR:
-				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
-
-				// don't update timestamp because we have missed some
-				//
-				// if (nm.haveTimestamp) {
-				//	lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
-				// }
-
-				nm.timestamp = 0;	// clear time because we have lost time
-				lastTime[currentCore] = 0;
-				currentAddress[currentCore] = 0;
-				lastFaddr[currentCore] = 0;
-
-				if (msgInfo != nullptr) {
-					messageInfo = nm;
-					messageInfo.time = lastTime[currentCore];
-					messageInfo.currentAddress = currentAddress[currentCore];
-
-					if (messageInfo.processITCPrintData(itcPrint) == false) {
-						*msgInfo = &messageInfo;
-					}
-				}
-
-				readNewTraceMessage = true;
-
-				return status;
-			case TraceDqr::TCODE_DATA_ACQUISITION:
-				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
-				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: NextInstruction(): state TRACE_STATE_GETMSGWITHCOUNT: processTraceMessage()\n");
-
-					status = TraceDqr::DQERR_ERR;
-					state[currentCore] = TRACE_STATE_ERROR;
-
-					return status;
-				}
-
-				// for now, return message;
-
-				if (msgInfo != nullptr) {
-					messageInfo = nm;
-					messageInfo.time = lastTime[currentCore];
-					messageInfo.currentAddress = currentAddress[currentCore];
-
-					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
-						*msgInfo = &messageInfo;
-					}
-				}
-
-				readNewTraceMessage = true;
-
-				return status;
-			case TraceDqr::TCODE_AUXACCESS_WRITE:
-			case TraceDqr::TCODE_OWNERSHIP_TRACE:
-				// these message have no address or count info, so we still need to get
-				// another message.
-
-				// might want to keep track of process, but will add that later
-
-				// for now, return message;
-
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
-				}
-
-				if (msgInfo != nullptr) {
-					messageInfo = nm;
-					messageInfo.time = lastTime[currentCore];
-					messageInfo.currentAddress = currentAddress[currentCore];
-
-					if ((consumed == false) && (messageInfo.processITCPrintData(itcPrint) == false)) {
-						*msgInfo = &messageInfo;
-					}
-				}
-
-				readNewTraceMessage = true;
-
-				return status;
-			default:
-				printf("Error: bad tcode type in state TRACE_STATE_GETMSGWITHCOUNT. TCODE (%d)\n",nm.tcode);
-
-				state[currentCore] = TRACE_STATE_ERROR;
-				status = TraceDqr::DQERR_ERR;
-
-				return status;
-			}
-			break;
 		case TRACE_STATE_RETIREMESSAGE:
 //			printf("TRACE_STATE_RETIREMESSAGE\n");
 
 			// Process message being retired (currently in nm) i_cnt/taken/not taken/history has gone to 0
 			// compute next address
-
-//			set lastFaddr,currentAddress,lastTime.
-//			readNewTraceMessage = true;
-//			state = Trace_State_GetNextMsg;
-//			return messageInfo.
 
 			// retire message should be run anytime any count expires - i-cnt, history, taken, not taken
 
@@ -8358,10 +10163,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_SYNC:
 			case TraceDqr::TCODE_DIRECT_BRANCH_WS:
 			case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
+			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 			case TraceDqr::TCODE_DIRECT_BRANCH:
 			case TraceDqr::TCODE_INDIRECT_BRANCH:
 			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
-			case TraceDqr::TCODE_INDIRECTBRANCHHISTORY_WS:
 			case TraceDqr::TCODE_RESOURCEFULL:
 				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 				if (rc != TraceDqr::DQERR_OK) {
@@ -8375,6 +10180,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
+
+					messageInfo.pid = currentPid[currentCore];
+					messageInfo.prv = currentPrv[currentCore];
+
 					messageInfo.time = lastTime[currentCore];
 
 					messageInfo.currentAddress = currentAddress[currentCore];
@@ -8385,13 +10194,16 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 
 				if ((srcInfo != nullptr) && (*srcInfo == nullptr)) {
-					Disassemble(currentAddress[currentCore]);
+					if (currentProcessIndex[currentCore] >= 0) {
+						Disassemble(currentAddress[currentCore]);
 
-					sourceInfo.coreId = currentCore;
-					*srcInfo = &sourceInfo;
+						sourceInfo.coreId = currentCore;
+						sourceInfo.pid = currentPid[currentCore];
+						sourceInfo.prv = currentPrv[currentCore];
+
+						*srcInfo = &sourceInfo;
+					}
 				}
-
-				// I don't think the b_type code below actaully does anything??? Remove??
 
 				TraceDqr::BType b_type;
 				b_type = TraceDqr::BTYPE_UNDEFINED;
@@ -8399,16 +10211,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				switch (nm.tcode) {
 				case TraceDqr::TCODE_SYNC:
 				case TraceDqr::TCODE_DIRECT_BRANCH_WS:
-					break;
-				case TraceDqr::TCODE_INCIRCUITTRACE_WS:
-					if ((nm.ictWS.cksrc == TraceDqr::ICT_EXCEPTION) || (nm.ictWS.cksrc == TraceDqr::ICT_INTERRUPT)) {
-						b_type = TraceDqr::BTYPE_EXCEPTION;
-					}
-					break;
-				case TraceDqr::TCODE_INCIRCUITTRACE:
-					if ((nm.ict.cksrc == TraceDqr::ICT_EXCEPTION) || (nm.ict.cksrc == TraceDqr::ICT_INTERRUPT)) {
-						b_type = TraceDqr::BTYPE_EXCEPTION;
-					}
 					break;
 				case TraceDqr::TCODE_INDIRECT_BRANCH_WS:
 					b_type = nm.indirectBranchWS.b_type;
@@ -8448,12 +10250,22 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_CORRELATION:
 				// correlation has i_cnt, but no address info
 
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_RETIREMESSAGE: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
 				}
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
+
+					messageInfo.pid = currentPid[currentCore];
+					messageInfo.prv = currentPrv[currentCore];
+
 					messageInfo.time = lastTime[currentCore];
 
 					// leaving trace mode - currentAddress should be last faddr + i_cnt *2
@@ -8472,16 +10284,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 				break;
 			case TraceDqr::TCODE_ERROR:
-				printf("Error: Unexpected tcode TCODE_ERROR in state TRACE_STATE_RETIREMESSAGE\n");
-
-				state[currentCore] = TRACE_STATE_ERROR;
-				status = TraceDqr::DQERR_ERR;
-
-				return status;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
-				// these messages have no address or i-cnt info and should have been
-				// instantly retired when they were read.
+				printf("Error: Unexpected tcode: TCODE_ERROR, TCODE_AUXACCESS_WRITE, or TCODE_OWNERSHIP in state TRACE_STATE_RETIREMESSAGE\n");
 
 				state[currentCore] = TRACE_STATE_ERROR;
 				status = TraceDqr::DQERR_ERR;
@@ -8515,7 +10320,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			case TraceDqr::TCODE_RESOURCEFULL:
 				rc = counts->setCounts(&nm);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: nextInstruction: state TRACE_STATE_GETNEXTMESSAGE Count::seteCounts()\n");
+					printf("Error: nextInstruction: state TRACE_STATE_GETNEXTMESSAGE Count::setCounts()\n");
 
 					state[currentCore] = TRACE_STATE_ERROR;
 
@@ -8524,7 +10329,23 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					return status;
 				}
 
-				state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
+				if (currentProcessIndex[currentCore] >= 0) {
+					// only messages with counts will release from this state
+					// and then, only if we are decoding this pid.
+
+					state[currentCore] = TRACE_STATE_GETNEXTINSTRUCTION;
+				}
+				else {
+					// if not tracing this process, set state to GETFIRSTSYNCMSG and
+					// readNewTraceMessage to false, which will process the trace message
+					// and retire it.
+
+					state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
+
+					readNewTraceMessage = false;
+
+					return status;
+				}
 				break;
 			case TraceDqr::TCODE_INCIRCUITTRACE:
 			case TraceDqr::TCODE_INCIRCUITTRACE_WS:
@@ -8532,7 +10353,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 				if (rc != TraceDqr::DQERR_OK) {
-					printf("Error: NextInstruction(): state TRACE_STATE_GETMSGWITHCOUNT: processTraceMessage()\n");
+					printf("Error: NextInstruction(): state TRACE_STATE_GETNEXTMSG: processTraceMessage()\n");
 
 					status = TraceDqr::DQERR_ERR;
 					state[currentCore] = TRACE_STATE_ERROR;
@@ -8556,32 +10377,44 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					else if ((instInfo != nullptr) || (srcInfo != nullptr)) {
 						addr = currentAddress[currentCore];
 
-						Disassemble(addr);
+						if (currentProcessIndex[currentCore] >= 0) {
+							Disassemble(addr);
 
-						if (instInfo != nullptr) {
-							instructionInfo.qDepth = 0;
-							instructionInfo.arithInProcess = 0;
-							instructionInfo.loadInProcess = 0;
-							instructionInfo.storeInProcess = 0;
+							if (instInfo != nullptr) {
+								instructionInfo.qDepth = 0;
+								instructionInfo.arithInProcess = 0;
+								instructionInfo.loadInProcess = 0;
+								instructionInfo.storeInProcess = 0;
 
-							instructionInfo.coreId = currentCore;
-							*instInfo = &instructionInfo;
-//							(*instInfo)->CRFlag = TraceDqr::isNone;
-//							(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
-							getCRBRFlags(nm.getCKSRC(),currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
+								instructionInfo.coreId = currentCore;
+								instructionInfo.pid = currentPid[currentCore];
+								instructionInfo.prv = currentPrv[currentCore];
 
-							(*instInfo)->timestamp = lastTime[currentCore];
-						}
+								*instInfo = &instructionInfo;
+//								(*instInfo)->CRFlag = TraceDqr::isNone;
+//								(*instInfo)->brFlags = TraceDqr::BRFLAG_none;
+								getCRBRFlags(nm.getCKSRC(),currentAddress[currentCore],(*instInfo)->CRFlag,(*instInfo)->brFlags);
 
-						if (srcInfo != nullptr) {
-							sourceInfo.coreId = currentCore;
-							*srcInfo = &sourceInfo;
+								(*instInfo)->timestamp = lastTime[currentCore];
+							}
+
+							if (srcInfo != nullptr) {
+								sourceInfo.coreId = currentCore;
+								sourceInfo.pid = currentPid[currentCore];
+								sourceInfo.prv = currentPrv[currentCore];
+
+								*srcInfo = &sourceInfo;
+							}
 						}
 					}
 				}
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
+
+					messageInfo.pid = currentPid[currentCore];
+					messageInfo.prv = currentPrv[currentCore];
+
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = addr;
 
@@ -8594,15 +10427,24 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				return status;
 			case TraceDqr::TCODE_ERROR:
-				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
+				// Messages have been missed. Reset all state
+
+				rc = resetTrace();
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: Trace::nextInstruction(): resetTrace() failed\n");
+					state[currentCore] = TRACE_STATE_ERROR;
+					status = TraceDqr::DQERR_ERR;
+					return TraceDqr::DQERR_ERR;
+				}
 
 				nm.timestamp = 0;	// clear time because we have lost time
-				currentAddress[currentCore] = 0;
-				lastFaddr[currentCore] = 0;
-				lastTime[currentCore] = 0;
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
+
+					messageInfo.pid = currentPid[currentCore];
+					messageInfo.prv = currentPrv[currentCore];
+
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
@@ -8616,6 +10458,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				return status;
 			case TraceDqr::TCODE_AUXACCESS_WRITE:
 			case TraceDqr::TCODE_DATA_ACQUISITION:
+				// retire these instantly by returning them through msgInfo
+
 				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: NextInstruction(): state TRACE_STATE_GETNXTMSG: processTraceMessage()\n");
@@ -8630,6 +10474,10 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
+
+					messageInfo.pid = currentPid[currentCore];
+					messageInfo.prv = currentPrv[currentCore];
+
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
@@ -8639,17 +10487,108 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				}
 
 				readNewTraceMessage = true;
+
+				// leave state along. Need to get another message with an i-cnt!
 
 				return status;
 			case TraceDqr::TCODE_OWNERSHIP_TRACE:
 				// retire these instantly by returning them through msgInfo
 
-				if (nm.haveTimestamp) {
-					lastTime[currentCore] = processTS(TraceDqr::TS_rel,lastTime[currentCore],nm.timestamp);
+				bool prevWasSync;
+				int prevProcessIndex;
+				// int prevPid;
+
+				prevWasSync = prevMsgWasSync[currentCore];
+				prevProcessIndex = currentProcessIndex[currentCore];
+				// prevPid = currentPid[currentCore];
+
+				rc = processTraceMessage(nm,currentAddress[currentCore],lastFaddr[currentCore],lastTime[currentCore],consumed);
+				if (rc != TraceDqr::DQERR_OK) {
+					printf("Error: NextInstruction(): state TRACE_STATE_GETNXTMSG: processTraceMessage()\n");
+
+					status = TraceDqr::DQERR_ERR;
+					state[currentCore] = TRACE_STATE_ERROR;
+
+					return status;
 				}
+
+				switch(nm.ownership.tag) {
+				case 0x0: // v or prv change
+					break;
+				case 0x2: // scontext change
+
+				if (prevProcessIndex >= 0) {
+					// we were decoding previous process
+
+					if (currentProcessIndex[currentCore] < 0) {
+						// decoding previous process, not decoding this process
+						// Want to switch state to get a sync
+
+						// printf("New pid %d, switching from previous pid %d, decoding->notdecoding\n",nm.ownership.pid,prevPid);
+
+						// need to reset counts and stack!!
+
+						counts->resetCounts(currentCore);
+						counts->resetStack(currentCore);
+
+						state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
+					}
+					else {
+						// empty - leave state alone.
+						// decoding previous process, decoding this process
+
+						// if (nm.ownership.pid != currentPid[currentCore]) {
+						// printf("big trouble: %d != %d\n",nm.ownership.pid,currentPid[currentCore]);
+						// exit(1);
+						// }
+
+						// printf("New pid %d, switching from previous pid %d, decoding->decoding\n",nm.ownership.pid,prevPid);
+					}
+				}
+				else {
+					// were not decoding previous process
+
+					if (currentProcessIndex[currentCore] >= 0) {
+						//  Not decoding previous process, decoding this process
+
+						// printf("New pid %d, switching from previous pid %d, notdecoding->decoding\n",nm.ownership.pid,prevPid);
+
+						if (prevWasSync) {
+							// empty - leave state alone
+						}
+						else {
+							// Want to switch state to get a sync
+
+							state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
+						}
+					}
+					else {
+						//  Not decoding previous process, not decoding this process
+
+						// printf("New pid %d, switching from previous pid %d, notdecoding->notdecoding\n",nm.ownership.pid,prevPid);
+
+						state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
+					}
+				}
+
+					break;
+				case 0x3: // hcontext change
+					// currently we don't care about hcontext. processTraceMessage() will have
+					// updated currentPrv[currentCore]
+					break;
+				default:
+					printf("Error: NextInstruction(): Bad ownership message tag (0x%x)\n",nm.ownership.tag);
+					return TraceDqr::DQERR_ERR;
+				}
+
+				// for now, return message;
 
 				if (msgInfo != nullptr) {
 					messageInfo = nm;
+
+					messageInfo.pid = currentPid[currentCore];
+					messageInfo.prv = currentPrv[currentCore];
+
 					messageInfo.time = lastTime[currentCore];
 					messageInfo.currentAddress = currentAddress[currentCore];
 
@@ -8658,9 +10597,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					}
 				}
 
-				// leave state along. Need to get another message with an i-cnt!
-
 				readNewTraceMessage = true;
+
+				// leave state along. Need to get another message with an i-cnt!
 
 				return status;
 			default:
@@ -8671,6 +10610,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			}
 			break;
 		case TRACE_STATE_GETNEXTINSTRUCTION:
+
+//			printf("state TRACE_STATE_GETNEXTINSTRUCTION\n");
+
 			if (counts->getCurrentCountType(currentCore) == TraceDqr::COUNTTYPE_none) {
                                 if (globalDebugFlag) {
                                     printf("NextInstruction(): counts are exhausted\n");
@@ -8680,7 +10622,11 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				break;
 			}
 
-//			printf("state TRACE_STATE_GETNEXTINSTRUCTION\n");
+			if (currentProcessIndex[currentCore] < 0) {
+				printf("Error: getNextInstruction(): State TRACE_STATE_GETNEXTINSTRUCION: invalid process\n");
+				state[currentCore] = TRACE_STATE_ERROR;
+				return TraceDqr::DQERR_ERR;
+			}
 
 			// Should first process addr, and then compute next addr!!! If can't compute next addr, it is an error.
 			// Should always be able to process instruction at addr and compute next addr when we get here.
@@ -8697,26 +10643,29 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			TraceDqr::Reg rs1;
 			TraceDqr::Reg rd;
 
-			// getInstrucitonByAddress() should cache last instrucioton/address because I thjink
+			// getInstructionByAddress() should cache last instrucioton/address because I thjink
 			// it gets called a couple times for each address/insruction in a row
 
-			status = elfReader->getInstructionByAddress(addr,inst);
+			status = getInstructionByAddress(addr,inst);
 			if (status != TraceDqr::DQERR_OK) {
-				printf("Error: getInstructionByAddress failed - looking for next sync message\n");
+				printf("Error: getInstructionByAddress failed. core: %d, pid: %d, addr: 0x%08llx - looking for next sync message\n",currentCore,currentPid[currentCore],addr);
 
+//try decoding when push/pop!!!
+
+//add archsize, kmempath, push/pop on/off opt to gtod.settings
+
+				counts->resetCounts(currentCore);
+				counts->resetStack(currentCore);
+				
 				lastTime[currentCore] = 0;
 				currentAddress[currentCore] = 0;
-                lastFaddr[currentCore] = 0;
+				lastFaddr[currentCore] = 0;
 
 				state[currentCore] = TRACE_STATE_GETFIRSTSYNCMSG;
 
 				// the evil break below exits the switch statement - not the if statement!
 
 				break;
-
-//				state[currentCore] = TRACE_STATE_ERROR;
-//
-//				return status;
 			}
 
 			// figure out how big the instruction is
@@ -8748,7 +10697,7 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 			// branches, retiring the current trace message (should be an indirect branch or indirect
 			// brnach with sync) will set the next address correclty.
 
-			status = nextAddr(currentCore,currentAddress[currentCore],addr,nm.tcode,crFlag,brFlags);
+			status = nextAddr(currentCore,currentAddress[currentCore],addr,&nm,crFlag,brFlags);
 			if (status != TraceDqr::DQERR_OK) {
 				printf("Error: nextAddr() failed\n");
 
@@ -8769,16 +10718,28 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			if (addr == (TraceDqr::ADDRESS)-1) {
 				if (brFlags == TraceDqr::BRFLAG_unknown) {
+					// this means we have a conditional branch and we don't know if it was taken or
+					// or not. (maybe an indirect branch??)
+
 					// read another trace message and retry
+
+					// RETIREMESSAGE will make sure some messages cannot be retired unless
+					// counts have been consumed (like sync messages)
 
 					state[currentCore] = TRACE_STATE_RETIREMESSAGE;
 					break; // this break exits trace_state_getnextinstruction!
 				}
 				else if (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
-					// error
-					// must have a JR/JALR or exception/exception return to get here, and the CR stack is empty
+					// Error
+					// Must have a JR/JALR or exception/exception return to get here, and the
+					// Call/Return stack is empty
 
 					printf("Error: getCurrentCountType(core:%d) still has counts; have countType: %d\n",currentCore,counts->getCurrentCountType(currentCore));
+
+					counts->dumpCounts(currentCore);
+
+// should dump remaining trace messages with next addr filled in and the instruction at that address decoded!!
+
 					char d[64];
 
 					instructionInfo.instructionToText(d,sizeof d,2);
@@ -8788,17 +10749,17 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 					status = TraceDqr::DQERR_ERR;
 
-//					nm.dumpRawMessage();
-//					nm.dump();
-//
-//					rc = sfp->readNextTraceMsg(nm,analytics,haveMsg);
-//
-//					if (rc != TraceDqr::DQERR_OK) {
-//						printf("Error: Trace file does not contain any trace messages, or is unreadable\n");
-//					} else if (haveMsg != false) {
-//						nm.dumpRawMessage();
-//						nm.dump();
-//					}
+					nm.dumpRawMessage();
+					nm.dump();
+
+					rc = sfp->readNextTraceMsg(nm,analytics,haveMsg);
+
+					if (rc != TraceDqr::DQERR_OK) {
+						printf("Error: Trace file does not contain any trace messages, or is unreadable\n");
+					} else if (haveMsg != false) {
+						nm.dumpRawMessage();
+						nm.dump();
+					}
 
 					return status;
 				}
@@ -8859,6 +10820,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				storeInProcess = 0;
 
 				instructionInfo.coreId = currentCore;
+				instructionInfo.pid = currentPid[currentCore];
+				instructionInfo.prv = currentPrv[currentCore];
+
 				*instInfo = &instructionInfo;
 				(*instInfo)->CRFlag = (crFlag | enterISR[currentCore]);
 				enterISR[currentCore] = TraceDqr::isNone;
@@ -8884,6 +10848,9 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 			if (srcInfo != nullptr) {
 				sourceInfo.coreId = currentCore;
+				sourceInfo.pid = currentPid[currentCore];
+				sourceInfo.prv = currentPrv[currentCore];
+
 				*srcInfo = &sourceInfo;
 			}
 
@@ -8894,7 +10861,6 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				printf("Error: updateInstructionInfo() failed\n");
 				return status;
 			}
-
 
 			if (counts->getCurrentCountType(currentCore) != TraceDqr::COUNTTYPE_none) {
 				// still have valid counts. Keep running nextInstruction!

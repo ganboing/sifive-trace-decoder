@@ -180,7 +180,7 @@ TraceDqr::DQErr VCD::configure(class TraceSettings &settings)
 			strcpy(objdump,DEFAULTOBJDUMPNAME);
 		}
 
-		elfReader = new (std::nothrow) ElfReader(settings.efName,objdump);
+		elfReader = new (std::nothrow) ElfReader(settings.efName,objdump,0);
 
 		delete [] objdump;
 		objdump = nullptr;
@@ -192,10 +192,18 @@ TraceDqr::DQErr VCD::configure(class TraceSettings &settings)
 			return TraceDqr::DQERR_ERR;
 		}
 
-	    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
-	    	status = TraceDqr::DQERR_ERR;
-	    	return TraceDqr::DQERR_ERR;
-	    }
+		if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
+		}
+
+		rc = elfReader->seal();
+		if (rc != TraceDqr::DQERR_OK) {
+			printf("Error: VCD:Configure(): Could not seal elfReader\n");
+
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
+		}
 
 		archSize = elfReader->getArchSize();
 

@@ -545,11 +545,11 @@ echo /sbin/insmod ./${module}.ko
 # Remove stale nodes
 rm -f /dev/${device}
 
-major =$(awk "\$2==\"${module}\" {print \$1}" /proc/devices)
+major=$(awk "\$2==\"${module}\" {print \$1}" /proc/devices)
 
 echo "major: ${major}"
 
-mknod /dev/${device} c {major} 0
+mknod /dev/${device} c ${major} 0
 
 group="staff"
 grep -q '^staff:' /ect/group || group="wheel"

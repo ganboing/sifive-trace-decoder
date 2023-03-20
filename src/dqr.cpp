@@ -116,10 +116,12 @@ Section::Section()
 	offset    = 0;
 	startAddr = (TraceDqr::ADDRESS)0;
 	endAddr   = (TraceDqr::ADDRESS)0;
+	vmaOffset = (TraceDqr::ADDRESS)0;
 	code      = nullptr;
 	fName     = nullptr;
 	line      = nullptr;
 	diss      = nullptr;
+//	dissFlags = nullptr;
 	cachedInfo = nullptr;
 }
 
@@ -131,7 +133,7 @@ Section::~Section()
 	}
 
 	if (fName != nullptr) {
-		// what fNameo[] points to will be deleted when deleting srcFileRoot object
+		// what fName[] points to will be deleted when deleting srcFileRoot object
 		delete [] fName;
 		fName = nullptr;
 	}
@@ -151,6 +153,11 @@ Section::~Section()
 		delete [] diss;
 		diss = nullptr;
 	}
+
+//	if (dissFlags != nullptr) {
+//		delete [] dissFlags;
+//		dissFlags = nullptr;
+//	}
 
 	if (cachedInfo != nullptr) {
 		for (unsigned int i = 0; i < size/2; i++) {
@@ -181,7 +188,7 @@ Section *Section::getSectionByAddress(TraceDqr::ADDRESS addr)
 	Section *sp = this;
 
 	while (sp != nullptr) {
-		if ((addr >= sp->startAddr) && (addr <= sp->endAddr)) {
+		if ((addr >= (sp->startAddr+sp->vmaOffset)) && (addr <= sp->endAddr+sp->vmaOffset)) {
 			return sp;
 		}
 
@@ -868,24 +875,24 @@ TraceDqr::DQErr fileReader::subSrcPath(const char *cutPath,const char *newRoot)
 
 static int symCompareFunc(const void *arg1,const void *arg2)
 {
-	if (arg1 == nullptr) {
-		printf("Error: symCompareFunc(): Null first argument\n");
-		return 0;
-	}
+    if (arg1 == nullptr) {
+        printf("Error: symCompareFunc(): Null first argument\n");
+        return 0;
+    }
 
-	if (arg2 == nullptr) {
-		printf("Error: symCompareFunc(): Null second argument\n");
-		return 0;
-	}
+    if (arg2 == nullptr) {
+        printf("Error: symCompareFunc(): Null second argument\n");
+        return 0;
+    }
 
-	Sym *first;
-	Sym *second;
+    Sym *first;
+    Sym *second;
 
-	first = *(Sym **)arg1;
-	second = *(Sym **)arg2;
+    first = *(Sym **)arg1;
+    second = *(Sym **)arg2;
 
     int64_t cv;
-    cv = first->address - second->address;
+    cv = (first->address + first->vmaOffset) - (second->address + second->vmaOffset);
 
     int rv;
 
@@ -907,98 +914,104 @@ static int symCompareFunc(const void *arg1,const void *arg2)
 // 	otherwise, return 0
 
     if (cv > 0) {
-    	rv = 1;
+        rv = 1;
     }
     else if (cv < 0) {
-    	rv = -1;
+        rv = -1;
     }
     else {
-// if addrs are same, use weak as the tie breaker, or global, or debug
+        // if addrs are same, use weak as the tie breaker, or global, or debug
 
-       	if ((first->flags & Sym::symWeak) && !(second->flags & Sym::symWeak)) {
-        	rv = 1;
-       	}
-       	else if (!(first->flags & Sym::symWeak) && (second->flags & Sym::symWeak)) {
-        	rv = -1;
-       	}
-       	else if ((first->flags & Sym::symDebug) && !(second->flags & Sym::symDebug)) {
-        	rv = 1;
-       	}
-       	else if (!(first->flags & Sym::symDebug) && (second->flags & Sym::symDebug)) {
-        	rv = -1;
-       	}
-       	else if (!(first->flags & Sym::symGlobal) && (second->flags & Sym::symGlobal)) {
-        	rv = 1;
-       	}
-       	else if ((first->flags & Sym::symGlobal) && !(second->flags & Sym::symGlobal)) {
-        	rv = -1;
-       	}
-       	else if (!(first->flags & Sym::symFunc) && (second->flags & Sym::symFunc)) {
-        	rv = 1;
-       	}
-       	else if ((first->flags & Sym::symFunc) && !(second->flags & Sym::symFunc)) {
-        	rv = -1;
-       	}
-       	else {
-       		// If we get here, the address and attributes are the same. So we do a
-       		// compare of the names, just to make this deterministic across platforms
+        if ((first->flags & Sym::symWeak) && !(second->flags & Sym::symWeak)) {
+            rv = 1;
+        }
+        else if (!(first->flags & Sym::symWeak) && (second->flags & Sym::symWeak)) {
+            rv = -1;
+        }
+        else if ((first->flags & Sym::symDebug) && !(second->flags & Sym::symDebug)) {
+            rv = 1;
+        }
+        else if (!(first->flags & Sym::symDebug) && (second->flags & Sym::symDebug)) {
+            rv = -1;
+        }
+        else if (!(first->flags & Sym::symGlobal) && (second->flags & Sym::symGlobal)) {
+            rv = 1;
+        }
+        else if ((first->flags & Sym::symGlobal) && !(second->flags & Sym::symGlobal)) {
+            rv = -1;
+        }
+        else if (!(first->flags & Sym::symFunc) && (second->flags & Sym::symFunc)) {
+            rv = 1;
+        }
+        else if ((first->flags & Sym::symFunc) && !(second->flags & Sym::symFunc)) {
+            rv = -1;
+        }
+        else {
+            // If we get here, the address and attributes are the same. So we do a
+            // compare of the names, just to make this deterministic across platforms
 
-       		rv = strcmp(first->name,second->name);
-       	}
-   	}
+            rv = strcmp(first->name,second->name);
+        }
+    }
 
-	return rv;
+    return rv;
 }
 
 Symtab::Symtab(Sym *syms)
 {
-	status = TraceDqr::DQERR_OK;
+    numSyms = 0;
+    symPtrArray = nullptr;
 
+    status = TraceDqr::DQERR_OK;
+
+    cachedSymAddr = 0;
+    cachedSymSize = 0;
+    cachedSymIndex = -1;
+
+    if (syms == nullptr) {
+        printf("Info: No symbol information\n");
+
+        symLst = nullptr;
         numSyms = 0;
 
-	if (syms == nullptr) {
-		printf("Info: No symbol information\n");
+        return;
+    }
 
-		symLst = nullptr;
-		numSyms = 0;
+    // don't need to make a copy of syms. We own them and will delete them
 
-		return;
-	}
+    symLst = syms;
 
-	cachedSymAddr = 0;
-	cachedSymSize = 0;
-	cachedSymIndex = -1;
+    Sym *symPtr;
 
-	symLst = syms;
+    for (symPtr = symLst; symPtr != nullptr; symPtr = symPtr->next) {
+      numSyms += 1;
+    }
 
-	Sym *symPtr;
+    symPtrArray = new struct Sym*[numSyms];
 
-	for (symPtr = syms; symPtr != nullptr; symPtr = symPtr->next) {
-		numSyms += 1;
-	}
+    symPtr = symLst;
 
-	symPtrArray = new struct Sym*[numSyms];
+    // Make sure all symbols with no type info in code sections have function type added!
 
-	symPtr = syms;
+    for (int i = 0; i < numSyms; i++) {
+        symPtrArray[i] = symPtr;
 
-	//        	make sure all symbols with no type info in code sections have function type added!
+        symPtr = symPtr->next;
+    }
 
-	for (int i = 0; i < numSyms; i++) {
-		symPtrArray[i] = symPtr;
+    // note: qsort does not preserver order on equal items!
 
-	    symPtr = symPtr->next;
-	}
+    qsort((void*)symPtrArray,(size_t)numSyms,sizeof symPtrArray[0],symCompareFunc);
 
-	// note: qsort does not preserver order on equal items!
+    TraceDqr::DQErr rc;
 
-   	qsort((void*)symPtrArray,(size_t)numSyms,sizeof symPtrArray[0],symCompareFunc);
+    rc = fixupFunctionSizes();
+    if (rc != TraceDqr::DQERR_OK) {
+        status = rc;
+        return;
+    }
 
-   	TraceDqr::DQErr rc;
-
-   	rc = fixupFunctionSizes();
-   	if (rc != TraceDqr::DQERR_OK) {
-   		status = rc;
-   	}
+    return;
 }
 
 Symtab::~Symtab()
@@ -1100,7 +1113,9 @@ TraceDqr::DQErr Symtab::lookupSymbolByAddress(TraceDqr::ADDRESS addr,Sym *&sym)
 	int found = -1;
 
 	for (int i = 0;(found == -1) && (i < numSyms); i++) {
-	    if ((addr >= symPtrArray[i]->address) && (addr < (symPtrArray[i]->address + symPtrArray[i]->size))) {
+            Sym *symPtr = symPtrArray[i];
+
+	    if (((addr - symPtr->vmaOffset) >= symPtr->address) && ((addr - symPtr->vmaOffset) < (symPtr->address + symPtr->size))) {
 	    	found = i;
 	    }
 	}
@@ -1109,7 +1124,7 @@ TraceDqr::DQErr Symtab::lookupSymbolByAddress(TraceDqr::ADDRESS addr,Sym *&sym)
 		// found - cache it
 
 		cachedSymIndex = found;
-		cachedSymAddr = symPtrArray[found]->address;
+		cachedSymAddr = symPtrArray[found]->address + symPtrArray[found]->vmaOffset;
 
 		sym = symPtrArray[found];
 	}
@@ -1203,36 +1218,135 @@ void Symtab::dump()
     }
 }
 
-ObjDump::ObjDump(const char *elfName,const char* objdumpPath,int &archSize,Section *&codeSectionLst,Sym *&syms,SrcFileRoot &srcFileRoot)
+ObjDump::ObjDump(const char *elfName,const char* objdumpPath,uint64_t vmaOffset,int &archSize,Section *&codeSectionLst,Sym *&syms,SrcFileRoot &srcFileRoot)
 {
-	TraceDqr::DQErr rc;
 
-	status = TraceDqr::DQERR_OK;
+    // this will be an elf file (dynamic, vmaOffset != 0, static, vmaOffset == 0)
 
-	stdoutPipe = -1;
-	objdumpPid = (pid_t)-1;
-	fpipe = nullptr;
+    TraceDqr::DQErr rc;
 
-	pipeEOF = false;
-	pipeIndex = 0;
-	endOfBuffer = 0;
+    status = TraceDqr::DQERR_OK;
 
-	rc = execObjDump(elfName,objdumpPath);
+    stdoutPipe = -1;
+    objdumpPid = (pid_t)-1;
+    fpipe = nullptr;
+
+    pipeEOF = false;
+    pipeIndex = 0;
+    endOfBuffer = 0;
+
+    eType = TraceDqr::elfType_32_little; // we don't know if it is elf32 or elf64, but it will git fixed
+
+    rc = execObjDump(elfName,eType,0,objdumpPath);
+    if (rc == TraceDqr::DQERR_OPEN) {
+        status = TraceDqr::DQERR_OK;
+        pipeEOF = true;
+
+        return;
+    }
+
     if (rc != TraceDqr::DQERR_OK) {
+	printf("Error: ObjDump::ObjDump(): Could not execute objdump\n");
+
     	status = TraceDqr::DQERR_ERR;
     	pipeEOF = true;
 
     	return;
     }
 
-    rc = parseObjdump(archSize,codeSectionLst,syms,srcFileRoot);
+    // if vmaOffset == 0, this is a static elf file
+    // if vmaOffset != 0, this is a dynamic elf file
+
+    rc = parseObjDump(archSize,codeSectionLst,syms,srcFileRoot,vmaOffset,0,0);
 
 #ifndef WINDOWS
+
+    if ((rc != TraceDqr::DQERR_OK) && (objdumpPid > 0)) {
+        // if we have an error, waitpid may hang forever. Best to kill the child process
+
+	kill(objdumpPid,SIGKILL);
+    }
+    else {
 
 	int status;
 	status = 0;
 
 	waitpid(objdumpPid,&status,0);
+    }
+
+#endif	// WINDOWS
+
+    if (rc != TraceDqr::DQERR_OK) {
+    	status = TraceDqr::DQERR_ERR;
+    }
+}
+
+ObjDump::ObjDump(const char *blobName,const char* objdumpPath,TraceDqr::ADDRESS startAddr,TraceDqr::ADDRESS endAddr,int archSize,Section *&codeSectionLst)
+{
+    // this will be a blob (or vdso blos)
+
+    TraceDqr::DQErr rc;
+
+    status = TraceDqr::DQERR_OK;
+
+    stdoutPipe = -1;
+    objdumpPid = (pid_t)-1;
+    fpipe = nullptr;
+
+    pipeEOF = false;
+    pipeIndex = 0;
+    endOfBuffer = 0;
+
+    switch (archSize) {
+    case 32:
+        eType = TraceDqr::elfType_32_binary;
+        break;
+    case 64:
+        eType = TraceDqr::elfType_64_binary;
+        break;
+    default:
+        printf("Error: ObjDump::ObjDump(): Invalid arch size: %d\n",archSize);
+        status = TraceDqr::DQERR_ERR;
+        return;
+    }
+
+
+    rc = execObjDump(blobName,eType,startAddr,objdumpPath);
+    if (rc == TraceDqr::DQERR_OPEN) {
+        status = TraceDqr::DQERR_OK;
+        pipeEOF = true;
+
+        return;
+    }
+
+    if (rc != TraceDqr::DQERR_OK) {
+	printf("Error: ObjDump::ObjDump(): Could not execute objdump\n");
+
+    	status = TraceDqr::DQERR_ERR;
+    	pipeEOF = true;
+
+    	return;
+    }
+
+    Sym *dummySym = nullptr; // binary file will not have any syms, but we need it for the call below.
+    SrcFileRoot dummySrcFileRoot; // same as above.
+
+    rc = parseObjDump(archSize,codeSectionLst,dummySym,dummySrcFileRoot,0,startAddr,endAddr);
+
+#ifndef WINDOWS
+
+    if ((rc != TraceDqr::DQERR_OK) && (objdumpPid > 0)) {
+        // if we have an error, waitpid may hang forever. Best to kill the child process
+
+	kill(objdumpPid,SIGKILL);
+    }
+    else {
+
+	int status;
+	status = 0;
+
+	waitpid(objdumpPid,&status,0);
+    }
 
 #endif	// WINDOWS
 
@@ -1243,15 +1357,15 @@ ObjDump::ObjDump(const char *elfName,const char* objdumpPath,int &archSize,Secti
 
 ObjDump::~ObjDump()
 {
-	if (stdoutPipe >= 0) {
-		close(stdoutPipe);
-		stdoutPipe = -1;
-	}
+    if (stdoutPipe >= 0) {
+        close(stdoutPipe);
+        stdoutPipe = -1;
+    }
 
-	if (fpipe != nullptr) {
-		fclose(fpipe);
-		fpipe = nullptr;
-	}
+    if (fpipe != nullptr) {
+        fclose(fpipe);
+        fpipe = nullptr;
+    }
 }
 
 #ifdef WINDOWS
@@ -1485,9 +1599,55 @@ static TraceDqr::DQErr findObjDump(char *objDump,bool &foundExec)
 	return TraceDqr::DQERR_OK;
 }
 
+static TraceDqr::DQErr findElfFile(const char *elfFile,int &start)
+{
+	start = -1;
+
+	if (elfFile == nullptr) {
+		return TraceDqr::DQERR_ERR;
+	}
+
+	// elf file names should have the full path, with a "./" prepended. But who knows!
+
+	// see if a path was included in the name.
+
+	bool hasPath = false;
+	int lastSlash = 0;
+
+        for (int i = 0; elfFile[i] != 0; i++) {
+		if (elfFile[i] == '/') {
+			hasPath = true;
+			lastSlash = i;
+		}
+		else if (elfFile[i] == '\\') {
+			hasPath = true;
+			lastSlash = i;
+		}
+	}
+
+	if (hasPath == true) {
+		// try from lastSlash first
+
+		if (access(&elfFile[lastSlash+1],R_OK) == 0) { // try from lastSlash first (local dir)
+			start = lastSlash+1;
+		}
+		else if (access(&elfFile[0],R_OK) == 0) { // try whole thing (local sub-dir)
+			start = 0;
+		}
+		else if (access(&elfFile[1],R_OK) == 0) { // try from root
+			start = 1;
+		}
+	}
+	else if (access(&elfFile[0],R_OK) == 0) { // try whole thing (should be local)
+		start = 0;
+	}
+
+	return TraceDqr::DQERR_OK;
+}
+
 #ifdef WINDOWS
 
-TraceDqr::DQErr ObjDump::execObjDump(const char *elfName,const char *objdumpPath)
+TraceDqr::DQErr ObjDump::execObjDump(const char *elfName,TraceDqr::elfType eType,uint64_t vmaOffset,const char *objdumpPath)
 {
   char cmd[1024];
   char objdump[512];
@@ -1512,9 +1672,41 @@ TraceDqr::DQErr ObjDump::execObjDump(const char *elfName,const char *objdumpPath
 	  return TraceDqr::DQERR_ERR;
   }
 
-  sprintf(cmd,"%s -t -d -h -l %s",objdump,elfName);
+  int elfNameStart;
 
-//  printf("cmd: '%s'\n",cmd);
+  rc = findElfFile(elfName,elfNameStart);
+  if ((rc == TraceDqr::DQERR_OPEN) || (elfNameStart < 0)) {
+    printf("Info: execObjDump(): Could not find elf file %s\n",elfName);
+    return TraceDqr::DQERR_OPEN;
+  }
+
+  if (rc != TraceDqr::DQERR_OK) {
+    printf("Error: execObjDump(): Error searching for elf file %s\n",elfName);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (elfNameStart < 0) {
+    printf("Error: execObjDump(): Could not find elf file %s\n",elfName);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  switch (eType) {
+  case TraceDqr::elfType_32_little:
+  case TraceDqr::elfType_64_little:
+    sprintf(cmd,"%s -t -d -h -l %s",objdump,&elfName[elfNameStart]);
+    break;
+  case TraceDqr::elfType_32_binary:
+    sprintf(cmd,"%s -D -z -b binary -m riscv:rv32 --adjust-vma=0x%08llx %s",objdump,vmaOffset,&elfName[elfNameStart]);
+    break;
+  case TraceDqr::elfType_64_binary:
+    sprintf(cmd,"%s -D -z -b binary -m riscv:rv64 --adjust-vma=0x%08llx %s",objdump,vmaOffset,&elfName[elfNameStart]);
+    break;
+  default:
+    printf("Error: execObjDump(): Unknown file type for %s\n",elfName);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (globalDebugFlag) printf("cmd: '%s'\n",cmd);
 
   fpipe = _popen(cmd,"rb");
   if (fpipe == NULL) {
@@ -1533,7 +1725,7 @@ TraceDqr::DQErr ObjDump::execObjDump(const char *elfName,const char *objdumpPath
 
 #else // WINDOWS
 
-TraceDqr::DQErr ObjDump::execObjDump(const char *elfName,const char *objdumpPath)
+TraceDqr::DQErr ObjDump::execObjDump(const char *elfName,TraceDqr::elfType eType,uint64_t vmaOffset,const char *objdumpPath)
 {
   int rc;
   bool foundExec;
@@ -1555,6 +1747,24 @@ TraceDqr::DQErr ObjDump::execObjDump(const char *elfName,const char *objdumpPath
   if (foundExec == false) {
     printf("Error: execObjDump(): Could not find objdump\n");
     return TraceDqr::DQERR_ERR;
+  }
+
+  int elfNameStart;
+
+  rc = findElfFile(elfName,elfNameStart);
+  if ((rc == TraceDqr::DQERR_OPEN) || (elfNameStart <0)) {
+    printf("Info: execObjDump(): Could not find elf file %s\n",elfName);
+    return TraceDqr::DQERR_OPEN;
+  }
+
+  if (rc != TraceDqr::DQERR_OK) {
+    printf("Error: execObjDump(): Error searching for elf file %s\n",elfName);
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (elfNameStart < 0) {
+    printf("Error: execObjDump(): Could not find elf file %s\n",elfName);
+    return TraceDqr::DQERR_OPEN;
   }
 
   pid_t pid;
@@ -1584,11 +1794,29 @@ TraceDqr::DQErr ObjDump::execObjDump(const char *elfName,const char *objdumpPath
   if (pid != 0) {
     // parent
 
-	objdumpPid = pid;
+    objdumpPid = pid;
 
     close(stdoutPipefd[1]);
 
     stdoutPipe = stdoutPipefd[0];
+
+    if (globalDebugFlag) {
+      switch (eType) {
+      case TraceDqr::elfType_32_little:
+      case TraceDqr::elfType_64_little:
+        printf("%s -t -d -h -l %s\n",objdump,&elfName[elfNameStart]);
+        break;
+      case TraceDqr::elfType_32_binary:
+        printf("%s -D -z -b binary -m riscv:rv32 --adjust-vma=0x%08lx %s\n",objdump,vmaOffset,&elfName[elfNameStart]);
+        break;
+      case TraceDqr::elfType_64_binary:
+        printf("%s -D -z -b binary -m riscv:rv64 --adjust-vma=0x%08lx %s\n",objdump,vmaOffset,&elfName[elfNameStart]);
+        break;
+      default:
+        printf("Error: execObjDump(): Unknown file type for %s\n",elfName);
+        return TraceDqr::DQERR_ERR;
+      }
+    }
 
     return TraceDqr::DQERR_OK;
   }
@@ -1606,15 +1834,55 @@ TraceDqr::DQErr ObjDump::execObjDump(const char *elfName,const char *objdumpPath
       return TraceDqr::DQERR_ERR;
     }
 
-    const char * args[7];
+    const char *args[10];
+    char vmaOffsetStr[64];
 
-    args[0] = objdump;
-    args[1] = "-t";
-    args[2] = "-d";
-    args[3] = "-h";
-    args[4] = "-l";
-    args[5] = elfName;
-    args[6] = NULL;
+    switch (eType) {
+    case TraceDqr::elfType_32_little:
+    case TraceDqr::elfType_64_little:
+      // never dump elf file with vma-offset. Add it in during parse if needed
+
+      args[0] = objdump;
+      args[1] = "-t";
+      args[2] = "-d";
+      args[3] = "-h";
+      args[4] = "-l";
+      args[5] = &elfName[elfNameStart];
+      args[6] = NULL;
+      break;
+    case TraceDqr::elfType_32_binary:
+      sprintf(vmaOffsetStr,"--adjust-vma=0x%08lx",vmaOffset);
+
+      args[0] = objdump;
+      args[1] = "-D";
+      args[2] = "-b";
+      args[3] = "binary";
+      args[4] = "-z";
+      args[5] = "-m";
+      args[6] = "riscv:rv32";
+      args[7] = vmaOffsetStr;
+      args[8] = &elfName[elfNameStart];
+      args[9] = NULL;
+      break;
+    case TraceDqr::elfType_64_binary:
+      sprintf(vmaOffsetStr,"--adjust-vma=0x%08lx",vmaOffset);
+
+      args[0] = objdump;
+      args[1] = "-D";
+      args[2] = "-b";
+      args[3] = "binary";
+      args[4] = "-z";
+      args[5] = "-m";
+      args[6] = "riscv:rv64";
+      args[7] = vmaOffsetStr;
+      args[8] = &elfName[elfNameStart];
+      args[9] = NULL;
+      break;
+    default:
+      printf("Error: execObjDump(): Unknown file type for %s\n",elfName);
+      close(stdoutPipefd[1]);
+      return TraceDqr::DQERR_ERR;
+    }
 
     execvp(args[0],(char * const *)args);
 
@@ -1910,7 +2178,7 @@ bool  ObjDump::isStringADecNumber(char *s,uint64_t &n)
     return false;
 }
 
-TraceDqr::DQErr ObjDump::parseElfName(char *elfName,enum elfType &et)
+TraceDqr::DQErr ObjDump::parseElfName(char *elfName,TraceDqr::elfType &et)
 {
   objDumpTokenType type;
 
@@ -2016,10 +2284,15 @@ TraceDqr::DQErr ObjDump::parseElfName(char *elfName,enum elfType &et)
   }
 
   if (strcasecmp("elf64-littleriscv",lex) == 0) {
-    et = elfType_64_little;
+    et = TraceDqr::elfType_64_little;
   }
   else if (strcasecmp("elf32-littleriscv",lex) == 0) {
-    et = elfType_32_little;
+    et = TraceDqr::elfType_32_little;
+  }
+  else if (strcasecmp("binary",lex) == 0) {
+    // we can't tell if this is a 64 bit or 32 bit binary, but we already know, so just set it to 64 bit.
+    // it gets fixed by the caller
+    et = TraceDqr::elfType_64_binary;
   }
   else {
     printf("Error: parseElfName(): invalid elf file type\n");
@@ -2029,7 +2302,7 @@ TraceDqr::DQErr ObjDump::parseElfName(char *elfName,enum elfType &et)
   return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr ObjDump::parseSection(objDumpTokenType &nextType,char *nextLex,Section *&codeSection)
+TraceDqr::DQErr ObjDump::parseSection(objDumpTokenType &nextType,char *nextLex,Section *&codeSection,uint64_t vmaOffset)
 {
     objDumpTokenType type;
     char lex[256];
@@ -2267,6 +2540,7 @@ TraceDqr::DQErr ObjDump::parseSection(objDumpTokenType &nextType,char *nextLex,S
     	sp->align = align;
     	sp->startAddr = vma;
     	sp->endAddr = vma + sec_size - 1;
+	sp->vmaOffset = vmaOffset;
 
     	codeSection = sp;
     }
@@ -2280,7 +2554,7 @@ TraceDqr::DQErr ObjDump::parseSection(objDumpTokenType &nextType,char *nextLex,S
     return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr ObjDump::parseSectionList(ObjDump::objDumpTokenType &nextType,char *nextLex,Section *&codeSectionLst)
+TraceDqr::DQErr ObjDump::parseSectionList(ObjDump::objDumpTokenType &nextType,char *nextLex,Section *&codeSectionLst,uint64_t vmaOffset)
 {
     objDumpTokenType type;
     char lex[256];
@@ -2342,10 +2616,10 @@ TraceDqr::DQErr ObjDump::parseSectionList(ObjDump::objDumpTokenType &nextType,ch
     }
 
     do {
-    	Section *newSection;
+    	Section *newSection = nullptr;
     	TraceDqr::DQErr rc;
 
-    	rc = parseSection(type,lex,newSection);
+    	rc = parseSection(type,lex,newSection,vmaOffset);
     	if (rc != TraceDqr::DQERR_OK) {
     		printf("Error: parseSectionList(): parseSection() failed\n");
     		return TraceDqr::DQERR_ERR;
@@ -2726,7 +3000,7 @@ TraceDqr::DQErr ObjDump::parseFuncName()
     return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr ObjDump::parseDisassemblyList(objDumpTokenType &nextType,char *nextLex,Section *codeSectionLst,SrcFileRoot &srcFileRoot)
+TraceDqr::DQErr ObjDump::parseDisassemblyList(objDumpTokenType &nextType,char *nextLex,Section *codeSectionLst,SrcFileRoot &srcFileRoot,uint64_t startAddr)
 {
   objDumpTokenType type;
   char lex[1024];
@@ -2752,40 +3026,57 @@ TraceDqr::DQErr ObjDump::parseDisassemblyList(objDumpTokenType &nextType,char *n
     return TraceDqr::DQERR_ERR;
   }
 
+  switch (eType) {
+  case TraceDqr::elfType_32_little:
+  case TraceDqr::elfType_64_little:
+    break;
+  case TraceDqr::elfType_32_binary:
+  case TraceDqr::elfType_64_binary:
+    snprintf(lex,sizeof lex,".text.0x%08lx",startAddr);
+    break;
+  default:
+    printf("Error: parseDisassemblyList(): Unknown elf file type (%d)\n",eType);
+    return TraceDqr::DQERR_ERR;
+  }
+
   sp = codeSectionLst->getSectionByName(lex);
   if (sp == nullptr) {
-	  printf("Error: parseDisassemblyList(): Section '%s' not found\n",lex);
-	  return TraceDqr::DQERR_ERR;
+    printf("Error: parseDisassemblyList(): Section '%s' not found\n",lex);
+    return TraceDqr::DQERR_ERR;
   }
 
   if (sp->code == nullptr) {
-	  sp->code = new uint16_t[(sp->size+1)/2]; // don't need to init to 0's
+    sp->code = new uint16_t[(sp->size+1)/2+1]; // add 1 in case last instruction is 32 bits and overruns
+    for (int i = 0; i < (int)(sp->size+1)/2+1; i++) {
+      sp->code[i] = 0;
+    }
   }
 
   if (sp->diss == nullptr) {
-	  sp->diss = new char*[(sp->size+1)/2];
-	  for (int i = 0; i < (int)(sp->size+1)/2; i++) {
-		  sp->diss[i] = nullptr;
-	  }
+    sp->diss = new char*[(sp->size+1)/2];
+    for (int i = 0; i < (int)(sp->size+1)/2; i++) {
+      sp->diss[i] = nullptr;
+    }
   }
 
   if (sp->line == nullptr) {
-	  sp->line = new uint32_t [(sp->size+1)/2];
-	  for (int i = 0; i < (int)(sp->size+1)/2; i++) {
-		  sp->line[i] = 0;
-	  }
+    sp->line = new uint32_t [(sp->size+1)/2];
+    for (int i = 0; i < (int)(sp->size+1)/2; i++) {
+      sp->line[i] = 0;
+    }
   }
 
   if (sp->fName == nullptr) {
-	  sp->fName = new char*[(sp->size+1)/2];
-	  for (int i = 0; i < (int)(sp->size+1)/2; i++) {
-		  sp->fName[i] = nullptr;
-	  }
+    sp->fName = new char*[(sp->size+1)/2];
+    for (int i = 0; i < (int)(sp->size+1)/2; i++) {
+      sp->fName[i] = nullptr;
+    }
   }
 
   type = getNextLex(lex);
   if (type != odtt_colon) {
     printf("Error: parseDisassemblyList(): Expected ':'\n");
+
     return TraceDqr::DQERR_ERR;
   }
 
@@ -2801,198 +3092,169 @@ TraceDqr::DQErr ObjDump::parseDisassemblyList(objDumpTokenType &nextType,char *n
   uint32_t line = 0;
 
   for (;;) {
-	  int eol_count = 0;
+    int eol_count = 0;
 
-      while (type == odtt_eol) {
-    	  eol_count += 1;
-          type = getNextLex(lex);
-      }
-
-      if ((type != odtt_string) && (type != odtt_lt)) {
-        nextType = type;
-        strcpy(nextLex,lex);
-
-        return TraceDqr::DQERR_OK;
-      }
-
-      line_t lineType;
-      int length;
-      uint32_t value;
-      uint64_t addr;
-
-	  // have a string or '<' (case 2)
-
-      // 1  ...									<- string EOL
-      //
-      // 2  '<' 'unknown' '>' ':' line			<- '<' string '>' ':' Dstring EOL
-      //
-      // 2.1 address '<' label '>' ':'			<- Hstring '<' string '>' ':' EOL
-      //
-      // 3  address ':' instruction disassembly	<- Hstring ':' Hstring string2end EOL
-      //
-      // 4  drive ':' path-file ':' line		<- [H]string ':' string ':' Dstring EOL
-      //
-      // 5  function '(' ')' ':'				<- string '(' ')' ':' EOL
-      //
-      // 6  disassembly of section label :		<- string string string string ':' EOL
-      //
-      // 7  symbol table ':'					<- string string ':' EOL
-      //
-
-      // want to only look ahead one lex!
-
-      if (type == odtt_lt) { // case 2
-          type = getNextLex(lex);
-          if (type != odtt_string) {
-                printf("Error: parseDisassemblyList(): Expected '<' to be followed by unknown\n");
-                return TraceDqr::DQERR_ERR;
-          }
-
-          if (strcmp(lex,"unknown") != 0) {
-                printf("Error: parseDisassemblyList(): Expected '<' to be followed by unknown\n");
-                return TraceDqr::DQERR_ERR;
-          }
-
-          type = getNextLex(lex);
-          if (type != odtt_gt) {
-                printf("Error: parseDisassemblyList(): Expected '<unknown' to be followed by '>'\n");
-                return TraceDqr::DQERR_ERR;
-          }
-
-          type = getNextLex(lex);
-          if (type != odtt_colon) {
-                printf("Error: parseDisassemblyList(): Expected '<unknown>' to be followed by ':'\n");
-                return TraceDqr::DQERR_ERR;
-          }
-
-          type = getNextLex(lex);
-          if (type != odtt_string) {
-                printf("Error: parseDisassemblyList(): Expected '<unknown>:' to be followed by line number\n");
-                return TraceDqr::DQERR_ERR;
-          }
-
-          uint64_t val;
-
-          if (isStringADecNumber(lex,val) == false) {
-                printf("Error: parseDisassemblyList(): Expected '<unknown>:' to be followed by line number\n");
-                return TraceDqr::DQERR_ERR;
-          }
-
-          type = getNextLex(lex);
-          if (type != odtt_eol) {
-                 printf("Error: parseDisassemblyList(): Expected '<unknown>:line' to be followed by EOL\n");
-                 return TraceDqr::DQERR_ERR;
-          }
-
-          fName = nullptr;
-          line = 0;
-
-          // just skip and do next line
-      }
-      else if (strcmp("...",lex) == 0) { // case 1
-    	  type = getNextLex(lex);
-    	  if (type != odtt_eol) {
-    		  printf("Error: parseDisassemblyList(): Expected '...' to be folowed by EOL\n");
-    		  return TraceDqr::DQERR_ERR;
-    	  }
-
-    	  fName = nullptr;
-    	  line = 0;
-
-          // just skip and do next line
-      }
-      else if (isStringAHexNumber(lex,addr) == true) { // cases 2.1, 3, and sometimes 4
-		  rc = parseFileOrLabelOrDisassembly(lineType,lex,length,value);
-          if (rc != TraceDqr::DQERR_OK) {
-              printf("Error: parseDisassemblyList(): parseDisassembly() failed\n");
-              return TraceDqr::DQERR_ERR;
-          }
-
-		  switch (lineType) {
-		  case line_t_label:
-			  // currently, don't use anyting from address < label > :
-			  // but this information could be added to sym table in place of reading the sym table?
-			  fName = nullptr;
-			  line = 0;
-			  break;
-		  case line_t_diss:
-        	  int index;
-        	  index = (addr - sp->startAddr)/2;
-
-              sp->code[index] = (uint16_t)value;
-              if (length == 32) {
-                  sp->code[index+1] = (uint16_t)(value >> 16);
-              }
-
-              int len;
-              len = strlen(lex)+1;
-
-              sp->diss[index] = new char[len];
-              strcpy(sp->diss[index],lex);
-
-              // save file and line here. They are set below and remain valid until they are updated
-
-              sp->fName[index] = fName;
-              sp->line[index] = line;
-			  break;
-		  case line_t_path:
-			  sprintf(lex2,"%X:%s",(uint32_t)addr,lex);
-			  fName = srcFileRoot.addFile(lex2);
-			  line = value;
-			  break;
-		  case line_t_func:
-			  // if we get here, function name could be interpreted as number, but it shouln't be (such as f1())
-			  fName = nullptr;
-			  line = 0;
-			  break;
-		  }
-      }
-      else if ((eol_count > 0) && ((strcasecmp("disassembly",lex) == 0) || (strcasecmp("symbol",lex) == 0))) {	// case 6, 7
-          nextType = type;
-          strcpy(nextLex,lex);
-
-          return TraceDqr::DQERR_OK;
-      }
-      else if ((lex[0] == '/') || (lex[0] == '\\')) { // more case 4;
-           rc = parseFileLine(line);
-           if (rc != TraceDqr::DQERR_OK) {
-               printf("Error: parseDisassemblyList(): parseFileLine() failed\n");
-               return TraceDqr::DQERR_ERR;
-           }
-
-           fName = srcFileRoot.addFile(lex);
-      }
-      else {	// case 5, reset of case 4
-      	   // have a string. look ahead and see if it is a '(', ':' (case 5, rest of case 4)
-
-          rc = parseFileOrLabelOrDisassembly(lineType,lex2,length,value);
-          if (rc != TraceDqr::DQERR_OK) {
-              printf("Error: parseDisassemblyList(): parseDisassembly() failed\n");
-              return TraceDqr::DQERR_ERR;
-          }
-
-		  switch (lineType) {
-		  case line_t_label:
-			  printf("Error: parseDisassemblyList(): Bad label\n");
-			  return TraceDqr::DQERR_ERR;
-		  case line_t_diss:
-			  printf("Error: parseDisassemblyList(): Bad disassembly\n");
-			  return TraceDqr::DQERR_ERR;
-		  case line_t_path: // case 4
-			  strcat(lex,":");
-			  strcat(lex,lex2);
-			  fName = srcFileRoot.addFile(lex2);
-			  line = value;
-			  break;
-		  case line_t_func: // case 5
-			  // nothing to do. If we saved the function, would we need to even collect the symtable? Probably.
-			  fName = nullptr;
-			  line = 0;
-			  break;
-		  }
-      }
-
+    while (type == odtt_eol) {
+      eol_count += 1;
       type = getNextLex(lex);
+    }
+
+    if (type != odtt_string) {
+      nextType = type;
+      strcpy(nextLex,lex);
+
+      return TraceDqr::DQERR_OK;
+    }
+
+    line_t lineType;
+    int length;
+    uint32_t value;
+    uint64_t addr;
+
+    // have a string
+
+    // 1  ...									<- string EOL
+    //
+    // 2  address '<' label '>' ':'			<- Hstring '<' string '>' ':' EOL
+//or this could be used for symbol table?
+//
+//create sym entry (for a label) in section pointer symtable
+//make array of sym pointers at index have index to this entry in sym
+//
+    //
+    // 3  address ':' instruction disassembly	<- Hstring ':' Hstring string2end EOL
+    //
+    // 4  drive ':' path-file ':' line		<- [H]string ':' string ':' Dstring EOL
+    //
+    // 5  function '(' ')' ':'				<- string '(' ')' ':' EOL
+//case 5 - could grab symbol and add to new symtab with symbol index in section (sp)
+//getsymbolbyaddress could look it up in sections??
+//what about getsymbolbyname??
+//
+//either lookup or create new sym entry for this function
+//update index to point to it
+//
+//maintain current index, and for each line disassembled, put that in its sym index
+//
+    //
+    // 6  disassembly of section label :		<- string string string string ':' EOL
+    //
+    // 7  symbol table ':'					<- string string ':' EOL
+    //
+
+    // want to only look ahead one lex!
+
+    if (strcmp("...",lex) == 0) { // case 1
+      type = getNextLex(lex);
+      if (type != odtt_eol) {
+        printf("Error: parseDisassemblyList(): Expected '...' to be folowed by EOL\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      fName = nullptr;
+      line = 0;
+
+      // just skip and do next line
+    }
+    else if (isStringAHexNumber(lex,addr) == true) { // cases 2, 3, and sometimes 4
+      rc = parseFileOrLabelOrDisassembly(lineType,lex,length,value);
+      if (rc != TraceDqr::DQERR_OK) {
+        printf("Error: parseDisassemblyList(): parseDisassembly() failed\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      switch (lineType) {
+      case line_t_label:
+        // currently, don't use anyting from address < label > :
+        // but this information could be added to sym table in place of reading the sym table?
+        fName = nullptr;
+        line = 0;
+        break;
+      case line_t_diss:
+        int index;
+
+	// Don't need to sub vmaOffset from addr. addr will be the correct address to add to the section
+	// The disassembly list may be disassembled at the wrong vmaoffset (dynamic elf files)
+	// The disassembly list may be dissasembled at the correct address (static elf files, blobs)
+
+	// here, addr is relative to startAddr without vmaOffset
+
+        index = (addr - sp->startAddr)/2;
+
+        sp->code[index] = (uint16_t)value;
+        if (length == 32) {
+          sp->code[index+1] = (uint16_t)(value >> 16);
+        }
+
+        int len;
+        len = strlen(lex)+1;
+
+        sp->diss[index] = new char[len];
+        strcpy(sp->diss[index],lex);
+
+        // save file and line here. They are set below and remain valid until they are updated
+
+        sp->fName[index] = fName;
+        sp->line[index] = line;
+	break;
+      case line_t_path:
+        sprintf(lex2,"%X:%s",(uint32_t)addr,lex);
+        fName = srcFileRoot.addFile(lex2);
+        line = value;
+        break;
+      case line_t_func:
+        // if we get here, function name could be interpreted as number, but it shouln't be (such as f1())
+        fName = nullptr;
+        line = 0;
+        break;
+      }
+    }
+    else if ((eol_count > 0) && ((strcasecmp("disassembly",lex) == 0) || (strcasecmp("symbol",lex) == 0))) {	// case 6, 7
+      nextType = type;
+      strcpy(nextLex,lex);
+
+      return TraceDqr::DQERR_OK;
+    }
+    else if ((lex[0] == '/') || (lex[0] == '\\')) { // more case 4;
+      rc = parseFileLine(line);
+      if (rc != TraceDqr::DQERR_OK) {
+        printf("Error: parseDisassemblyList(): parseFileLine() failed\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      fName = srcFileRoot.addFile(lex);
+    }
+    else {	// case 5, reset of case 4
+      // have a string. look ahead and see if it is a '(', ':' (case 5, rest of case 4)
+
+      rc = parseFileOrLabelOrDisassembly(lineType,lex2,length,value);
+      if (rc != TraceDqr::DQERR_OK) {
+        printf("Error: parseDisassemblyList(): parseDisassembly() failed\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      switch (lineType) {
+      case line_t_label:
+        printf("Error: parseDisassemblyList(): Bad label\n");
+        return TraceDqr::DQERR_ERR;
+      case line_t_diss:
+        printf("Error: parseDisassemblyList(): Bad disassembly\n");
+        return TraceDqr::DQERR_ERR;
+      case line_t_path: // case 4
+        strcat(lex,":");
+        strcat(lex,lex2);
+        fName = srcFileRoot.addFile(lex2);
+        line = value;
+        break;
+      case line_t_func: // case 5
+        // nothing to do. If we saved the function, would we need to even collect the symtable? Probably.
+        fName = nullptr;
+        line = 0;
+        break;
+      }
+    }
+
+    type = getNextLex(lex);
   }
 
   // should never get here
@@ -3251,7 +3513,7 @@ TraceDqr::DQErr ObjDump::parseSymbol(bool &haveSym,char *secName,char *symName,u
   return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr ObjDump::parseSymbolTable(objDumpTokenType &nextType,char *nextLex,Sym *&syms,Section *&codeSectionLst)
+TraceDqr::DQErr ObjDump::parseSymbolTable(objDumpTokenType &nextType,char *nextLex,Sym *&syms,Section *&codeSectionLst,uint64_t vmaOffset)
 {
   objDumpTokenType type;
   char lex[256];
@@ -3259,24 +3521,24 @@ TraceDqr::DQErr ObjDump::parseSymbolTable(objDumpTokenType &nextType,char *nextL
 
   type = getNextLex(lex);
   if (type != odtt_string) {
-    printf("Error: parseSymboTable(): Expected 'TABLE'\n");
+    printf("Error: parseSymbolTable(): Expected 'TABLE'\n");
     return TraceDqr::DQERR_ERR;
   }
 
   if (strcasecmp("table",lex) != 0) {
-    printf("Error: parseSymboTable(): Expected 'TABLE'\n");
+    printf("Error: parseSymbolTable(): Expected 'TABLE'. Found '%s'\n",lex);
     return TraceDqr::DQERR_ERR;
   }
 
   type = getNextLex(lex);
   if (type != odtt_colon) {
-    printf("Error: parseSymboTable(): Expected ':'\n");
+    printf("Error: parseSymbolTable(): Expected ':'\n");
     return TraceDqr::DQERR_ERR;
   }
 
   type = getNextLex(lex);
   if (type != odtt_eol) {
-    printf("Error: parseSymboTable(): Expected EOL\n");
+    printf("Error: parseSymbolTable(): Expected EOL\n");
     return TraceDqr::DQERR_ERR;
   }
 
@@ -3299,6 +3561,25 @@ TraceDqr::DQErr ObjDump::parseSymbolTable(objDumpTokenType &nextType,char *nextL
     if (type != odtt_string) {
       printf("Error: parseSymbolTable(): Bad input found looking for symbol address\n");
       return TraceDqr::DQERR_ERR;
+    }
+
+    if (strcasecmp("no",lex) == 0) {
+      type = getNextLex(lex);
+      if (type != odtt_string) {
+        printf("Error: parseSymbolTable(): Expected 'symbols' keyword\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      if (strcasecmp("symbols",lex) != 0) {
+        printf("Error: parseSymbolTable(): Expected 'symbols' keyword. Found %s\n",lex);
+        return TraceDqr::DQERR_ERR;
+      }
+
+      do {
+        nextType = getNextLex(nextLex);
+      } while (nextType == odtt_eol);
+
+      return TraceDqr::DQERR_OK;
     }
 
     if (isStringAHexNumber(lex,addr) == false) {
@@ -3330,7 +3611,7 @@ TraceDqr::DQErr ObjDump::parseSymbolTable(objDumpTokenType &nextType,char *nextL
     	sp->name = new char[strlen(symName)+1];
     	strcpy(sp->name,symName);
     	sp->flags = symFlags;
-    	sp->address = addr;
+    	sp->address = addr; // no vmaOffset added. addr is relative to startAddr without vmaOffset
     	sp->size = symSize;
 
     	if (symFlags & Sym::symFile) {
@@ -3346,8 +3627,21 @@ TraceDqr::DQErr ObjDump::parseSymbolTable(objDumpTokenType &nextType,char *nextL
     	}
 
     	Section *sec;
+
+        // this will find the correct section, even with multiple elf files because each objdump creates its
+	// own list of sections wich then get strung together. After they are strung, getSectionByName() is
+	// not used
+
     	sec = codeSectionLst->getSectionByName(secName);
+
     	sp->section = sec;
+
+	if (sec == nullptr) {
+		sp->vmaOffset = vmaOffset;
+	}
+	else {
+		sp->vmaOffset = sec->vmaOffset;
+	}
 
     	syms = sp;
     }
@@ -3361,35 +3655,110 @@ TraceDqr::DQErr ObjDump::parseSymbolTable(objDumpTokenType &nextType,char *nextL
   return TraceDqr::DQERR_ERR;
 }
 
-TraceDqr::DQErr ObjDump::parseObjdump(int &archSize,Section *&codeSectionLst,Sym *&symLst,SrcFileRoot &srcFileRoot)
+// parseObjDump()
+//
+// dynamic elf (shared lib and app):
+// disassemble with no vmaOffset
+// parse with vmaStart (vmaOffset)
+// vmaOffset != 0
+// startAddr == 0
+// endAddr == 0
+// 
+// static elf:
+// disassemble with no vmaOffset
+// parse with no vmaOffset
+// vmaOffset = 0
+// startAddr = 0
+// endAddr = 0
+// 
+// blob:
+// disassembler with vmaOffset
+// parse with no vmaOffset
+// parse with start and end (vmaStart vmaEnd)
+// vmaOffset = 0
+// startAddr != 0
+// endAddr != 0
+
+TraceDqr::DQErr ObjDump::parseObjDump(int &archSize,Section *&codeSectionLst,Sym *&symLst,SrcFileRoot &srcFileRoot,uint64_t vmaOffset,uint64_t startAddr,uint64_t endAddr)
 {
     TraceDqr::DQErr rc;
     objDumpTokenType type;
     char lex[256];
     char elfName[256];
-    elfType et;
+    TraceDqr::elfType et;
 
     rc = parseElfName(elfName,et);
     if (rc != TraceDqr::DQERR_OK) {
-        printf("Error: parseObjdump(): expected file name and type\n");
+        printf("Error: parseObjDump(): expected file name and type\n");
         return TraceDqr::DQERR_ERR;
     }
 
     switch (et) {
-    case elfType_unknown:
-    	printf("Error: parseObjDump(): Unknown elf file type\n");
+    case TraceDqr::elfType_unknown:
+    	printf("Error: parseObjDump(): Unknown elf file type2 (%d)\n",et);
     	return TraceDqr::DQERR_ERR;
-    case elfType_64_little:
+    case TraceDqr::elfType_64_little:
     	archSize = 64;
+	eType = TraceDqr::elfType_64_little;
     	break;
-    case elfType_32_little:
+    case TraceDqr::elfType_32_little:
     	archSize = 32;
+	eType = TraceDqr::elfType_32_little;
+	break;
+    case TraceDqr::elfType_32_binary:
+    case TraceDqr::elfType_64_binary:
+        // We don't know if this really was a 32 or 64 bit. But archSize should already be set correctly
+        // because we should have parsed an elf file first and already know,
+
+        // don't set eType, just et below.
+        switch (archSize) {
+	case 32:
+		et = TraceDqr::elfType_32_binary;
 		break;
+	case 64:
+		et = TraceDqr::elfType_64_binary;
+		break;
+	default:
+		printf("Error: parseObjDump(): Invalid archSize (%d)\n",archSize);
+		return TraceDqr::DQERR_ERR;
+        }
+
+	eType = et;
+	break;
     }
 
-    rc = parseSectionList(type,lex,codeSectionLst);
+    Section *sp;
+
+    if ((et == TraceDqr::elfType_32_binary) || (et == TraceDqr::elfType_64_binary)) {
+      // no section list or symtab. Create a section list for ".data"
+
+      if (vmaOffset != 0) {
+	printf("Error: parseObjDump(): vmaOffset should be 0 for binary blobs (0x%08lx)\n",vmaOffset);
+        return TraceDqr::DQERR_ERR;
+      }
+
+      // create new section
+      
+      sp = new Section();
+
+      snprintf(sp->name,sizeof sp->name,".text.0x%08lx",startAddr);
+
+      sp->next = nullptr;
+      sp->flags = Section::sect_CONTENTS | Section::sect_ALLOC | Section::sect_LOAD | Section::sect_READONLY | Section::sect_CODE;
+      sp->size = endAddr - startAddr;
+      sp->offset = 0;
+      sp->align = 1 << 2;
+      sp->vmaOffset = vmaOffset; // vmaOffset should be 0
+      sp->startAddr = startAddr;
+      sp->endAddr = endAddr;
+    }
+    else {
+      sp = nullptr;
+    }
+
+    rc = parseSectionList(type,lex,sp,vmaOffset);
     if (rc != TraceDqr::DQERR_OK) {
-        printf("Error: parseObjdump(): parseSectionList() failed\n");
+        printf("Error: parseObjDump(): parseSectionList() failed\n");
         return TraceDqr::DQERR_ERR;
     }
 
@@ -3403,25 +3772,39 @@ TraceDqr::DQErr ObjDump::parseObjdump(int &archSize,Section *&codeSectionLst,Sym
 
     while (type == odtt_string) {
         if (strcasecmp("disassembly",lex) == 0) {
-            rc = parseDisassemblyList(type,lex,codeSectionLst,srcFileRoot);
+            rc = parseDisassemblyList(type,lex,sp,srcFileRoot,vmaOffset+startAddr);
             if (rc != TraceDqr::DQERR_OK) {
                 return TraceDqr::DQERR_ERR;
             }
         }
         else if (strcasecmp("symbol",lex) == 0) {
-            rc = parseSymbolTable(type,lex,symLst,codeSectionLst);
+            rc = parseSymbolTable(type,lex,symLst,sp,vmaOffset);
             if (rc != TraceDqr::DQERR_OK) {
                 return TraceDqr::DQERR_ERR;
             }
         }
         else {
-            printf("Error: parseObjdump(): Unexpected input in stream: '%s'\n",lex);
+            printf("Error: parseObjDump(): Unexpected input in stream: '%s'\n",lex);
             return TraceDqr::DQERR_ERR;
         }
     }
 
+    if (sp != nullptr) {
+      Section *spTmp;
+      spTmp = sp;
+
+      // add codeSectionLst to the end of the new sp list
+
+      while (spTmp->next != nullptr) {
+        spTmp = spTmp->next;
+      }
+
+      spTmp->next = codeSectionLst;
+      codeSectionLst = sp;
+    }
+
     if (type != odtt_eof) {
-        printf("Error: parseObjdump(): unexpected stuff in input %d\n",type);
+        printf("Error: parseObjDump(): unexpected stuff in input %d\n",type);
         return TraceDqr::DQERR_ERR;
     }
 
@@ -3503,12 +3886,14 @@ void SrcFileRoot::dump()
 	}
 }
 
-ElfReader::ElfReader(const char *elfname,const char *odExe)
+ElfReader::ElfReader(const char *elfname,const char *odExe,uint64_t vmaOffset)
 {
   status = TraceDqr::DQERR_OK;
   symtab = nullptr;
+  symLst = nullptr;
   codeSectionLst = nullptr;
   elfName = nullptr;
+  sealed = false;
 
   if (elfname == nullptr) {
 	printf("Error: ElfReader::ElfReader(): No elf file name specified\n");
@@ -3516,23 +3901,31 @@ ElfReader::ElfReader(const char *elfname,const char *odExe)
 	return;
   }
 
+  TraceDqr::DQErr rc;
   int len = strlen(elfname)+1;
   elfName = new char [len];
   strcpy (elfName,elfname);
 
-  Sym *symLst = nullptr;
+  ObjDump *objdump;
 
-  ObjDump *objdump = new ObjDump(elfname,odExe,archSize,codeSectionLst,symLst,srcFileRoot);
-  if (objdump->getStatus() != TraceDqr::DQERR_OK) {
-	delete objdump;
-	objdump = nullptr;
+  // vmaOffset = 0, static link
+  // vmaOffset != 0, dynamic link
+
+  // The call to ObjDump() below will extend members codeSectionLst, symLst, and srcFileRoot as needed
+
+  objdump = new ObjDump(elfname,odExe,vmaOffset,archSize,codeSectionLst,symLst,srcFileRoot);
+
+  rc = objdump->getStatus();
+
+  delete objdump;
+  objdump = nullptr;
+
+  if (rc != TraceDqr::DQERR_OK) {
+	printf("Error: ElfReader::ElfReader(): Objdump() failed\n");
 
 	status = TraceDqr::DQERR_ERR;
 	return;
   }
-
-  delete objdump;
-  objdump = nullptr;
 
   switch (archSize) {
   case 32:
@@ -3541,16 +3934,6 @@ ElfReader::ElfReader(const char *elfname,const char *odExe)
   case 64:
 	  bitsPerAddress = 64;
 	  break;
-  }
-
-  symtab = new Symtab(symLst);
-
-  TraceDqr::DQErr rc;
-
-  rc = fixupSourceFiles(codeSectionLst,symLst);
-  if (rc != TraceDqr::DQERR_OK) {
-	  status = TraceDqr::DQERR_ERR;
-	  return;
   }
 
   status = TraceDqr::DQERR_OK;
@@ -3578,18 +3961,118 @@ ElfReader::~ElfReader()
 	}
 }
 
-TraceDqr::DQErr ElfReader::fixupSourceFiles(Section *sections,Sym *syms)
+TraceDqr::DQErr ElfReader::addElfFile(const char *elfname,addressMap *addrMap,const char *odExe)
+{
+  if (elfname == nullptr) {
+	printf("Error: ElfReader::addElfFile(): No elf file name specified\n");
+	status = TraceDqr::DQERR_ERR;
+	return TraceDqr::DQERR_ERR;
+  }
+
+  if (addrMap == nullptr) {
+    printf("Error: ElfReader::addElfFile(): No addressMap specified\n");
+    status = TraceDqr::DQERR_ERR;
+    return TraceDqr::DQERR_ERR;
+  }
+
+  TraceDqr::DQErr rc;
+
+  // This could be shared lib, or vdso blob. The isBlob member of the addrMap will tell us
+
+  ObjDump *objdump;
+
+  if (addrMap->isBlob) {
+    // not an elf file. This should be the vdso file
+
+    // the call below to ObjDump will extend codeSectionLst as needed
+
+    objdump = new ObjDump(elfname,odExe,addrMap->startAddr,addrMap->endAddr,archSize,codeSectionLst);
+  }
+  else {
+    // this shold be a shared library
+
+    // the call below to ObjDump will extend codeSectoinLst, symLst, and srcFileRoot as needed for new syms,
+    // sections, and src files
+
+    objdump = new ObjDump(elfname,odExe,addrMap->startAddr,archSize,codeSectionLst,symLst,srcFileRoot);
+  }
+
+  rc = objdump->getStatus();
+
+  delete objdump;
+  objdump = nullptr;
+
+  if (rc != TraceDqr::DQERR_OK) {
+	printf("Error: ElfReader::addElfFile(): Error creating ObjDump object\n");
+	status = TraceDqr::DQERR_ERR;
+	return TraceDqr::DQERR_ERR;
+  }
+
+  return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr ElfReader::seal()
+{
+    if (sealed != false) {
+        printf("Error: ElfReader::seal(): ElfReader object already sealed\n");
+        status = TraceDqr::DQERR_ERR;
+	return TraceDqr::DQERR_ERR;
+    }
+
+    sealed = true;
+
+    if (symLst != nullptr) {
+        symtab = new Symtab(symLst);
+        if (symtab->getStatus() != TraceDqr::DQERR_OK) {
+            printf("Error: ElfReader::seal(): Could not create symtab object\n");
+
+            delete symtab;
+            symtab = nullptr;
+
+            status = TraceDqr::DQERR_ERR;
+            return TraceDqr::DQERR_ERR;
+        }
+
+        TraceDqr::DQErr rc;
+
+        rc = fixupSourceFiles(symLst);
+        if (rc != TraceDqr::DQERR_OK) {
+            printf("Error: ElfReader::seal(): fixupSourceFiles() failed\n");
+            status = TraceDqr::DQERR_ERR;
+            return TraceDqr::DQERR_ERR;
+        }
+    }
+    else {
+        symtab = nullptr;
+    }
+
+    return TraceDqr::DQERR_OK;
+}
+
+const char *ElfReader::getElfName()
+{
+	return elfName;
+}
+
+TraceDqr::DQErr ElfReader::fixupSourceFiles(Sym *syms)
 {
 	// iterate through the symbols looking for non-null srcFile field and add it to fName[index].
 
 	for (Sym *sym = syms; sym != nullptr; sym = sym->next) {
 		if (sym->srcFile != nullptr) {
+
 			Section *sp = sym->section;
+
 			if ((sp != nullptr) && (sp->flags & Section::sect_CODE)) {
-				int index;
+				uint32_t index;
 				TraceDqr::ADDRESS addr;
 
 				addr = sym->address;
+
+				// sym addresses are relative to the section start address without
+				// the vmaOffset, so we do not need to subtract out vmaOffset from addr to comput
+				// index
+
 				index = (addr - sp->startAddr) / 2;
 
 				uint32_t i;
@@ -3626,31 +4109,22 @@ TraceDqr::DQErr ElfReader::getInstructionByAddress(TraceDqr::ADDRESS addr,TraceD
 		return status;
 	}
 
+	// addr will have the vmaOffset added in
+
 	sp = codeSectionLst->getSectionByAddress(addr);
 	if (sp == nullptr) {
 		status = TraceDqr::DQERR_ERR;
 		return status;
 	}
 
-	if ((addr < sp->startAddr) || (addr > sp->endAddr)) {
+	if ((addr < (sp->startAddr+sp->vmaOffset)) || (addr > (sp->endAddr+sp->vmaOffset))) {
 		status = TraceDqr::DQERR_ERR;
 		return status;
 	}
 
-//	if ((addr < text->vma) || (addr >= text->vma + text->size)) {
-////			don't know instruction - not part of text segment. need to handle for os
-////			if we can't get the instruciton, get the next trace message and try again. or do
-////			we need the next sync message and the next trace message and try again?
-//
-//		// for now, just return an error
-//
-//		status = dqr::DQERR_ERR;
-//		return status;
-//	}
-
 	int index;
 
-	index = (addr - sp->startAddr) / 2;
+	index = ((addr-sp->vmaOffset) - sp->startAddr) / 2;
 
 	inst = sp->code[index];
 
@@ -3695,12 +4169,12 @@ TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 
 	if (!found) {
 		for (int i = 0; i < 32; i++) {
-                        nlsStrings[i].nf = 0;
-                        nlsStrings[i].signedMask = 0;
-                        nlsStrings[i].format = nullptr;
-                }
+			nlsStrings[i].nf = 0;
+			nlsStrings[i].signedMask = 0;
+			nlsStrings[i].format = nullptr;
+		}
 
-                return TraceDqr::DQERR_OK;
+		return TraceDqr::DQERR_OK;
 	}
 
 	int size = sp->size;
@@ -3714,8 +4188,21 @@ TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 		return TraceDqr::DQERR_ERR;
 	}
 
+	int elfNameStart;
+
+	rc = findElfFile(elfName,elfNameStart);
+	if ((rc == TraceDqr::DQERR_OPEN) || (elfNameStart < 0)) {
+		printf("Info: elfReader::parseNLSStrings(): Could not find elf file %s\n",elfName);
+		return TraceDqr::DQERR_OPEN;
+	}
+
+	if (rc != TraceDqr::DQERR_OK) {
+		printf("Error: elfReader::parseNLSStrings(): Error searching for elf file %s\n",elfName);
+		return TraceDqr::DQERR_ERR;
+	}
+
 	int fd;
-	fd = open(elfName,O_RDONLY);
+	fd = open(&elfName[elfNameStart],O_RDONLY);
 	if (fd < 0) {
 		printf("Error: elfReader::parseNLSStrings(): Could not open file %s for input\n",elfName);
 		return TraceDqr::DQERR_ERR;
@@ -3735,7 +4222,6 @@ TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 	rc = read(fd,data,size);
 	if (rc != size) {
 		printf("Error: ElfReader::parseNLSStrings(): Error reading .comment section\n");
-
 		close(fd);
 		fd = -1;
 		delete [] data;
@@ -3831,7 +4317,7 @@ TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 				if (data[e] != 0) {
 					// invalid format string - not null terminated
 
-					printf("Error: ElfReader::parseNLSStrings(): Invalid format string\n");
+					printf("Error: Elfreader::parseNLSStrings(): Invalid format string\n");
 
 					//should we delete here?
 
@@ -6645,6 +7131,9 @@ NexusMessage::NexusMessage()
 	currentAddress = 0;
 	time = 0;
 	offset = 0;
+	pid = 0;
+	prv = 0;
+
 	for (int i = 0; (size_t)i < sizeof rawData/sizeof rawData[0]; i++) {
 		rawData[i] = 0xff;
 	}
@@ -6875,18 +7364,6 @@ TraceDqr::ADDRESS NexusMessage::getF_Addr()
 
 	return -1;
 }
-
-//TraceDqr::ADDRESS NexusMessage::getNextAddr()
-//{
-//	TraceDqr::ADDRESS addr;
-//
-//	addr = getF_Addr();
-//	if (addr != (TraceDqr::ADDRESS)-1) {
-//		addr = addr << 1;
-//	}
-//
-//	return addr;
-//}
 
 // Note: for this function to return the correct target address, processTraceMessage() must have already
 // been called for this messages if it is a TCODE_INCIRCUITTRACE message. If it is a TCODE_INCIRCUIRCIUTTRACE_WS,
@@ -7453,11 +7930,11 @@ uint32_t NexusMessage::getIdTag()
 	return 0;
 }
 
-uint32_t NexusMessage::getProcess()
+uint32_t NexusMessage::getProcessId()
 {
 	switch (tcode) {
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
-		return ownership.process;
+		return ownership.pid;
 	case TraceDqr::TCODE_DEBUG_STATUS:
 	case TraceDqr::TCODE_DEVICE_ID:
 	case TraceDqr::TCODE_DIRECT_BRANCH:
@@ -7743,7 +8220,67 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 		n += snprintf(dst+n,dst_len-n,"OWNERSHIP TRACE (%d)",tcode);
 
 		if (level >= 2) {
-			snprintf(dst+n,dst_len-n," process: %d",ownership.process);
+			int t;
+			t = ownership.tag;
+
+			int prv;
+			prv = ownership.prv;
+
+			int v;
+			v = ownership.v;
+
+			int pid;
+			pid = ownership.pid;
+
+			const char *modeTxt;
+
+			if (v == 0) {
+				if (prv == 0) {
+					modeTxt = "U-mode: v=0, prv=00";
+				}
+				else if (prv == 1) {
+					modeTxt = "S-mode: v=0, prv=01";
+				}
+				else if (prv == 3) {
+					modeTxt = "M-mode: v=0, prv=11";
+				}
+				else {
+					modeTxt = "Bad prv: v=0, prv=10";
+				}
+			}
+			else {
+				if (prv == 0) {
+					modeTxt = "VU-mode: v=1, prv=00";
+				}
+				else if (prv == 1) {
+					modeTxt = "VS-mode: v=1, prv=01";
+				}
+				else if (prv == 2) {
+					modeTxt = "Bad prv: v=1, prv=10";
+				}
+				else {
+					modeTxt = "Bad prv: v=1, prv=11";
+				}
+			}
+
+			switch (t) {
+			case 0:
+				n += snprintf(dst+n,dst_len-n," V or Prv change: ");
+				break;
+			case 1:
+				n += snprintf(dst+n,dst_len-n," Bad ownership tag: b01: ");
+				break;
+			case 2:
+				n += snprintf(dst+n,dst_len-n," sync or scontext change: pid=%d, ",pid);
+				break;
+			case 3:
+				n += snprintf(dst+n,dst_len-n," sync or hcontext change: pid=%d, ",pid);
+				break;
+			}
+
+			snprintf(dst+n,dst_len-n,modeTxt);
+
+//			snprintf(dst+n,dst_len-n," process: %d:%d:%s:%s",pid,v,prvtxt,ttxt);
 		}
 		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH:
@@ -8209,7 +8746,17 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 				snprintf(dst+n,dst_len-n," ICT Reason: Interrupt (%d) Cause %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
 				break;
 			case TraceDqr::ICT_CONTEXT:
-				snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) Context %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],ict.ckdata[0]);
+				switch (ict.ckdata[1] & 0x3) {
+				case 2: // scontext change
+					snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) SContext %d Pid: %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],(int)ict.ckdata[1] >> 2,ict.ckdata[0]);
+					break;
+				case 3: // hcontext change
+					snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) HContext %d Pid: %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],(int)ict.ckdata[1] >> 2,ict.ckdata[0]);
+					break;
+				default:
+					snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) ?Context %d Pid: %d U-ADDR: 0x%08llx",ict.cksrc,(int)ict.ckdata[1],(int)ict.ckdata[1] >> 2,ict.ckdata[0]);
+					break;
+				}
 				break;
 			case TraceDqr::ICT_PC_SAMPLE:
 				snprintf(dst+n,dst_len-n," ICT Reason: Periodic (%d) U-ADDR: 0x%08llx",ict.cksrc,ict.ckdata[0]);
@@ -8286,7 +8833,17 @@ void  NexusMessage::messageToText(char *dst,size_t dst_len,int level)
 				snprintf(dst+n,dst_len-n," ICT Reason: Interrupt (%d) Cause %d F-ADDR: 0x%08llx",ictWS.cksrc,(int)ictWS.ckdata[1],ictWS.ckdata[0]);
 				break;
 			case TraceDqr::ICT_CONTEXT:
-				snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) Context %d F-ADDR: 0x%08llx",ictWS.cksrc,(int)ictWS.ckdata[1],ictWS.ckdata[0]);
+				switch (ictWS.ckdata[1] & 0x3) {
+				case 2: // scontext change
+					snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) SContext %d Pid: %d F-ADDR: 0x%08llx",ictWS.cksrc,(int)ictWS.ckdata[1],(int)ictWS.ckdata[1] >> 2,ictWS.ckdata[0]);
+					break;
+				case 3: // hcontext change
+					snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) HContext %d Pid: %d F-ADDR: 0x%08llx",ictWS.cksrc,(int)ictWS.ckdata[1],(int)ictWS.ckdata[1] >> 2,ictWS.ckdata[0]);
+					break;
+				default:
+					snprintf(dst+n,dst_len-n," ICT Reason: Context (%d) ?Context %d Pid: %d F-ADDR: 0x%08llx",ictWS.cksrc,(int)ictWS.ckdata[1],(int)ictWS.ckdata[1] >> 2,ictWS.ckdata[0]);
+					break;
+				}
 				break;
 			case TraceDqr::ICT_PC_SAMPLE:
 				snprintf(dst+n,dst_len-n," ICT Reason: Periodic (%d) F-ADDR: 0x%08llx",ictWS.cksrc,ictWS.ckdata[0]);
@@ -8360,7 +8917,7 @@ void NexusMessage::dump()
 		std::cout << "unsupported device id trace message\n";
 		break;
 	case TraceDqr::TCODE_OWNERSHIP_TRACE:
-		std::cout << "  # Trace Message(" << msgNum << "): Ownership, process=" << ownership.process << std::endl; // << ", TS=0x" << hex << timestamp << dec; // << endl;
+		std::cout << "  # Trace Message(" << msgNum << "): Ownership, pid=" << ownership.pid << std::endl; // << ", TS=0x" << hex << timestamp << dec; // << endl;
 		break;
 	case TraceDqr::TCODE_DIRECT_BRANCH:
 //		cout << "(" << traceNum << ") ";
@@ -8373,6 +8930,7 @@ void NexusMessage::dump()
 		std::cout << "  # Trace Message(" << msgNum << "): Indirect Branch, BTYPE=" << indirectBranch.b_type << ", ICNT=" << indirectBranch.i_cnt << ", UADDR=0x" << std::hex << indirectBranch.u_addr << std::dec << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
 		break;
 	case TraceDqr::TCODE_RESOURCEFULL:
+printf("[%d]",coreId);
 		switch (resourceFull.rCode) {
 		case 0:
 			std::cout << "  # Trace Message(" << msgNum << "): Resource Full, rCode=" << resourceFull.rCode << ", ICNT=" << resourceFull.i_cnt << std::endl; // << ", TS=0x" << timestamp << dec;// << endl;
@@ -8392,6 +8950,7 @@ void NexusMessage::dump()
 		}
 		break;
 	case TraceDqr::TCODE_INDIRECTBRANCHHISTORY:
+printf("[%d]",coreId);
 		std::cout << "  # Trace Message(" << msgNum << "): Indirect Branch History, ICNT=" << indirectHistory.i_cnt << ", BTYPE=" << indirectHistory.b_type << ", UADDR=0x" << std::hex << indirectHistory.u_addr << std::dec << ", history=0x" << std::hex << indirectHistory.history << std::dec << std::endl;
 		break;
 //	case TCODE_INDIRECTBRANCHHISTORY_WS:
@@ -8547,23 +9106,23 @@ void NexusMessage::dump()
 
 Count::Count()
 {
-	for (int i = 0; i < (int)(sizeof i_cnt / sizeof i_cnt[0]); i++) {
+	for (int i = 0; (size_t)i < sizeof i_cnt / sizeof i_cnt[0]; i++) {
 		i_cnt[i] = 0;
 	}
 
-	for (int i = 0; i < (int)(sizeof history / sizeof history[0]); i++) {
+	for (int i = 0; (size_t)i < sizeof history / sizeof history[0]; i++) {
 		history[i] = 0;
 	}
 
-	for (int i = 0; i < (int)(sizeof histBit / sizeof histBit[0]); i++) {
+	for (int i = 0; (size_t)i < sizeof histBit / sizeof histBit[0]; i++) {
 		histBit[i] = -1;
 	}
 
-	for (int i = 0; i < (int)(sizeof takenCount / sizeof takenCount[0]); i++) {
+	for (int i = 0; (size_t)i < sizeof takenCount / sizeof takenCount[0]; i++) {
 		takenCount[i] = 0;
 	}
 
-	for (int i = 0; i < (int)(sizeof notTakenCount / sizeof notTakenCount[0]); i++) {
+	for (int i = 0; (size_t)i < sizeof notTakenCount / sizeof notTakenCount[0]; i++) {
 		notTakenCount[i] = 0;
 	}
 }
@@ -8585,6 +9144,8 @@ TraceDqr::CountType Count::getCurrentCountType(int core)
 {
 	// types are prioritized! Order is important
 
+//	printf("[%d] current count type: hist: %d taken:%d not taken:%d i_cnt: %d\n",core,histBit[core],takenCount[core],notTakenCount[core],i_cnt[core]);
+
 	if (histBit[core] >= 0) {
 		return TraceDqr::COUNTTYPE_history;
 	}
@@ -8602,8 +9163,6 @@ TraceDqr::CountType Count::getCurrentCountType(int core)
 	if (i_cnt[core] > 0) {
 		return TraceDqr::COUNTTYPE_i_cnt;
 	}
-
-//	printf("count type: hist: %d taken:%d not taken:%d i_cnt: %d\n",histBit[core],takenCount[core],notTakenCount[core],i_cnt[core]);
 
 	return TraceDqr::COUNTTYPE_none;
 }
@@ -8876,7 +9435,7 @@ int Count::consumeNotTakenCount(int core)
 
 void Count::dumpCounts(int core)
 {
-	printf("Count::dumpCounts(): core: %d, i_cnt: %d, history: 0x%08llx, histBit: %d, takenCount: %d, notTakenCount: %d\n",core,i_cnt[core],history[core],histBit[core],takenCount[core],notTakenCount[core]);
+	printf("Count::dumpCounts(): core: %d i_cnt: %d, history: 0x%08llx, histBit: %d, takenCount: %d, notTakenCount: %d\n",core,i_cnt[core],history[core],histBit[core],takenCount[core],notTakenCount[core]);
 }
 
 SliceFileParser::SliceFileParser(char *filename,int srcBits)
@@ -9401,7 +9960,7 @@ TraceDqr::DQErr SliceFileParser::parseIndirectHistory(NexusMessage &nm,Analytics
 
     nm.indirectHistory.u_addr = (TraceDqr::ADDRESS)tmp;
 
-    // parse the variable lenght history field
+    // parse the variable length history field
 
     rc = parseVarField(&tmp,&width);
     if (rc != TraceDqr::DQERR_OK) {
@@ -10119,6 +10678,8 @@ TraceDqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics
 	int        ts_bits = 0;
 	int        addr_bits;
 
+//	printf("parseSync()\n");
+
 	nm.tcode         = TraceDqr::TCODE_SYNC;
 
 	// if multicore, parse src field
@@ -10162,7 +10723,7 @@ TraceDqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics
 	bits += width;
 
 	nm.sync.i_cnt    = (int)tmp;
-	
+
 	rc = parseVarField(&tmp,&width);
 	if (rc != TraceDqr::DQERR_OK) {
 		status = rc;
@@ -10460,7 +11021,10 @@ TraceDqr::DQErr SliceFileParser::parseOwnershipTrace(NexusMessage &nm,Analytics 
 
 	bits += width;
 
-	nm.ownership.process = (int)tmp;
+	nm.ownership.pid = (int)(tmp >> 5);
+	nm.ownership.v = (uint8_t)((tmp >> 4) & 1);
+	nm.ownership.prv = (uint8_t)((tmp >> 2) & 0x3);
+	nm.ownership.tag = (uint8_t)(tmp & 0x3);
 
 	if (eom == true) {
 		nm.haveTimestamp = false;
@@ -10782,13 +11346,12 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 
 	w = 6-b;
 
-//	printf("parseVarField(): bitIndex:%d, (byte index)i:%d, (bit index)b:%d, width: %d, slices: %d\n",bitIndex,i,b,w,msgSlices);
+//	printf("parseVarField(): bitIndex:%d, i:%d, b:%d, width: %d\n",bitIndex,i,b,width);
 
 	v = ((uint64_t)msg[i]) >> (b+2);
 
 	while ((msg[i] & 0x03) == TraceDqr::MSEO_NORMAL) {
 		i += 1;
-
 		if (i >= msgSlices) {
 			// read past end of message
 
@@ -10803,8 +11366,8 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 
 	// The check for overflow is a bit tricky. A 64 bit number will be encoded as a 66 bit number
 	// because each slice holds 6 bits of data. So a 64 bit number will take 11 slices, and
-	// at first this looks like a 66 bit number, not 64. Bit if the upper two bits of the last slice
-	// are 0, it is a 66 bit number.
+	// at first this looks like a 66 bit number, not 64. But if the upper two bits of the last slice
+	// are 0, it is a 64 bit number.
 
 	if ((w > (int)sizeof(v)*8) && ((msg[i] & 0xc0) != 0)) {
 		// variable field overflowed size of v
@@ -11393,7 +11956,7 @@ ObjFile::ObjFile(char *ef_name,const char *odExe)
 		return;
 	}
 
-	elfReader = new (std::nothrow) ElfReader(ef_name,odExe);
+	elfReader = new (std::nothrow) ElfReader(ef_name,odExe,0);
 
 	if (elfReader == nullptr) {
 		printf("Error: ObjFile::Objfile(): Could not create elfRedaer object\n");
@@ -11409,6 +11972,8 @@ ObjFile::ObjFile(char *ef_name,const char *odExe)
 
 		return;
 	}
+
+	elfReader->seal();
 
 	Symtab *symtab;
 	Section *sections;
@@ -11591,6 +12156,262 @@ TraceDqr::DQErr ObjFile::dumpSyms()
 	return elfReader->dumpSyms();
 }
 
+KMem::KMem(const char *kmem_path,TraceDqr::ADDRESS start_address,int archsize,const char *obj_dump)
+{
+  if (kmem_path != nullptr) {
+    int l;
+    l = strlen(kmem_path)+1;
+
+    kMemPath = new char [l];
+    strcpy(kMemPath,kmem_path);
+  }
+  else {
+    kMemPath = nullptr;
+  }
+
+  if (obj_dump != nullptr) {
+    int l;
+    l = strlen(obj_dump)+1;
+
+    objDump = new char [l];
+    strcpy(objDump,obj_dump);
+  }
+  else {
+    objDump = nullptr;
+  }
+
+  startAddr = start_address;
+  archSize = archsize;
+
+  sectionLst = nullptr;
+  cachedSection = nullptr;
+
+  sourceInfo.coreId = 0;
+  sourceInfo.sourceFile = nullptr;
+  sourceInfo.sourceFunction = nullptr;
+  sourceInfo.sourceLine = nullptr;
+  sourceInfo.sourceLineNum = 0;
+  sourceInfo.cutPathIndex = 0;
+
+  instructionInfo.coreId = 0;
+  instructionInfo.CRFlag = 0;
+  instructionInfo.brFlags = 0;
+  instructionInfo.address = 0;
+  instructionInfo.instSize = 0;
+  instructionInfo.instruction = 0;
+  instructionInfo.instructionText = nullptr;
+  instructionInfo.addressLabel = nullptr;
+  instructionInfo.addressLabelOffset = 0;
+  instructionInfo.timestamp = 0;
+  instructionInfo.caFlags = 0;
+  instructionInfo.pipeCycles = 0;
+  instructionInfo.VIStartCycles = 0;
+  instructionInfo.VIFinishCycles = 0;
+  instructionInfo.qDepth = 0;
+  instructionInfo.arithInProcess = 0;
+  instructionInfo.loadInProcess = 0;
+  instructionInfo.storeInProcess = 0;
+  instructionInfo.r0Val = 0;
+  instructionInfo.r1Val = 0;
+  instructionInfo.wVal = 0;
+
+  status = TraceDqr::DQERR_OK;
+}
+
+KMem::~KMem()
+{
+  if (kMemPath != nullptr) {
+    delete [] kMemPath;
+    kMemPath = nullptr;
+  }
+
+  if (objDump != nullptr) {
+    delete [] objDump;
+    objDump = nullptr;
+  }
+
+  while (sectionLst != nullptr) {
+    Section *nextSection = sectionLst->next;
+    delete sectionLst;
+    sectionLst = nextSection;
+  }
+
+  sectionLst = nullptr;
+}
+
+Section *KMem::findSection(TraceDqr::ADDRESS addr)
+{
+  Section *sp;
+
+  if ((cachedSection != nullptr) && (addr >= (cachedSection->startAddr+cachedSection->vmaOffset)) && (addr < (cachedSection->endAddr+cachedSection->vmaOffset))) {
+    return cachedSection;
+  }
+
+  for (sp = sectionLst; sp != nullptr; sp = sp->next) {
+    if ((addr >= (sp->startAddr+sp->vmaOffset)) && (addr < (sp->endAddr+sp->vmaOffset))) {
+      cachedSection = sp;
+      return sp;
+    }
+  }
+
+  return nullptr;
+}
+
+TraceDqr::DQErr KMem::disassemble(TraceDqr::ADDRESS addr)
+{
+  Section *sp;
+  TraceDqr::DQErr rc;
+
+  sp = findSection(addr);
+
+  if (sp == nullptr) {
+    // haven't objdumped this page of kmem yet
+
+    ObjDump *od;
+    TraceDqr::ADDRESS pageAddr;
+
+    pageAddr = addr & ~(4096-1);
+
+    // this will be a blob
+
+    // need to build kMemName with address
+
+    char kMemName[512];
+
+    snprintf(kMemName,sizeof kMemName,"%s/kmem.0x%08llx",kMemPath,pageAddr);
+
+    od = new ObjDump(kMemName,objDump,pageAddr,pageAddr+4096,archSize,sectionLst);
+
+    rc = od->getStatus();
+
+    delete od;
+    od = nullptr;
+
+    if (rc != TraceDqr::DQERR_OK) {
+      printf("Error: KMem::disassembler(): Objdump failed\n");
+      status = TraceDqr::DQERR_ERR;
+      return TraceDqr::DQERR_ERR;
+    }
+
+    sp = findSection(addr);
+    if (sp == nullptr) {
+      printf("Error: KMem::disassembler(): No section found for address 0x%08lx\n",addr);
+      return TraceDqr::DQERR_ERR;
+    }
+  }
+
+  // look up disassembly
+
+  int index;
+
+  index = ((addr - sp->vmaOffset) - sp->startAddr) / 2;
+
+  instructionInfo.coreId = 0;
+  instructionInfo.CRFlag = 0;
+  instructionInfo.brFlags = 0;
+  instructionInfo.address = addr;
+
+  int size;
+
+  uint32_t inst = sp->code[index];
+
+  rc = Disassembler::decodeInstructionSize(inst, size);
+  if (rc != TraceDqr::DQERR_OK) {
+    status = TraceDqr::DQERR_ERR;
+
+    return TraceDqr::DQERR_ERR;
+  }
+
+  instructionInfo.instSize = size;
+
+  if (size > 16) {
+    inst |= sp->code[index+1] << 16;
+  }
+
+  instructionInfo.instruction = inst;
+  instructionInfo.instructionText = sp->diss[index];
+
+  instructionInfo.addressLabel = nullptr;
+  instructionInfo.addressLabelOffset = 0;
+  instructionInfo.timestamp = 0;
+
+  return TraceDqr::DQERR_OK;
+}
+
+TraceDqr::DQErr KMem::getInstructionByAddress(TraceDqr::ADDRESS addr,TraceDqr::RV_INST &inst)
+{
+  Section *sp;
+  TraceDqr::DQErr rc;
+
+  sp = findSection(addr);
+
+  if (sp == nullptr) {
+    // haven't objdumped this page of kmem yet
+
+    ObjDump *od;
+    TraceDqr::ADDRESS pageAddr;
+
+    pageAddr = addr & ~(4096-1);
+
+    // this will be a blob
+
+    // need to build kMemName with address
+
+    char kMemName[512];
+
+    snprintf(kMemName,sizeof kMemName,"%s/kmem.0x%08llx",kMemPath,pageAddr);
+
+    od = new ObjDump(kMemName,objDump,pageAddr,pageAddr+4096,archSize,sectionLst);
+
+    rc = od->getStatus();
+
+    delete od;
+    od = nullptr;
+
+    if (rc != TraceDqr::DQERR_OK) {
+      printf("Error: KMem::disassembler(): Objdump failed\n");
+      status = TraceDqr::DQERR_ERR;
+      return TraceDqr::DQERR_ERR;
+    }
+
+    sp = findSection(addr);
+    if (sp == nullptr) {
+      printf("Error: KMem::disassembler(): No section found for address 0x%08lx\n",addr);
+      return TraceDqr::DQERR_ERR;
+    }
+  }
+
+  if ((addr < (sp->startAddr+sp->vmaOffset)) || (addr >= (sp->endAddr+sp->vmaOffset))) {
+    status = TraceDqr::DQERR_ERR;
+    return status;
+  }
+
+  int index;
+  int size;
+
+  index = ((addr - sp->vmaOffset) - sp->startAddr) / 2;
+
+  inst = sp->code[index];
+
+  // if 32 bit instruction, get the second half
+
+  rc = Disassembler::decodeInstructionSize(inst, size);
+  if (rc != TraceDqr::DQERR_OK) {
+    printf("Error: KMem::getInstructionByAddress(): Could not decode instruction size for 0x%08x, address 0x%08lx\n",inst,addr);
+
+    status = TraceDqr::DQERR_ERR;
+
+    return TraceDqr::DQERR_ERR;
+  }
+
+  if (size == 32) {
+    // not compressed. Assume RV32 for now
+    inst = inst | (((uint32_t)sp->code[index+1]) << 16);
+  }
+
+  return TraceDqr::DQERR_OK;;
+}
+
 Disassembler::Disassembler(Symtab *stp,Section *sp,int archsize)
 {
 	status = TraceDqr::DQERR_OK;
@@ -11623,6 +12444,22 @@ Disassembler::Disassembler(Symtab *stp,Section *sp,int archsize)
    	fileReader = new class fileReader();
 
     status = TraceDqr::DQERR_OK;
+}
+
+Disassembler::Disassembler(int archsize)
+{
+	pType = TraceDqr::PATH_TO_UNIX;
+
+	cachedAddr = 0;
+	cachedSecPtr = nullptr;
+	cachedIndex = -1;
+
+	symtab = nullptr;
+	sectionLst = nullptr;
+
+   	fileReader = nullptr;
+
+	status = TraceDqr::DQERR_OK;
 }
 
 Disassembler::~Disassembler()
@@ -12740,7 +13577,7 @@ TraceDqr::DQErr Disassembler::getFunctionName(TraceDqr::ADDRESS addr,const char 
 
 	if (sym != nullptr) {
 		function = sym->name;
-		offset = addr - sym->address;
+		offset = (addr - sym->vmaOffset) - sym->address;
 	}
 
 	return TraceDqr::DQERR_OK;
@@ -12891,7 +13728,7 @@ TraceDqr::DQErr Disassembler::getInstruction(TraceDqr::ADDRESS addr,Instruction 
 	TraceDqr::DQErr rc;
 	int index;
 
-	index = (addr - sp->startAddr) / 2;
+	index = ((addr - sp->vmaOffset) - sp->startAddr) / 2;
 
 	instruction.coreId = 0;
 	instruction.CRFlag = 0;
@@ -12925,7 +13762,7 @@ TraceDqr::DQErr Disassembler::getInstruction(TraceDqr::ADDRESS addr,Instruction 
 
 	if (sym != nullptr) {
 		instruction.addressLabel = sym->name;
-		instruction.addressLabelOffset = addr - sym->address;
+		instruction.addressLabelOffset = (addr - sym->vmaOffset) - sym->address;
 	}
 	else {
 		instruction.addressLabel = nullptr;
@@ -13003,7 +13840,7 @@ TraceDqr::DQErr Disassembler::cacheSrcInfo(TraceDqr::ADDRESS addr)
 
 	cachedAddr = addr;
 	cachedSecPtr = sp;
-	cachedIndex = (addr - sp->startAddr) / 2;
+	cachedIndex = ((addr-sp->vmaOffset) - sp->startAddr) / 2;
 
 	return TraceDqr::DQERR_OK;
 }
@@ -13011,6 +13848,7 @@ TraceDqr::DQErr Disassembler::cacheSrcInfo(TraceDqr::ADDRESS addr)
 AddrStack::AddrStack(int size)
 {
 	stackSize = size;
+
 	sp = size;
 
 	if (size == 0) {
@@ -13063,103 +13901,105 @@ TraceDqr::ADDRESS AddrStack::pop()
 
 Simulator::Simulator(char *f_name,char *e_name,const char *odExe)
 {
-	TraceDqr::DQErr ec;
+    TraceDqr::DQErr ec;
 
-	vf_name = nullptr;
-	lineBuff = nullptr;
-	lines = nullptr;
-	numLines = 0;
-	nextLine = 0;
-	elfReader = nullptr;
-	disassembler = nullptr;
-	cutPath = nullptr;
-	newRoot = nullptr;
+    vf_name = nullptr;
+    lineBuff = nullptr;
+    lines = nullptr;
+    numLines = 0;
+    nextLine = 0;
+    elfReader = nullptr;
+    disassembler = nullptr;
+    cutPath = nullptr;
+    newRoot = nullptr;
 
-	if (f_name == nullptr) {
-		status = TraceDqr::DQERR_ERR;
-		return;
-	}
-
-	ec = readFile(f_name);
-	if (ec != TraceDqr::DQERR_OK) {
-		status = ec;
-		return;
-	}
-
-    elfReader = new (std::nothrow) ElfReader(e_name,odExe);
-	if (elfReader == nullptr) {
-		printf("Error: Simulator::Simulator(): Could not create ElfReader object\n");
-
-		status = TraceDqr::DQERR_ERR;
-		return;
-	}
-
-    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
-    	delete elfReader;
-    	elfReader = nullptr;
-
-    	status = TraceDqr::DQERR_ERR;
-
-    	return;
+    if (f_name == nullptr) {
+        status = TraceDqr::DQERR_ERR;
+        return;
     }
 
-	archSize = elfReader->getArchSize();
+    ec = readFile(f_name);
+    if (ec != TraceDqr::DQERR_OK) {
+        status = ec;
+        return;
+    }
+
+    elfReader = new (std::nothrow) ElfReader(e_name,odExe,0);
+    if (elfReader == nullptr) {
+        printf("Error: Simulator::Simulator(): Could not create ElfReader object\n");
+
+        status = TraceDqr::DQERR_ERR;
+        return;
+    }
+
+    if (elfReader->getStatus() != TraceDqr::DQERR_OK) {
+        delete elfReader;
+        elfReader = nullptr;
+
+        status = TraceDqr::DQERR_ERR;
+
+        return;
+    }
+
+    elfReader->seal();
+
+    archSize = elfReader->getArchSize();
 
     symtab = elfReader->getSymtab();
     if (symtab == nullptr) {
-    	delete elfReader;
-    	elfReader = nullptr;
+        delete elfReader;
+        elfReader = nullptr;
 
-    	status = TraceDqr::DQERR_ERR;
+        status = TraceDqr::DQERR_ERR;
 
-    	return;
+        return;
     }
 
-	sections = elfReader->getSections();
-	if (sections == nullptr) {
-		delete elfReader;
-		elfReader = nullptr;
+    sections = elfReader->getSections();
+    if (sections == nullptr) {
+        delete elfReader;
+        elfReader = nullptr;
 
-		symtab = nullptr;
+        symtab = nullptr;
 
-		status = TraceDqr::DQERR_ERR;
-		return;
-	}
+        status = TraceDqr::DQERR_ERR;
+        return;
+    }
 
     disassembler = new (std::nothrow) Disassembler(symtab,sections,archSize);
-	if (disassembler == nullptr) {
-		printf("Error: Simulator::Simulator(): Could not create Disassembler object\n");
+    if (disassembler == nullptr) {
+        printf("Error: Simulator::Simulator(): Could not create Disassembler object\n");
 
-		delete elfReader;
-		elfReader = nullptr;
+        delete elfReader;
+        elfReader = nullptr;
 
-		status = TraceDqr::DQERR_ERR;
-		return;
-	}
+        status = TraceDqr::DQERR_ERR;
+        return;
+    }
 
-	if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
-		if (elfReader != nullptr) {
-			delete elfReader;
-			elfReader = nullptr;
-		}
+    if (disassembler->getStatus() != TraceDqr::DQERR_OK) {
+        if (elfReader != nullptr) {
+            delete elfReader;
+            elfReader = nullptr;
+        }
 
-		delete disassembler;
-		disassembler = nullptr;
+        delete disassembler;
+        disassembler = nullptr;
 
-		status = TraceDqr::DQERR_ERR;
+        status = TraceDqr::DQERR_ERR;
 
-		return;
-	}
+        return;
+    }
 
-	for (int i = 0; (size_t)i < sizeof currentTime / sizeof currentTime[0]; i++) {
-		currentTime[i] = 0;
-	}
+    for (int i = 0; (size_t)i < sizeof currentTime / sizeof currentTime[0]; i++) {
+        currentTime[i] = 0;
+    }
 
-	for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
-		enterISR[i] = 0;
-	}
+    for (int i = 0; (size_t)i < sizeof enterISR / sizeof enterISR[0]; i++) {
+        enterISR[i] = 0;
+    }
 
-	status = TraceDqr::DQERR_OK;
+    status = TraceDqr::DQERR_OK;
 }
 
 Simulator::~Simulator()
@@ -14182,6 +15022,7 @@ TraceDqr::DQErr Simulator::Disassemble(SRec *srec)
 	// would likely be better
 
 	instructionInfo = disassembler->getInstructionInfo();
+
 	sourceInfo = disassembler->getSourceInfo();
 
 	instructionInfo.coreId = srec->coreId;

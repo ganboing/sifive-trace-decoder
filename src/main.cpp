@@ -13,7 +13,7 @@ using namespace std;
 
 static void usage(char *name)
 {
-	printf("Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] [-od objdump] [-btm | -htm] -basename name\n");
+	printf("Usage: dqr -t tracefile -e elffile [-ca cafile -catype (none | instruction | vector)] [-od objdump] [-btm | -htm | -htmnoopt | event | pathprofiler ] -basename name\n");
 	printf("           [-sf settingsfile] [-srcbits=n] [-src] [-nosrc] [-file] [-nofile] [-func] [-nofunc] [-dasm] [-nodasm]\n");
 	printf("           [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]\n");
 	printf("           [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]\n");
@@ -34,6 +34,8 @@ static void usage(char *name)
 	printf("              current working directory.\n");
 	printf("-btm:         Specify the type of the trace file as btm (branch trace messages). On by default.\n");
 	printf("-htm:         Specify the type of the trace file as htm (history trace messages).\n");
+	printf("-htmnoopt:    Specify the type of the trace file as htm without HTM optimizations (history trace messages, no REturn-Address Stack Optimizations).\n");
+	printf("-pathprofiler: Secify the type of the trace file as a path-profiler trace\n");
 	printf("-pcd:         Process the trace as a PCD trace. Can be used to disambiguate between htm, btm instruction, event, and vcd traces when\n");
 	printf("              using a properties files, or htm and btm traces\n");
 	printf("-n basename:  Specify the base name of the Nexus trace message file and the executable elf file. No extension\n");
@@ -151,6 +153,43 @@ static const char *stripPath(const char *prefix,const char *srcpath)
 	return nullptr;
 }
 
+const char *prvToTxt(uint8_t prv)
+{
+  switch (prv) {
+  case TraceDqr::prv_U_mode:
+    return "U";
+  case TraceDqr::prv_S_mode:
+    return "S";
+  case TraceDqr::prv_M_mode:
+    return "M";
+  case TraceDqr::prv_VU_mode:
+    return "VU";
+  case TraceDqr::prv_VS_mode:
+    return "VS";
+  }
+
+  return "?";
+}
+
+void dumpPidMap(int numPids,pidMap *pidMap)
+{
+  if (numPids > 0) {
+    printf(" Pid    Name\n");
+
+    for (int i = 0; i < numPids; i++) {
+      printf("%6u  %s\n",pidMap[i].pid,pidMap[i].name);
+    }
+
+    printf("\n");
+  }
+}
+
+void fixPidNames(int numPids,pidMap *pidMap)
+{
+  for (int i = 0; i < numPids; i++) {
+  }
+}
+
 int main(int argc, char *argv[])
 {
 	char *tf_name = nullptr;
@@ -189,6 +228,7 @@ int main(int argc, char *argv[])
 	char *cutPath = nullptr;
 	char *newRoot = nullptr;
 	bool ctf_flag = false;
+	bool linuxTrace = false;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -271,6 +311,15 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp("-htm",argv[i]) == 0) {
 			traceType = TraceDqr::TRACETYPE_HTM;
+		}
+		else if (strcmp("-htmnoopt",argv[i]) == 0) {
+			traceType = TraceDqr::TRACETYPE_HTMNOOPT;
+		}
+		else if (strcmp("-event",argv[i]) == 0) {
+			traceType = TraceDqr::TRACETYPE_EVENT;
+		}
+		else if (strcmp("-pathprofiler",argv[i]) == 0) {
+			traceType = TraceDqr::TRACETYPE_PATH;
 		}
 		else if (strcmp("-pcd",argv[i]) == 0) {
 			traceType = TraceDqr::TRACETYPE_VCD;
@@ -627,6 +676,11 @@ int main(int argc, char *argv[])
 	Simulator *sim = nullptr;
 	VCD *vcd = nullptr;
 
+	int numPids;
+	pidMap *pidMap = nullptr;
+        uint32_t currentPid = 0xffffffff;
+        char *currentPidName = nullptr;
+
 	if (sf_name != nullptr) {
 		if ( ef_name == nullptr) {
 			printf("Error: Simulator requires an ELF file (-e switch)\n");
@@ -710,7 +764,7 @@ int main(int argc, char *argv[])
 
 		srcbits = 1;
 	}
-	else if ((pf_name != nullptr) || (tf_name != nullptr) || (traceType == TraceDqr::TRACETYPE_BTM) || (traceType == TraceDqr::TRACETYPE_HTM)) {
+	else if ((pf_name != nullptr) || (tf_name != nullptr) || (traceType == TraceDqr::TRACETYPE_BTM) || (traceType == TraceDqr::TRACETYPE_HTM) || (traceType == TraceDqr::TRACETYPE_HTMNOOPT)) {
 		TraceDqr::DQErr rc;
 
 		if (pf_name != nullptr) {
@@ -742,8 +796,28 @@ int main(int argc, char *argv[])
 
 				return 1;
 			}
+
+			srcbits = trace->getSrcBits();
+			linuxTrace = trace->isLinuxTrace();
+
+			if (linuxTrace) {
+				pidMap = trace->getPidMap(numPids);
+			}
 		}
 		else {
+			if (tf_name == nullptr) {
+				printf("Error: No trace file specified\n");
+				usage(argv[0]);
+
+				return 1;
+			}
+			else if (ef_name == nullptr) {
+				printf("Error: No elf file specified\n");
+				usage(argv[0]);
+
+				 return 1;
+			}
+
 			trace = new (std::nothrow) Trace(tf_name,ef_name,numAddrBits,addrDispFlags,srcbits,od_name,freq);
 
 			if (trace == nullptr) {
@@ -796,6 +870,12 @@ int main(int argc, char *argv[])
 					return 1;
 				}
 			}
+
+			linuxTrace = trace->isLinuxTrace();
+
+			if (linuxTrace) {
+				pidMap = trace->getPidMap(numPids);
+			}
 		}
 	}
 	else {
@@ -845,6 +925,10 @@ int main(int argc, char *argv[])
 
 	msgInfo = nullptr;
 
+	if (pidMap != nullptr) {
+		dumpPidMap(numPids,pidMap);
+	}
+
 	do {
 		if (sim != nullptr) {
 			ec = sim->NextInstruction(&instInfo,&srcInfo);
@@ -854,6 +938,31 @@ int main(int argc, char *argv[])
 		}
 		else {
 			ec = trace->NextInstruction(&instInfo,&msgInfo,&srcInfo);
+			if (pidMap != nullptr) {
+				if (instInfo != nullptr) {
+					if (currentPid != instInfo->pid) {
+						currentPid = instInfo->pid;
+					}
+				}
+				else if (msgInfo != nullptr) {
+					if (currentPid != msgInfo->pid) {
+						currentPid = msgInfo->pid;
+					}
+				}
+				else if (srcInfo != nullptr) {
+					if (currentPid != srcInfo->pid) {
+						currentPid = srcInfo->pid;
+					}
+				}
+
+				currentPidName = nullptr;
+
+				for (int i = 0; (currentPidName == nullptr) && (i < numPids); i++) {
+					if (pidMap[i].pid == currentPid) {
+						currentPidName = &pidMap[i].name[pidMap[i].shortNameIndex];
+					}
+				}
+			}
 		}
 
 		if (ec == TraceDqr::DQERR_OK) {
@@ -873,10 +982,6 @@ int main(int argc, char *argv[])
 
 							sfp = stripPath(strip_flag,srcInfo->sourceFile);
 
-							if (srcbits > 0) {
-								printf("[%d] ",srcInfo->coreId);
-							}
-
 							int sfpl = 0;
 							int sfl = 0;
 							int stripped = 0;
@@ -885,6 +990,22 @@ int main(int argc, char *argv[])
 								sfpl = strlen(sfp);
 								sfl = strlen(srcInfo->sourceFile);
 								stripped = sfl - sfpl;
+							}
+
+							if (linuxTrace) {
+								if (currentPidName != nullptr) {
+									printf("[%d.%d.%s:%s] ",srcInfo->coreId,currentPid,prvToTxt(srcInfo->prv),currentPidName);
+								}
+								else if (currentPid == 0xffffffff) {
+									printf("[%d.?.%s] ",srcInfo->coreId,prvToTxt(srcInfo->prv));
+								}
+								else {
+									printf("[%d.%d.%s] ",srcInfo->coreId,currentPid,prvToTxt(srcInfo->prv));
+								}
+							}
+							else if (srcbits > 0) {
+								printf("[%d] ",srcInfo->coreId);
+//linux
 							}
 
 							if (stripped < srcInfo->cutPathIndex) {
@@ -915,12 +1036,23 @@ int main(int argc, char *argv[])
 
 					if (src_flag) {
 						if (srcInfo->sourceLine != nullptr) {
-							if (srcbits > 0) {
-								printf("[%d] Source: %s\n",srcInfo->coreId,srcInfo->sourceLine);
+							if (linuxTrace) {
+								if (currentPidName != nullptr) {
+									printf("[%d.%d.%s:%s] ",srcInfo->coreId,currentPid,prvToTxt(srcInfo->prv),currentPidName);
+								}
+								else if (currentPid == 0xffffffff) {
+									printf("[%d.?.%s] ",srcInfo->coreId,prvToTxt(srcInfo->prv));
+								}
+								else {
+									printf("[%d.%d.%s] ",srcInfo->coreId,currentPid,prvToTxt(srcInfo->prv));
+								}
 							}
-							else {
-								printf("Source: %s\n",srcInfo->sourceLine);
+							else if (srcbits > 0) {
+								printf("[%d] ",srcInfo->coreId);
+//linux
 							}
+
+							printf("Source: %s\n",srcInfo->sourceLine);
 
 							firstPrint = false;
 						}
@@ -933,28 +1065,51 @@ int main(int argc, char *argv[])
 
 				if (func_flag) {
 					if (((instInfo->addressLabel != nullptr) && (instInfo->addressLabelOffset == 0)) || (instInfo->address != (lastAddress + lastInstSize / 8))) {
-						if (srcbits > 0) {
-							printf("[%d] ",instInfo->coreId);
-						}
-
 						if (instInfo->addressLabel != nullptr) {
+							if (linuxTrace) {
+								if (currentPidName != nullptr) {
+									printf("[%d.%d.%s:%s] ",instInfo->coreId,currentPid,prvToTxt(instInfo->prv),currentPidName);
+								}
+								else if (currentPid == 0xffffffff) {
+									printf("[%d.?.%s] ",instInfo->coreId,prvToTxt(instInfo->prv));
+								}
+								else {
+									printf("[%d.%d.%s] ",instInfo->coreId,currentPid,prvToTxt(instInfo->prv));
+								}
+							}
+							else if (srcbits > 0) {
+								printf("[%d] ",instInfo->coreId);
+//linux
+							}
+
 							printf("<%s",instInfo->addressLabel);
 							if (instInfo->addressLabelOffset != 0) {
 								printf("+%x",instInfo->addressLabelOffset);
 							}
 							printf(">\n");
 						}
-						else {
-							printf("label null\n");
-						}
+						// else {
+						//	printf("label null\n");
+						// }
 					}
 
 					lastAddress = instInfo->address;
 					lastInstSize = instInfo->instSize;
 				}
 
-				if (srcbits > 0) {
-					printf("[%d] ", instInfo->coreId);
+				if (linuxTrace) {
+					if (currentPidName != nullptr) {
+						printf("[%d.%d.%s:%s] ",instInfo->coreId,currentPid,prvToTxt(instInfo->prv),currentPidName);
+					}
+					else if (currentPid == 0xffffffff) {
+						printf("[%d.?.%s] ",instInfo->coreId,prvToTxt(instInfo->prv));
+					}
+					else {
+						printf("[%d.%d.%s] ",instInfo->coreId,currentPid,prvToTxt(instInfo->prv));
+					}
+				}
+				else if (srcbits > 0) {
+					printf("[%d] ",instInfo->coreId);
 				}
 
 				int n;
@@ -1088,8 +1243,20 @@ int main(int argc, char *argv[])
 					printf("\n");
 				}
 
-				if (srcbits > 0) {
+				if (linuxTrace) {
+					if (currentPidName != nullptr) {
+						printf("[%d.%d.%s:%s] ",msgInfo->coreId,currentPid,prvToTxt(msgInfo->prv),currentPidName);
+					}
+					else if (currentPid == 0xffffffff) {
+						printf("[%d.?.%s] ",msgInfo->coreId,prvToTxt(msgInfo->prv));
+					}
+					else {
+						printf("[%d.%d.%s] ",msgInfo->coreId,currentPid,prvToTxt(msgInfo->prv));
+					}
+				}
+				else if (srcbits > 0) {
 					printf("[%d] ",msgInfo->coreId);
+//linux
 				}
 
 				printf("Trace: %s",dst);
@@ -1113,8 +1280,20 @@ int main(int argc, char *argv[])
 								printf("\n");
 							}
 
-							if (srcbits > 0) {
+							if (linuxTrace) {
+								if (currentPidName != nullptr) {
+									printf("[%d.%d.%s:%s] ",msgInfo->coreId,currentPid,prvToTxt(msgInfo->prv),currentPidName);
+								}
+								else if (currentPid == 0xffffffff) {
+									printf("[%d.?.%s] ",msgInfo->coreId,prvToTxt(msgInfo->prv));
+								}
+								else {
+									printf("[%d.%d.%s] ",msgInfo->coreId,currentPid,prvToTxt(msgInfo->prv));
+								}
+							}
+							else if (srcbits > 0) {
 								printf("[%d] ",msgInfo->coreId);
+//linux
 							}
 
 							std::cout << "ITC Print: ";
@@ -1208,6 +1387,11 @@ int main(int argc, char *argv[])
 
 		delete trace;
 		trace = nullptr;
+
+		if (pidMap != nullptr) {
+			delete [] pidMap;
+			pidMap = nullptr;
+		}
 	}
 
 	if (sim != nullptr) {
