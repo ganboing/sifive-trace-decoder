@@ -146,10 +146,6 @@ int CATraceRec::consumeCAInstruction(uint32_t &pipe,uint32_t &cycles)
 	dataIndex = offset / 30; // 30 bits of data in each data word. dataIndex is data[] index
 	bitIndex = 29 - (offset % 30);  // 0 - 29 is the bit index to start looking at (29 oldest, 0 newest)
 
-//	for (int i = 0; i < 32; i++) {
-//		printf("data[%d]: %08x\n",i,data[i]);
-//	}
-
 	while (found == false) {
 		while ((bitIndex >= 0) && ((data[dataIndex] & (1<<bitIndex)) == 0)) {
 			bitIndex -= 1;
