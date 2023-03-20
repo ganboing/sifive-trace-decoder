@@ -6421,7 +6421,7 @@ TraceDqr::DQErr Trace::parseMappingFile(const char *fName,class addressMap **am,
 
   // strip any leading fluff
 
-  while  ((*start == '\n') || (*start == ' ')) {
+  while  ((*start == '\n') || (*start == '\r') || (*start == ' ')) {
     start += 1;
   }
 
@@ -6561,7 +6561,7 @@ TraceDqr::DQErr Trace::parseMappingFile(const char *fName,class addressMap **am,
         i += 1;
       }
 
-      while ((*end != '\n') && (*end != '0')) {
+      while ((*end != '\n') && (*end != '\r') && (*end != '0')) {
         pathName[i] = *end;
         i += 1;
         end += 1;
@@ -6658,11 +6658,11 @@ TraceDqr::DQErr Trace::parseMappingFile(const char *fName,class addressMap **am,
 
     // scan to beginning of next line
 
-    while ((*start != '\n') && (*start != 0)) {
+    while ((*start != '\n') && (*start != '\r') && (*start != 0)) {
       start += 1;
     }
 
-    while  (*start == '\n') {
+    while  ((*start == '\n') || (*start == '\r')) {
       start += 1;
     }
   }
