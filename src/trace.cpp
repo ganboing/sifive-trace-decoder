@@ -6356,7 +6356,12 @@ TraceDqr::DQErr Trace::parseMappingFile(const char *fName,class addressMap **am,
 
   int fd;
 
+#ifdef WINDOWS
+  fd = open(fName,O_RDONLY | O_BINARY);
+#else // WINDOWS
   fd = open(fName,O_RDONLY);
+#endif // WINDOWS
+
   if (fd == -1) {
     printf("Error: parseMappingFile(): Could not open maping file %s for reading\n",fName);
     return TraceDqr::DQERR_ERR;

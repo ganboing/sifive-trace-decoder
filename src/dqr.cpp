@@ -4202,7 +4202,13 @@ TraceDqr::DQErr ElfReader::parseNLSStrings(TraceDqr::nlStrings *nlsStrings)
 	}
 
 	int fd;
+
+#ifdef WINDOWS
+	fd = open(&elfName[elfNameStart],O_RDONLY | O_BINARY);
+#else // WINDOWS
 	fd = open(&elfName[elfNameStart],O_RDONLY);
+#endif // WINDOWS
+
 	if (fd < 0) {
 		printf("Error: elfReader::parseNLSStrings(): Could not open file %s for input\n",elfName);
 		return TraceDqr::DQERR_ERR;
