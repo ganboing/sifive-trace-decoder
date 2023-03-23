@@ -3100,162 +3100,191 @@ TraceDqr::DQErr ObjDump::parseDisassemblyList(objDumpTokenType &nextType,char *n
       type = getNextLex(lex);
     }
 
-    if (type != odtt_string) {
+    if (type == odtt_lt) {
+      // handle case of <unknown>:number for case of unknown file name but known line number. Possibly an octane thing
+      // in init seciton
+
+      type = getNextLex(lex);
+      if (type != odtt_string) {
+        printf("Error: parseDisassmeblyList(): Expected \"unknown\" file name\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      type = getNextLex(lex);
+      if (type != odtt_gt) {
+        printf("Error: parseDisassmeblyList(): Expected '>' after \"<unknown\" file name\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      type = getNextLex(lex);
+      if ((type != odtt_colon) && (type != odtt_eol)) {
+        printf("Error: parseDisassmeblyList(): Expected ':' after \"<unknown>\" file name\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
+      while (type != odtt_eol) {
+        // just scoot to the end of the line. We don't care what follows
+        type = getNextLex(lex);
+      }
+    }
+    else if (type != odtt_string) {
       nextType = type;
       strcpy(nextLex,lex);
 
       return TraceDqr::DQERR_OK;
     }
+    else {
 
-    line_t lineType;
-    int length;
-    uint32_t value;
-    uint64_t addr;
+      line_t lineType;
+      int length;
+      uint32_t value;
+      uint64_t addr;
 
-    // have a string
+      // have a string
 
-    // 1  ...									<- string EOL
-    //
-    // 2  address '<' label '>' ':'			<- Hstring '<' string '>' ':' EOL
-//or this could be used for symbol table?
-//
-//create sym entry (for a label) in section pointer symtable
-//make array of sym pointers at index have index to this entry in sym
-//
-    //
-    // 3  address ':' instruction disassembly	<- Hstring ':' Hstring string2end EOL
-    //
-    // 4  drive ':' path-file ':' line		<- [H]string ':' string ':' Dstring EOL
-    //
-    // 5  function '(' ')' ':'				<- string '(' ')' ':' EOL
-//case 5 - could grab symbol and add to new symtab with symbol index in section (sp)
-//getsymbolbyaddress could look it up in sections??
-//what about getsymbolbyname??
-//
-//either lookup or create new sym entry for this function
-//update index to point to it
-//
-//maintain current index, and for each line disassembled, put that in its sym index
-//
-    //
-    // 6  disassembly of section label :		<- string string string string ':' EOL
-    //
-    // 7  symbol table ':'					<- string string ':' EOL
-    //
+      // 1  ...									<- string EOL
+      //
+      // 2  address '<' label '>' ':'			<- Hstring '<' string '>' ':' EOL
+      //or this could be used for symbol table?
+      //
+      //create sym entry (for a label) in section pointer symtable
+      //make array of sym pointers at index have index to this entry in sym
+      //
+      //
+      // 3  address ':' instruction disassembly	<- Hstring ':' Hstring string2end EOL
+      //
+      // 4  drive ':' path-file ':' line		<- [H]string ':' string ':' Dstring EOL
+      //
+      // 5  function '(' ')' ':'				<- string '(' ')' ':' EOL
+      //case 5 - could grab symbol and add to new symtab with symbol index in section (sp)
+      //getsymbolbyaddress could look it up in sections??
+      //what about getsymbolbyname??
+      //
+      //either lookup or create new sym entry for this function
+      //update index to point to it
+      //
+      //maintain current index, and for each line disassembled, put that in its sym index
+      //
+      //
+      // 6  disassembly of section label :		<- string string string string ':' EOL
+      //
+      // 7  symbol table ':'					<- string string ':' EOL
+      //
 
-    // want to only look ahead one lex!
+      // want to only look ahead one lex!
 
-    if (strcmp("...",lex) == 0) { // case 1
-      type = getNextLex(lex);
-      if (type != odtt_eol) {
-        printf("Error: parseDisassemblyList(): Expected '...' to be folowed by EOL\n");
-        return TraceDqr::DQERR_ERR;
-      }
-
-      fName = nullptr;
-      line = 0;
-
-      // just skip and do next line
-    }
-    else if (isStringAHexNumber(lex,addr) == true) { // cases 2, 3, and sometimes 4
-      rc = parseFileOrLabelOrDisassembly(lineType,lex,length,value);
-      if (rc != TraceDqr::DQERR_OK) {
-        printf("Error: parseDisassemblyList(): parseDisassembly() failed\n");
-        return TraceDqr::DQERR_ERR;
-      }
-
-      switch (lineType) {
-      case line_t_label:
-        // currently, don't use anyting from address < label > :
-        // but this information could be added to sym table in place of reading the sym table?
-        fName = nullptr;
-        line = 0;
-        break;
-      case line_t_diss:
-        int index;
-
-	// Don't need to sub vmaOffset from addr. addr will be the correct address to add to the section
-	// The disassembly list may be disassembled at the wrong vmaoffset (dynamic elf files)
-	// The disassembly list may be dissasembled at the correct address (static elf files, blobs)
-
-	// here, addr is relative to startAddr without vmaOffset
-
-        index = (addr - sp->startAddr)/2;
-
-        sp->code[index] = (uint16_t)value;
-        if (length == 32) {
-          sp->code[index+1] = (uint16_t)(value >> 16);
+      if (strcmp("...",lex) == 0) { // case 1
+        type = getNextLex(lex);
+        if (type != odtt_eol) {
+          printf("Error: parseDisassemblyList(): Expected '...' to be folowed by EOL\n");
+          return TraceDqr::DQERR_ERR;
         }
 
-        int len;
-        len = strlen(lex)+1;
-
-        sp->diss[index] = new char[len];
-        strcpy(sp->diss[index],lex);
-
-        // save file and line here. They are set below and remain valid until they are updated
-
-        sp->fName[index] = fName;
-        sp->line[index] = line;
-	break;
-      case line_t_path:
-        sprintf(lex2,"%X:%s",(uint32_t)addr,lex);
-        fName = srcFileRoot.addFile(lex2);
-        line = value;
-        break;
-      case line_t_func:
-        // if we get here, function name could be interpreted as number, but it shouln't be (such as f1())
         fName = nullptr;
         line = 0;
-        break;
+
+        // just skip and do next line
       }
-    }
-    else if ((eol_count > 0) && ((strcasecmp("disassembly",lex) == 0) || (strcasecmp("symbol",lex) == 0))) {	// case 6, 7
-      nextType = type;
-      strcpy(nextLex,lex);
+      else if (isStringAHexNumber(lex,addr) == true) { // cases 2, 3, and sometimes 4
+        rc = parseFileOrLabelOrDisassembly(lineType,lex,length,value);
+        if (rc != TraceDqr::DQERR_OK) {
+          printf("Error: parseDisassemblyList(): parseDisassembly() failed\n");
+          return TraceDqr::DQERR_ERR;
+        }
 
-      return TraceDqr::DQERR_OK;
-    }
-    else if ((lex[0] == '/') || (lex[0] == '\\')) { // more case 4;
-      rc = parseFileLine(line);
-      if (rc != TraceDqr::DQERR_OK) {
-        printf("Error: parseDisassemblyList(): parseFileLine() failed\n");
-        return TraceDqr::DQERR_ERR;
+        switch (lineType) {
+        case line_t_label:
+          // currently, don't use anyting from address < label > :
+          // but this information could be added to sym table in place of reading the sym table?
+          fName = nullptr;
+          line = 0;
+          break;
+        case line_t_diss:
+          int index;
+
+          // Don't need to sub vmaOffset from addr. addr will be the correct address to add to the section
+          // The disassembly list may be disassembled at the wrong vmaoffset (dynamic elf files)
+          // The disassembly list may be dissasembled at the correct address (static elf files, blobs)
+
+          // here, addr is relative to startAddr without vmaOffset
+
+          index = (addr - sp->startAddr)/2;
+
+          sp->code[index] = (uint16_t)value;
+          if (length == 32) {
+            sp->code[index+1] = (uint16_t)(value >> 16);
+          }
+
+          int len;
+          len = strlen(lex)+1;
+
+          sp->diss[index] = new char[len];
+          strcpy(sp->diss[index],lex);
+
+          // save file and line here. They are set below and remain valid until they are updated
+
+          sp->fName[index] = fName;
+          sp->line[index] = line;
+          break;
+        case line_t_path:
+          sprintf(lex2,"%X:%s",(uint32_t)addr,lex);
+          fName = srcFileRoot.addFile(lex2);
+          line = value;
+          break;
+        case line_t_func:
+          // if we get here, function name could be interpreted as number, but it shouln't be (such as f1())
+          fName = nullptr;
+          line = 0;
+          break;
+        }
+      }
+      else if ((eol_count > 0) && ((strcasecmp("disassembly",lex) == 0) || (strcasecmp("symbol",lex) == 0))) {	// case 6, 7
+        nextType = type;
+        strcpy(nextLex,lex);
+
+        return TraceDqr::DQERR_OK;
+      }
+      else if ((lex[0] == '/') || (lex[0] == '\\')) { // more case 4;
+        rc = parseFileLine(line);
+        if (rc != TraceDqr::DQERR_OK) {
+          printf("Error: parseDisassemblyList(): parseFileLine() failed\n");
+          return TraceDqr::DQERR_ERR;
+        }
+
+        fName = srcFileRoot.addFile(lex);
+      }
+      else {	// case 5, reset of case 4
+        // have a string. look ahead and see if it is a '(', ':' (case 5, rest of case 4)
+
+        rc = parseFileOrLabelOrDisassembly(lineType,lex2,length,value);
+        if (rc != TraceDqr::DQERR_OK) {
+          printf("Error: parseDisassemblyList(): parseDisassembly() failed\n");
+          return TraceDqr::DQERR_ERR;
+        }
+
+        switch (lineType) {
+        case line_t_label:
+          printf("Error: parseDisassemblyList(): Bad label\n");
+          return TraceDqr::DQERR_ERR;
+        case line_t_diss:
+          printf("Error: parseDisassemblyList(): Bad disassembly\n");
+          return TraceDqr::DQERR_ERR;
+        case line_t_path: // case 4
+          strcat(lex,":");
+          strcat(lex,lex2);
+          fName = srcFileRoot.addFile(lex2);
+          line = value;
+          break;
+        case line_t_func: // case 5
+          // nothing to do. If we saved the function, would we need to even collect the symtable? Probably.
+          fName = nullptr;
+          line = 0;
+          break;
+        }
       }
 
-      fName = srcFileRoot.addFile(lex);
+      type = getNextLex(lex);
     }
-    else {	// case 5, reset of case 4
-      // have a string. look ahead and see if it is a '(', ':' (case 5, rest of case 4)
-
-      rc = parseFileOrLabelOrDisassembly(lineType,lex2,length,value);
-      if (rc != TraceDqr::DQERR_OK) {
-        printf("Error: parseDisassemblyList(): parseDisassembly() failed\n");
-        return TraceDqr::DQERR_ERR;
-      }
-
-      switch (lineType) {
-      case line_t_label:
-        printf("Error: parseDisassemblyList(): Bad label\n");
-        return TraceDqr::DQERR_ERR;
-      case line_t_diss:
-        printf("Error: parseDisassemblyList(): Bad disassembly\n");
-        return TraceDqr::DQERR_ERR;
-      case line_t_path: // case 4
-        strcat(lex,":");
-        strcat(lex,lex2);
-        fName = srcFileRoot.addFile(lex2);
-        line = value;
-        break;
-      case line_t_func: // case 5
-        // nothing to do. If we saved the function, would we need to even collect the symtable? Probably.
-        fName = nullptr;
-        line = 0;
-        break;
-      }
-    }
-
-    type = getNextLex(lex);
   }
 
   // should never get here
@@ -10692,6 +10721,7 @@ TraceDqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics
 	// if multicore, parse src field
 
 	if (srcbits > 0) {
+
         rc = parseFixedField(srcbits,&tmp);
         if (rc != TraceDqr::DQERR_OK) {
             status = rc;
@@ -10707,7 +10737,7 @@ TraceDqr::DQErr SliceFileParser::parseSync(NexusMessage &nm,Analytics &analytics
 		nm.coreId = 0;
 	}
 
-	// parse the sync resons
+	// parse the sync reason
 
 	rc = parseFixedField(4,&tmp);
 	if (rc != TraceDqr::DQERR_OK) {
