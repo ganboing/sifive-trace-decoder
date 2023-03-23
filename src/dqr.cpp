@@ -3110,6 +3110,11 @@ TraceDqr::DQErr ObjDump::parseDisassemblyList(objDumpTokenType &nextType,char *n
         return TraceDqr::DQERR_ERR;
       }
 
+      if (strcmp("unknown",lex) != 0) {
+        printf("Error: parseDisassmeblyList(): Expected \"unknown\" filename after '<'\n");
+        return TraceDqr::DQERR_ERR;
+      }
+
       type = getNextLex(lex);
       if (type != odtt_gt) {
         printf("Error: parseDisassmeblyList(): Expected '>' after \"<unknown\" file name\n");
