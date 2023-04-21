@@ -848,6 +848,7 @@ public:
     void cleanUp();
     static const char *version();
     TraceDqr::DQErr setTraceType(TraceDqr::TraceType tType);
+    TraceDqr::DQErr setErrorMode(bool tolerate);
 	TraceDqr::DQErr setTSSize(int size);
 	TraceDqr::DQErr setITCPrintOptions(int intFlags,int buffSize,int channel);
 	TraceDqr::DQErr setPathType(TraceDqr::pathType pt);
@@ -910,6 +911,7 @@ private:
 	};
 
 	TraceDqr::DQErr        status;
+	bool                   tolerateErrors;
 	TraceDqr::TraceType    traceType;
 	class SliceFileParser *sfp;
 	bool                   linuxTrace;
@@ -976,7 +978,7 @@ private:
 	int               eCycleCount[DQR_MAXCORES];
 
 	TraceDqr::DQErr configure(class TraceSettings &settings);
-	TraceDqr::DQErr resetTrace();
+	void resetTrace(int core);
 
 	int decodeInstructionSize(uint32_t inst, int &inst_size);
 	int decodeInstruction(uint32_t instruction,int &inst_size,TraceDqr::InstType &inst_type,TraceDqr::Reg &rs1,TraceDqr::Reg &rd,int32_t &immediate,bool &is_branch);

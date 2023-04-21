@@ -425,6 +425,7 @@ private:
   int           pendingMsgIndex;
   uint8_t       msg[64];
   bool          eom;
+  bool		flushMessage;
 
   int           bufferInIndex;
   int           bufferOutIndex;
@@ -432,7 +433,6 @@ private:
 
   TraceDqr::DQErr readBinaryMsg(bool &haveMsg);
   TraceDqr::DQErr bufferSWT();
-  TraceDqr::DQErr readNextByte(uint8_t *byte);
   TraceDqr::DQErr parseVarField(uint64_t *val,int *width);
   TraceDqr::DQErr parseFixedField(int width, uint64_t *val);
   TraceDqr::DQErr parseDirectBranch(NexusMessage &nm,Analytics &analytics);
@@ -519,7 +519,9 @@ public:
 	TraceDqr::DQErr propertyToKMemPath(const char *value);
 	TraceDqr::DQErr propertyToArchSize(const char *value);
 	TraceDqr::DQErr propertyToTraceType(const char *value);
+	TraceDqr::DQErr propertyToTolerateErrors(const char *value);
 
+	bool tolerateErrors;
 	char *odName;
 	char *tfName;
 	char *efName;

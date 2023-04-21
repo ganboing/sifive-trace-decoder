@@ -31,25 +31,6 @@ int globalDebugFlag = 0;
 // DECODER_VERSION is passed in from the Makefile, from version.mk in the root.
 const char *const DQR_VERSION = DECODER_VERSION;
 
-// static C type helper functions
-
-static int atoh(char a)
-{
-	if (a >= '0' && a <= '9') {
-		return a-'0';
-	}
-
-	if (a >= 'a' && a <= 'f') {
-		return a-'a'+10;
-	}
-
-	if (a >= 'A' && a <= 'F') {
-		return a-'A'+10;
-	}
-
-	return -1;
-}
-
 // Section Class Methods
 cachedInstInfo::cachedInstInfo(const char *file,int cutPathIndex,const char *func,int linenum,const char *lineTxt,const char *instText,TraceDqr::RV_INST inst,int instSize,const char *addresslabel,int addresslabeloffset)
 {
@@ -9498,6 +9479,7 @@ SliceFileParser::SliceFileParser(char *filename,int srcBits)
 	bufferInIndex = 0;
 	bufferOutIndex = 0;
 
+	flushMessage = false;
 	eom = false;
 
 	int i;
@@ -11431,6 +11413,11 @@ TraceDqr::DQErr SliceFileParser::parseVarField(uint64_t *val,int *width)
 	return TraceDqr::DQERR_OK;
 }
 
+// bufferSWT() returns:
+// OK - all is okay; read 0 or more bytes
+// ERR - error reading from socket - fatal
+// Note: there is no way to determine the sender has closed the socket
+
 TraceDqr::DQErr SliceFileParser::bufferSWT()
 {
 	int br = 0;
@@ -11556,6 +11543,13 @@ TraceDqr::DQErr SliceFileParser::bufferSWT()
 	return TraceDqr::DQERR_OK;
 }
 
+// readBinaryMsg() returns:
+// DQERR_OK - haveMsg = false, need to keep trying <- is this eqiv to bm?? or can we get rid of bm?
+// DQERR_OK - haveMsg = true, have a good msg
+// DQERR_ERR: unrecoverable error
+// DQERR_EOF: no more input
+// DQERR_BM: (bad message) keep calling to get entire msg (buffer overflow). DQERR_BM can be used to reset the trace
+
 TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 {
 	// start by stripping off end of message or end of var bytes. These would be here in the case
@@ -11563,10 +11557,68 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 
 	haveMsg = false;
 
+	if (flushMessage) { // read overflow message to end (or as much as SWT can)
+		do {
+			// read to EOF or end of message
+
+			if (SWTsock >= 0) {
+				// need a buffer to read from.
+
+				status = bufferSWT();
+
+				if (status != TraceDqr::DQERR_OK) {
+					// all errors from bufferSWT() are unrecoverable
+
+					flushMessage = false;
+					pendingMsgIndex = 0;
+
+					return TraceDqr::DQERR_ERR;
+				}
+
+				if (bufferInIndex == bufferOutIndex) {
+					// no bytes to read yet. Return and try again
+
+					return TraceDqr::DQERR_OK;
+				}
+
+				msg[0] = sockBuffer[bufferOutIndex];
+				bufferOutIndex += 1;
+				if ((size_t)bufferOutIndex >= sizeof sockBuffer) {
+					bufferOutIndex = 0;
+				}
+			}
+			else {
+				tf.read((char*)&msg[0],sizeof msg[0]);
+				if (!tf) {
+					if (tf.eof()) {
+						status = TraceDqr::DQERR_EOF;
+					}
+					else {
+						status = TraceDqr::DQERR_ERR;
+
+						std::cout << "Error reading trace file\n";
+					}
+
+					tf.close();
+
+					flushMessage = false;
+					pendingMsgIndex = 0;
+
+					return status;
+				}
+			}
+		} while ((msg[0] & TraceDqr::MSEO_END) != TraceDqr::MSEO_END);
+
+		flushMessage = false;
+		pendingMsgIndex = 0;
+	}
+
 	// if doing SWT, we may have ran out of data last time before getting an entire message
 	// and pendingMsgIndex may not be 0. If not 0, pick up where we left off
 
 	if (pendingMsgIndex == 0) {
+		// read until start of message
+
 		do {
 			if (SWTsock >= 0) {
 				// need a buffer to read from.
@@ -11574,11 +11626,11 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 				status = bufferSWT();
 
 				if (status != TraceDqr::DQERR_OK) {
-					return status;
+					return TraceDqr::DQERR_ERR;
 				}
 
 				if (bufferInIndex == bufferOutIndex) {
-					return status;
+					return TraceDqr::DQERR_OK;
 				}
 
 				msg[0] = sockBuffer[bufferOutIndex];
@@ -11608,7 +11660,7 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 			if ((msg[0] == 0x00) || (((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL) && (msg[0] != 0xff))) {
 				printf("Info: SliceFileParser::readBinaryMsg(): Skipping: %02x\n",msg[0]);
 			}
-		} while ((msg[0] == 0x00) || ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL));
+		} while ((msg[0] == 0x00) || ((msg[0] & 0x3) != TraceDqr::MSEO_NORMAL)); // look for start of message. Skip 0s as start (and ffs)
 
 		pendingMsgIndex = 1;
 	}
@@ -11618,32 +11670,21 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 	}
 	else {
 		msgOffset = ((uint32_t)tf.tellg())-1;
-
 	}
 
 	bool done = false;
 
 	while (!done) {
 		if (pendingMsgIndex >= (int)(sizeof msg / sizeof msg[0])) {
-			if (SWTsock >= 0) {
-#ifdef WINDOWS
-				closesocket(SWTsock);
-#else // WINDOWS
-				close(SWTsock);
-#endif // WINDOWS
-				SWTsock = -1;
-			}
-			else {
-				tf.close();
-			}
-
 			std::cout << "Error: SliceFileParser::readBinaryMsg(): msg buffer overflow" << std::endl;
 
+			// set flushMessage flag which will cause read until EOF or EOM (end of message)
+
 			pendingMsgIndex = 0;
+			flushMessage = false;
 
-			status = TraceDqr::DQERR_ERR;
-
-			return TraceDqr::DQERR_ERR;
+			status = TraceDqr::DQERR_BM;
+			return TraceDqr::DQERR_BM;
 		}
 
 		if (SWTsock >= 0) {
@@ -11707,92 +11748,6 @@ TraceDqr::DQErr SliceFileParser::readBinaryMsg(bool &haveMsg)
 	return TraceDqr::DQERR_OK;
 }
 
-TraceDqr::DQErr SliceFileParser::readNextByte(uint8_t *byte)
-{
-	char c;
-
-	// strip white space, comments, cr, and lf
-
-	enum {
-		STRIPPING_WHITESPACE,
-		STRIPPING_COMMENT,
-		STRIPPING_DONE
-	} ss = STRIPPING_WHITESPACE;
-
-	do {
-		tf.read((char*)&c,sizeof c);
-		if (!tf) {
-			tf.close();
-
-			status = TraceDqr::DQERR_EOF;
-
-			return TraceDqr::DQERR_EOF;
-		}
-
-		switch (ss) {
-		case STRIPPING_WHITESPACE:
-			switch (c) {
-			case '#':
-				ss = STRIPPING_COMMENT;
-				break;
-			case '\n':
-			case '\r':
-			case ' ':
-			case '\t':
-				break;
-			default:
-				ss = STRIPPING_DONE;
-			}
-			break;
-		case STRIPPING_COMMENT:
-			switch (c) {
-			case '\n':
-				ss = STRIPPING_WHITESPACE;
-				break;
-			}
-			break;
-		default:
-			break;
-		}
-	} while (ss != STRIPPING_DONE);
-
-	// now try to get two hex digits
-
-	tf.read((char*)&c,sizeof c);
-	if (!tf) {
-		tf.close();
-
-		status = TraceDqr::DQERR_EOF;
-
-		return TraceDqr::DQERR_EOF;
-	}
-
-	int hd;
-	uint8_t hn;
-
-	hd = atoh(c);
-	if (hd < 0) {
-		status = TraceDqr::DQERR_ERR;
-
-		return TraceDqr::DQERR_ERR;
-	}
-
-	hn = hd << 4;
-
-	hd = atoh(c);
-	if (hd < 0) {
-		status = TraceDqr::DQERR_ERR;
-
-		return TraceDqr::DQERR_ERR;
-	}
-
-	hn = hn | hd;
-
-	*byte = hn;
-
-	return TraceDqr::DQERR_OK;
-}
-
 TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &analytics,bool &haveMsg)	// generator to read trace messages one at a time
 {
 	haveMsg = false;
@@ -11810,12 +11765,19 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 	// read from file, store in object, compute and fill out full fields, such as address and more later
 
 	rc = readBinaryMsg(haveMsg);
+	if (rc == TraceDqr::DQERR_BM) {
+		return TraceDqr::DQERR_BM;
+	}
+
 	if (rc != TraceDqr::DQERR_OK) {
 
-		// all errors from readBinaryMsg() are non-recoverable.
+		// rc should be either DQERR_EOF or DQERR_ERR
 
-		if (rc != TraceDqr::DQERR_EOF) {
-			std::cout << "Error: (): readNextTraceMsg() returned error " << rc << std::endl;
+		if (rc == TraceDqr::DQERR_BM) {
+			std::cout << "Error: readNextTraceMsg(): readBinaryMsg() returned bad message error " << std::endl;
+		}
+		else if (rc != TraceDqr::DQERR_EOF) {
+			std::cout << "Error: readNextTraceMsg(): readBinaryMsg() returned error " << rc << std::endl;
 		}
 
 		status = rc;
@@ -11977,6 +11939,7 @@ TraceDqr::DQErr SliceFileParser::readNextTraceMsg(NexusMessage &nm,Analytics &an
 		}
 
 		haveMsg = false;
+		return TraceDqr::DQERR_BM;
 	}
 
 	status = TraceDqr::DQERR_OK;

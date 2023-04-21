@@ -18,7 +18,7 @@ static void usage(char *name)
 	printf("           [-trace] [-notrace] [-pathunix] [-pathwindows] [-pathraw] [--strip=path] [-itcprint | -itcprint=n] [-noitcprint]\n");
 	printf("           [-addrsize=n] [-addrsize=n+] [-32] [-64] [-32+] [-archsize=nn] [-addrsep] [-noaddrsep] [-analytics | -analyitcs=n]\n");
 	printf("           [-noanalytics] [-freq nn] [-tssize=n] [-callreturn] [-nocallreturn] [-branches] [-nobranches] [-msglevel=n]\n");
-	printf("           [-cutpath=<base path>] [-s file] [-r addr] [-debug] [-nodebug] [-v] [-h]\n");
+	printf("           [-cutpath=<base path>] [-s file] [-r addr] [-debug] [-nodebug] [-allowerrors] [-noallowerrors] [-v] [-h]\n");
 	printf("\n");
 	printf("-t tracefile: Specify the name of the Nexus trace message file. Must contain the file extension (such as .rtd).\n");
 	printf("-e elffile:   Specify the name of the executable elf file. Must contain the file extension (such as .elf).\n");
@@ -106,6 +106,8 @@ static void usage(char *name)
 	printf("-r addr:      Display the label information for the address specified for the elf file specified\n");
 	printf("-debug:       Display some debug information for the trace to aid in debugging the trace decoder\n");
 	printf("-nodebug:     Do not display any debug information for the trace decoder\n");
+	printf("-allowerrors: Keep decoding if errors are found in the trace file (default)\n");
+	printf("-noallowerrors: Stop decoding if errors are found in the trace file\n");
 	printf("-v:           Display the version number of the DQer and exit.\n");
 	printf("-h:           Display this usage information.\n");
 }
@@ -229,6 +231,7 @@ int main(int argc, char *argv[])
 	char *newRoot = nullptr;
 	bool ctf_flag = false;
 	bool linuxTrace = false;
+	bool allowErrors = true;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp("-t",argv[i]) == 0) {
@@ -635,6 +638,12 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
+		else if (strcmp("-allowerrors",argv[i]) == 0) {
+			allowErrors = true;
+		}
+		else if (strcmp("-noallowerrors",argv[i]) == 0) {
+			allowErrors = false;
+		}
 		else if (strcmp("-p",argv[i]) == 0) {
 			i += 1;
 			if (i >= argc) {
@@ -837,6 +846,8 @@ int main(int argc, char *argv[])
 
 			trace->setTraceType(traceType);
 
+			trace->setErrorMode(allowErrors);
+
 			if (ca_name != nullptr) {
 				rc = trace->setCATraceFile(ca_name,caType);
 				if (rc != TraceDqr::DQERR_OK) {
@@ -938,6 +949,7 @@ int main(int argc, char *argv[])
 		}
 		else {
 			ec = trace->NextInstruction(&instInfo,&msgInfo,&srcInfo);
+
 			if (pidMap != nullptr) {
 				if (instInfo != nullptr) {
 					if (currentPid != instInfo->pid) {
@@ -965,7 +977,9 @@ int main(int argc, char *argv[])
 			}
 		}
 
-		if (ec == TraceDqr::DQERR_OK) {
+		// Don't check ec here. Check at bottom of loop. There can still be valid info returned from NextInstruction
+
+//		if (ec == TraceDqr::DQERR_OK) {
 			if (srcInfo != nullptr) {
 				if ((lastSrcFile != srcInfo->sourceFile) || (lastSrcLine != srcInfo->sourceLine) || (lastSrcLineNum != srcInfo->sourceLineNum)) {
 					lastSrcFile = srcInfo->sourceFile;
@@ -1313,7 +1327,7 @@ int main(int argc, char *argv[])
 					core_mask >>= 1;
 				}
 			}
-		}
+//		}
 	} while (ec == TraceDqr::DQERR_OK);
 
 	if (ec == TraceDqr::DQERR_EOF) {
@@ -1383,8 +1397,6 @@ int main(int argc, char *argv[])
 	}
 
 	if (trace != nullptr) {
-		trace->cleanUp();
-
 		delete trace;
 		trace = nullptr;
 
