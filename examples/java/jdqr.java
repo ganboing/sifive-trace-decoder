@@ -35,6 +35,8 @@ public class jdqr {
       System.exit(1);
     }
 
+    t.setErrorMode(true);
+
     t.setITCPrintOptions(TraceDqr.ITCOptions.ITC_OPT_PRINT.swigValue() | TraceDqr.ITCOptions.ITC_OPT_NLS.swigValue(),4096,0);
 
     Instruction instInfo = new Instruction();
@@ -66,9 +68,13 @@ public class jdqr {
     int coreMask = 0;
 
     while (ec == TraceDqr.DQErr.DQERR_OK) {
-	TraceDecoder.intp_assign(flags,0);
+      TraceDecoder.intp_assign(flags,0);
 
       ec = t.NextInstruction(instInfo,msgInfo,srcInfo,flags);
+
+      if ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_ERROR) != 0) {
+        System.out.printf("Errors encountered in trace file. Tollerating\n");
+      }
 
       if (ec == TraceDqr.DQErr.DQERR_OK) {
         if ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_SRCINFO) != 0) {

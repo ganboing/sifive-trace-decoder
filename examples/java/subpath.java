@@ -39,6 +39,8 @@ public class subpath {
 
     TraceDqr.DQErr ec;
 
+    t.setErrorMode(true);
+
     t.setITCPrintOptions(TraceDqr.ITCOptions.ITC_OPT_PRINT.swigValue() | TraceDqr.ITCOptions.ITC_OPT_NLS.swigValue(),4096,0);
 
     String cutPath = argv[2]; // "C:\\eclipse-2020-03-rcp\\fs-master-runtime-taps\\e37_trace_all_ca_hello_1";
@@ -76,6 +78,10 @@ public class subpath {
 	TraceDecoder.intp_assign(flags,0);
 
       ec = t.NextInstruction(instInfo,msgInfo,srcInfo,flags);
+
+      if ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_ERROR) != 0) {
+        System.out.printf("Errors encountered in trace file. Tollerating\n");
+      }
 
       if (ec == TraceDqr.DQErr.DQERR_OK) {
         if ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_SRCINFO) != 0) {

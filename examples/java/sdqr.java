@@ -72,6 +72,10 @@ public class sdqr {
 
       ec = sim.NextInstruction(instInfo,srcInfo,flags);
 
+      if ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_ERROR) != 0) {
+        System.out.printf("Errors encountered in trace file. Tollerating\n");
+      }
+
       if (ec == TraceDqr.DQErr.DQERR_OK) {
         if ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_HAVE_SRCINFO) != 0) {
           String sourceFile = srcInfo.sourceFileToString(stripPath);

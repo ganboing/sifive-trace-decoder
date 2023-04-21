@@ -34,6 +34,8 @@ public class ljdqr {
             System.exit(1);
         }
 
+        t.setErrorMode(true);
+
         t.setITCPrintOptions(4096,0);
 
         Instruction instInfo = new Instruction();
@@ -83,6 +85,10 @@ public class ljdqr {
             msgInfo = new NexusMessage();
 
             ec = t.NextInstruction(instInfo,msgInfo,srcInfo,flags);
+
+            if ((TraceDecoder.intp_value(flags) & TraceDqr.TRACE_ERROR) != 0) {
+              System.out.printf("Errors encountered in trace file. Tollerating\n");
+            }
 
             if (ec == TraceDqr.DQErr.DQERR_OK) {
                 flagsArray[rec] = flags;

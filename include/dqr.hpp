@@ -96,10 +96,11 @@ public:
   typedef int RCode;
 
   enum {
-	TRACE_HAVE_INSTINFO = 0x01,
-	TRACE_HAVE_SRCINFO  = 0x02,
-	TRACE_HAVE_MSGINFO  = 0x04,
-	TRACE_HAVE_ITCPRINTINFO = 0x08,
+	TRACE_HAVE_INSTINFO     = 1 << 0,
+	TRACE_HAVE_SRCINFO      = 1 << 2,
+	TRACE_HAVE_MSGINFO      = 1 << 3,
+	TRACE_HAVE_ITCPRINTINFO = 1 << 4,
+	TRACE_ERROR             = 1 << 31,
   };
 
   typedef enum {
@@ -867,8 +868,8 @@ public:
 		TF_TRACEINFO   = 0x10,
 	};
 	TraceDqr::DQErr getStatus() { return status; }
-	TraceDqr::DQErr NextInstruction(Instruction **instInfo, NexusMessage **msgInfo, Source **srcInfo);
-	TraceDqr::DQErr NextInstruction(Instruction *instInfo, NexusMessage *msgInfo, Source *srcInfo, int *flags);
+	TraceDqr::DQErr NextInstruction(Instruction **instInfo,NexusMessage **msgInfo,Source **srcInfo);
+	TraceDqr::DQErr NextInstruction(Instruction *instInfo,NexusMessage *msgInfo,Source *srcInfo,int *flags);
 
 	TraceDqr::DQErr getTraceFileOffset(int &size,int &offset);
 
@@ -912,6 +913,7 @@ private:
 
 	TraceDqr::DQErr        status;
 	bool                   tolerateErrors;
+	bool                   tolerantError;
 	TraceDqr::TraceType    traceType;
 	class SliceFileParser *sfp;
 	bool                   linuxTrace;

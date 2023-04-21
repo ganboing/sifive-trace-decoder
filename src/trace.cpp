@@ -5423,6 +5423,7 @@ Trace::Trace(char *pf_name)
 	objdump       = nullptr;
 	traceType     = TraceDqr::TRACETYPE_BTM;
 	tolerateErrors = true;
+	tolerantError = false;
 	eventConvert = false;
 
 	nm.coreId = 0;
@@ -5514,6 +5515,7 @@ Trace::Trace(char *tf_name,char *ef_name,int numAddrBits,uint32_t addrDispFlags,
 	objdump       = nullptr;
 	traceType     = TraceDqr::TRACETYPE_BTM;
 	tolerateErrors = true;
+	tolerantError = false;
 	eventConvert = false;
 
 	nm.coreId = 0;
@@ -5794,6 +5796,7 @@ TraceDqr::DQErr Trace::configure(TraceSettings &settings)
 	archSize      = 0;
 	traceType     = TraceDqr::TRACETYPE_BTM;
 	tolerateErrors = true;
+	tolerantError = false;
 	eventConvert = false;
 
 	nm.coreId = 0;
@@ -9394,7 +9397,12 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction *instInfo,NexusMessage *msgIn
 
 	ec = NextInstruction(instInfopp, msgInfopp, srcInfopp);
 
-	*flags = 0;
+	if (tolerantError) {
+		*flags = TraceDqr::TRACE_ERROR;
+	}
+	else {
+		*flags = 0;
+	}
 
 	// even if NextInstruction() returns an error, still copy info ptrs if they are not null
 
@@ -9516,6 +9524,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 	bool consumed = false;
 
+	tolerantError = false;
+
 	Instruction  **savedInstPtr = nullptr;
 	NexusMessage **savedMsgPtr = nullptr;
 	Source       **savedSrcPtr = nullptr;
@@ -9567,6 +9577,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					}
 					else if (rc == TraceDqr::DQERR_BM) {
 						printf("Error: Trace::NextInstruction(): Errors in trace file\n");
+
+						tolerantError = true;
 
 						if (tolerateErrors) {
 							resetTrace(-1);
@@ -10154,6 +10166,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						}
 					}
 
+					tolerantError = true;
+
 					if (!tolerateErrors) {
 						status = TraceDqr::DQERR_ERR;
 						state[currentCore] = TRACE_STATE_ERROR;
@@ -10207,6 +10221,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 							*msgInfo = &messageInfo;
 						}
 					}
+
+					tolerantError = true;
 
 					if (!tolerateErrors) {
 						status = TraceDqr::DQERR_ERR;
@@ -10304,6 +10320,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						}
 					}
 
+					tolerantError = true;
+
 					if (!tolerateErrors) {
 						status = TraceDqr::DQERR_ERR;
 						state[currentCore] = TRACE_STATE_ERROR;
@@ -10336,6 +10354,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: Trace::NextInstruction(): state TRACE_STATE_GETFIRSTSYNCMSG: processTraceMessage()\n");
+
+					tolerantError = true;
 
 					if (!tolerateErrors) {
 						status = TraceDqr::DQERR_ERR;
@@ -10372,6 +10392,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						*msgInfo = &messageInfo;
 					}
 				}
+
+				tolerantError = true;
 
 				if (!tolerateErrors) {
 					status = TraceDqr::DQERR_ERR;
@@ -10444,6 +10466,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 							*msgInfo = &messageInfo;
 						}
 					}
+
+					tolerantError = true;
 
 					if (!tolerateErrors) {
 						status = TraceDqr::DQERR_ERR;
@@ -10552,6 +10576,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 				if (rc != TraceDqr::DQERR_OK) {
 					printf("Error: Trace::NextInstruction(): state TRACE_STATE_RETIREMESSAGE: processTraceMessage()\n");
 
+					tolerantError = true;
+
 					if (!tolerateErrors) {
 						status = TraceDqr::DQERR_ERR;
 						state[currentCore] = TRACE_STATE_ERROR;
@@ -10623,6 +10649,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 							}
 						}
 
+						tolerantError = true;
+
 						if (!tolerateErrors) {
 							status = TraceDqr::DQERR_ERR;
 							state[currentCore] = TRACE_STATE_ERROR;
@@ -10661,6 +10689,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					if (rc  != TraceDqr::DQERR_OK) {
 						printf("Error: Trace::NextInstruction(): state TRACE_STATE_GETNEXTMESSAGE Trace::processMessage()\n");
 
+						tolerantError = true;
+
 						if (!tolerateErrors) {
 							status = TraceDqr::DQERR_ERR;
 							state[currentCore] = TRACE_STATE_ERROR;
@@ -10697,6 +10727,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 							*msgInfo = &messageInfo;
 						}
 					}
+
+					tolerantError = true;
 
 					if (!tolerateErrors) {
 						status = TraceDqr::DQERR_ERR;
@@ -10817,6 +10849,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						}
 					}
 
+					tolerantError = true;
+
 					if (!tolerateErrors) {
 						status = TraceDqr::DQERR_ERR;
 						state[currentCore] = TRACE_STATE_ERROR;
@@ -10875,6 +10909,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 							*msgInfo = &messageInfo;
 						}
 					}
+
+					tolerantError = true;
 
 					if (!tolerateErrors) {
 						status = TraceDqr::DQERR_ERR;
@@ -11031,6 +11067,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 					}
 				}
 
+				tolerantError = true;
+
 				if (!tolerateErrors) {
 					status = TraceDqr::DQERR_ERR;
 					state[currentCore] = TRACE_STATE_ERROR;
@@ -11064,6 +11102,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						*msgInfo = &messageInfo;
 					}
 				}
+
+				tolerantError = true;
 
 				if (!tolerateErrors) {
 					status = TraceDqr::DQERR_ERR;
@@ -11106,6 +11146,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 						*msgInfo = &messageInfo;
 					}
 				}
+
+				tolerantError = true;
 
 				if (!tolerateErrors) {
 					status = TraceDqr::DQERR_ERR;
@@ -11169,6 +11211,8 @@ TraceDqr::DQErr Trace::NextInstruction(Instruction **instInfo, NexusMessage **ms
 							*msgInfo = &messageInfo;
 						}
 					}
+
+					tolerantError = true;
 
 					if (!tolerateErrors) {
 						status = TraceDqr::DQERR_ERR;
