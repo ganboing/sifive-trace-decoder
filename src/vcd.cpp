@@ -4,9 +4,23 @@
 #include "dqr.hpp"
 #include "trace.hpp"
 
+#define VCD_REC_SIZE (sizeof (uint64_t) + sizeof (uint16_t) + sizeof (uint64_t) + sizeof (uint32_t) + sizeof (uint64_t))
+
+#define VCD_REC_TIMESTAMP_OFFSET	(0)
+#define VCD_REC_FLAGS_OFFSET		(VCD_REC_TIMESTAMP_OFFSET+sizeof (uint64_t))
+#define VCD_REC_PC_OFFSET		(VCD_REC_FLAGS_OFFSET+sizeof (uint16_t))
+#define VCD_REC_OPCODE_OFFSET		(VCD_REC_PC_OFFSET+sizeof (uint64_t))
+#define VCD_REC_DELTAT_OFFSET		(VCD_REC_OPCODE_OFFSET+sizeof (uint32_t))
+
 static inline uint16_t bswap_uint16( uint16_t val )
 {
     return (val << 8) | (val >> 8);
+}
+
+static inline uint32_t bswap_uint32( uint32_t val )
+{
+    val = ((val << 8)  & 0xFF00FF00U ) | ((val >> 8)  & 0x00FF00FFU );
+    return ((val << 16) & 0xFFFF0000U ) | ((val >> 16) & 0x0000FFFFU );
 }
 
 static inline uint64_t bswap_uint64( uint64_t val )
@@ -50,6 +64,7 @@ VCD::VCD(const char *pf_name)
 	elfReader = nullptr;
 	disassembler = nullptr;
 	vcdBuff = nullptr;
+	version = 0;
 
 	if (pf_name == nullptr) {
 		printf("Error: VCD(): pf_name argument null\n");
@@ -141,7 +156,25 @@ TraceDqr::DQErr VCD::configure(class TraceSettings &settings)
 		size = lseek(vcd_fd,(off_t)0,SEEK_END);
 		lseek(vcd_fd,(off_t)0,SEEK_SET);
 
-		totalPCDRecords = (int)(size/(off_t)(sizeof lookaheadVRec.ts + sizeof lookaheadVRec.flags + sizeof lookaheadVRec.pc));
+		int r;
+
+		// Read the version number and make sure it is supported
+
+		r = read(vcd_fd,&version,sizeof(uint16_t));
+		if (r < 0) {
+			printf("Error: VCD::configure(): Error reading vcd file\n");
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
+		}
+
+		version = bswap_uint16(version);
+
+		if (version != 3) {
+			status = TraceDqr::DQERR_ERR;
+			return TraceDqr::DQERR_ERR;
+		}
+
+		totalPCDRecords = (int)(size/VCD_REC_SIZE);
 	}
 	else {
 		printf("Error: VCD::configure(): Must specify a VCD file\n");
@@ -150,7 +183,7 @@ TraceDqr::DQErr VCD::configure(class TraceSettings &settings)
 		return TraceDqr::DQERR_ERR;
 	}
 
-	vcdBuff = new uint8_t [1000*(sizeof(uint64_t)+sizeof(uint16_t)+sizeof(uint64_t))];
+	vcdBuff = new uint8_t [1000*VCD_REC_SIZE];
 	if (vcdBuff == nullptr) {
 		printf("Error: VCD::configure(): Could not allocate vcdBuff\n");
 
@@ -344,14 +377,14 @@ TraceDqr::DQErr VCD::getNextVRec(VRec &vrec)
 	if (currentVCDRecord >= numVCDRecords) {
 		// need to read another buff
 
-		r = read(vcd_fd,vcdBuff,1000 * (sizeof vrec.ts + sizeof vrec.flags + sizeof vrec.pc));
+		r = read(vcd_fd,vcdBuff,1000 * VCD_REC_SIZE);
 		if (r < 0) {
 			printf("Error: VCD::getNextVCDRec(): Error reading vcd file\n");
 			status = TraceDqr::DQERR_ERR;
 			return TraceDqr::DQERR_ERR;
 		}
 
-		numVCDRecords = r / (sizeof vrec.ts + sizeof vrec.flags + sizeof vrec.pc);
+		numVCDRecords = r / VCD_REC_SIZE;
 
 		if (numVCDRecords == 0) {
 			status = TraceDqr::DQERR_EOF;
@@ -361,9 +394,12 @@ TraceDqr::DQErr VCD::getNextVRec(VRec &vrec)
 		currentVCDRecord = 0;
 	}
 
-	vrec.ts = bswap_uint64(*(uint64_t*)&vcdBuff[currentVCDRecord*(sizeof vrec.ts+sizeof vrec.flags + sizeof vrec.pc)]);
-	vrec.flags = bswap_uint16(*(uint16_t*)&vcdBuff[currentVCDRecord*(sizeof vrec.ts+sizeof vrec.flags + sizeof vrec.pc)+sizeof vrec.ts]);
-	vrec.pc = bswap_uint64(*(uint64_t*)&vcdBuff[currentVCDRecord*(sizeof vrec.ts+sizeof vrec.flags + sizeof vrec.pc)+sizeof vrec.ts+sizeof vrec.flags]);
+	vrec.ts = bswap_uint64(*(uint64_t*)&vcdBuff[currentVCDRecord*VCD_REC_SIZE+VCD_REC_TIMESTAMP_OFFSET]);
+	vrec.flags = bswap_uint16(*(uint16_t*)&vcdBuff[currentVCDRecord*VCD_REC_SIZE+VCD_REC_FLAGS_OFFSET]);
+	vrec.pc = bswap_uint64(*(uint64_t*)&vcdBuff[currentVCDRecord*VCD_REC_SIZE+VCD_REC_PC_OFFSET]);
+
+	vrec.opcode = bswap_uint32(*(uint32_t*)&vcdBuff[currentVCDRecord*VCD_REC_SIZE+VCD_REC_OPCODE_OFFSET]);
+	vrec.deltaT = bswap_uint64(*(uint64_t*)&vcdBuff[currentVCDRecord*VCD_REC_SIZE+VCD_REC_DELTAT_OFFSET]);
 
 	currentVCDRecord += 1;
 

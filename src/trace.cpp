@@ -7290,6 +7290,9 @@ TraceDqr::DQErr Trace::Disassemble(TraceDqr::ADDRESS addr)
 {
 	TraceDqr::DQErr rc;
 
+
+// use priv to determine which memory to disassemble (user, system, m-mode)
+
 	if ((kMem != nullptr) && (addr >= kMem->getKStart())) {
 		rc = kMem->disassemble(addr);
 		if (rc != TraceDqr::DQERR_OK) {

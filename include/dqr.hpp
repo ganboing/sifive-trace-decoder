@@ -1116,6 +1116,8 @@ private:
 		uint64_t ts;
 		uint16_t flags;
 		uint64_t pc;
+		uint32_t opcode;
+		uint64_t deltaT;
 	};
 
 	enum VCDFlags {
@@ -1125,6 +1127,8 @@ private:
 	TraceDqr::DQErr status;
 
 	int archSize;
+
+	uint16_t version;
 
 	bool haveLookaheadVRec;
 	VRec lookaheadVRec;
