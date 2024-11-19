@@ -1,0 +1,33 @@
+set te_control_offset      0x00
+set te_impl_offset         0x04
+set ev_control_offset      0x0C
+set te_sinkbase_offset     0x10
+set te_sinkbasehigh_offset 0x14
+set te_sinklimit_offset    0x18
+set te_sinkwp_offset       0x1c
+set te_sinkrp_offset       0x20
+set te_sinkdata_offset     0x24
+set te_fifo_offset         0x30
+set te_btmcount_offset     0x34
+set te_wordcount_offset    0x38
+set ts_control_offset      0x40
+set ts_lower_offset        0x44
+set ts_upper_offset        0x48
+set xti_control_offset     0x50
+set xto_control_offset     0x54
+set wp_control_offset      0x58
+set itc_traceenable_offset 0x60
+set itc_trigenable_offset  0x64
+set pib_control_offset     0xf00
+
+set ca_control_offset   0x00
+set ca_impl_offset      0x04
+set ca_sink_wp_offset   0x1c
+set ca_sink_rp_offset   0x20
+set ca_sink_data_offset 0x24
+
+set pcs_control_offset  0x100
+set pcs_capture         0x13c
+set pcs_capture_hi      0x138
+set pcs_sample          0x17c
+set pcs_sample_hi       0x178
